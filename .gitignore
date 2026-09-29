@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.npm/
+*.tsbuildinfo
+.env
+.env.local
+.env.*.local
+.wrangler/
+.dev.vars
+cloudflare/.dev.vars
+.DS_Store
