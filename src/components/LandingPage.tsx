@@ -206,7 +206,7 @@ export default function LandingPage({ onSignIn, onGetStarted, onDemo, onChoosePl
 
       <footer className="landing-footer">
         <a className="landing-brand footer-brand" href="#top"><span className="brand-mark"><ShieldCheck size={19} /></span><span>Persora</span></a>
-        <p>A quieter way to keep your life in order.</p>
+        <p>Everything Everywhere All Are Encrypted</p>
         <nav className="landing-footer-links" aria-label="Legal and contact"><a href="/privacy">Privacy Policy</a><a href="/terms">Terms &amp; Conditions</a><a href="/contact">Contact</a></nav>
         <div className="landing-footer-meta"><span>© 2026 Persora</span><span>Powered by Dexter Studio</span><span className="footer-security-brand"><ShieldCheck size={13}/> Sherlock Security System</span><button onClick={onSignIn}>Sign in</button><a href="/admin">Admin sign in</a></div>
       </footer>

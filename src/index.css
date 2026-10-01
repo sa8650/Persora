@@ -1,7 +1,6 @@
 @import url('./landing.css');
 @import url('./workspace.css');
 @import url('./overlays.css');
-@import url('./admin-portal.css');
 @import url('./billing.css');
 @import url('./public-pages.css');
 
@@ -65,6 +64,13 @@ a { color: inherit; text-decoration: none; }
 .border-beam { position: absolute; pointer-events: none; border-radius: inherit; inset: 0; overflow: hidden; }
 .border-beam::before { content: ""; position: absolute; width: 140px; height: 1px; top: 0; left: -140px; background: linear-gradient(90deg,transparent,#a6e2c0,transparent); filter: drop-shadow(0 0 5px #a3e6c1); animation: beam-loop 6s linear infinite; }
 @keyframes beam-loop { to { left: 100%; } }
-.blur-fade { animation: blur-fade-in .75s var(--ease) both; }
-@keyframes blur-fade-in { from { opacity: 0; filter: blur(6px); transform: translateY(12px); } to { opacity: 1; filter: blur(0); transform: translateY(0); } }
+.blur-fade { animation: blur-fade-in .38s var(--ease) both; }
+@keyframes blur-fade-in { from { opacity: 0; transform: translate3d(0,6px,0); } to { opacity: 1; transform: translate3d(0,0,0); } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+
+/* Use a native, highly legible UI typeface without depending on a remote font. */
+:root { font-family: "Aptos", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+body { font-size: 16px; }

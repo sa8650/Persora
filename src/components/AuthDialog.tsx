@@ -7,12 +7,14 @@ export type AuthMode = "signin" | "signup";
 interface AuthDialogProps {
   initialMode: AuthMode;
   connected: boolean;
+  variant?: "user" | "admin";
   busy?: boolean;
   onClose: () => void;
   onSubmit: (mode: AuthMode, values: { fullName: string; email: string; identifier: string; password: string }) => Promise<string | void>;
 }
 
-export default function AuthDialog({ initialMode, connected, busy = false, onClose, onSubmit }: AuthDialogProps) {
+export default function AuthDialog({ initialMode, connected, variant = "user", busy = false, onClose, onSubmit }: AuthDialogProps) {
+  const admin = variant === "admin";
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -42,19 +44,19 @@ export default function AuthDialog({ initialMode, connected, busy = false, onClo
 
   return (
     <div className="modal-backdrop auth-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section className="auth-dialog" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+      <section className={`auth-dialog ${admin ? "auth-dialog-admin" : ""}`} role="dialog" aria-modal="true" aria-labelledby="auth-title">
         <button type="button" className="icon-button auth-close" onClick={onClose} aria-label="Close dialog"><X size={19} /></button>
         <div className="auth-art">
           <div className="auth-art-glow" />
           <div className="auth-brand-mark"><ShieldCheck size={21} strokeWidth={2.2} /></div>
           <div className="auth-art-copy">
-            <span className="auth-kicker">A quieter kind of organized</span>
-            <h2>Everything important,<br /><em>close at hand.</em></h2>
-            <p>One private home for the details that make up your life.</p>
+            <span className="auth-kicker">{admin ? "A protected workspace" : "A quieter kind of organized"}</span>
+            <h2>{admin ? <>Steward the<br /><em>Persora space.</em></> : <>Everything important,<br /><em>close at hand.</em></>}</h2>
+            <p>{admin ? "A focused control room for the people entrusted to care for Persora." : "One private home for the details that make up your life."}</p>
           </div>
           <div className="auth-mini-card">
             <div className="auth-mini-lock"><LockKeyhole size={15} /></div>
-            <div><strong>Your vault stays yours</strong><span>Private by default. Always.</span></div>
+            <div><strong>{admin ? "Administrator access" : "Your vault stays yours"}</strong><span>{admin ? "Role checked securely by the server." : "Private by default. Always."}</span></div>
             <span className="auth-mini-check">✓</span>
           </div>
           <div className="auth-orbit orbit-a" /><div className="auth-orbit orbit-b" />
@@ -62,12 +64,12 @@ export default function AuthDialog({ initialMode, connected, busy = false, onClo
         <div className="auth-panel">
           <div className="auth-panel-top">
             <div className="auth-logo"><span className="brand-mark small"><ShieldCheck size={17} /></span><span>persora</span></div>
-            <div className="auth-connected"><span className={`status-dot ${connected ? "is-live" : "is-demo"}`} />{connected ? "Secure sign in" : "Setup required"}</div>
+            <div className={`auth-connected ${admin ? "auth-connected-admin" : ""}`}><span className={`status-dot ${connected ? "is-live" : "is-demo"}`} />{connected ? admin ? "Admin service ready" : "Secure sign in" : "Setup required"}</div>
           </div>
           <div className="auth-heading">
-            <span className="section-eyebrow">{mode === "signin" ? "Welcome back" : "Start your private space"}</span>
-            <h1 id="auth-title">{mode === "signin" ? "Sign in to Persora" : "Create your account"}</h1>
-            <p>{mode === "signin" ? "Your personal digital life, right where you left it." : "A little more calm for everything you keep."}</p>
+            <span className="section-eyebrow">{admin ? mode === "signin" ? "Administrator access" : "First-owner setup" : mode === "signin" ? "Welcome back" : "Start your private space"}</span>
+            <h1 id="auth-title">{admin ? mode === "signin" ? "Sign in to your console" : "Create the owner account" : mode === "signin" ? "Sign in to Persora" : "Create your account"}</h1>
+            <p>{admin ? mode === "signin" ? "Use an authorized account to continue to the admin area." : "Create your account, then complete secure first-admin setup." : mode === "signin" ? "Your personal digital life, right where you left it." : "A little more calm for everything you keep."}</p>
           </div>
           <form onSubmit={submit} className="auth-form">
             {mode === "signup" && (
@@ -89,14 +91,14 @@ export default function AuthDialog({ initialMode, connected, busy = false, onClo
             {error && <div className="form-alert error-alert" role="alert">{error}</div>}
             {message && <div className="form-alert success-alert" role="status">{message}</div>}
             <ShimmerButton type="submit" disabled={busy || !connected} className="auth-submit">
-              {busy ? <><span className="spinner" /> Working…</> : <>{mode === "signin" ? "Sign in" : "Create account"}<ArrowRight size={17} /></>}
+              {busy ? <><span className="spinner" /> Working…</> : <>{admin && mode === "signin" ? "Continue securely" : mode === "signin" ? "Sign in" : "Create account"}<ArrowRight size={17} /></>}
             </ShimmerButton>
           </form>
           <div className="auth-switch">
-            {mode === "signin" ? <>New to Persora? <button type="button" onClick={() => changeMode("signup")}>Create an account</button></> : <>Already have an account? <button type="button" onClick={() => changeMode("signin")}>Sign in</button></>}
+            {mode === "signin" ? <>{admin ? "Need an owner account?" : "New to Persora?"} <button type="button" onClick={() => changeMode("signup")}>{admin ? "Create account" : "Create an account"}</button></> : <>Already have an account? <button type="button" onClick={() => changeMode("signin")}>Sign in</button></>}
           </div>
           {!connected && <div className="form-alert error-alert" role="status">Online sign-in is unavailable until the Cloudflare Pages Functions API is enabled for this deployment.</div>}
-          <div className="auth-footnote"><ShieldCheck size={13} /><span>{connected ? "Passwords are salted and hashed. Your session is kept in a private HttpOnly cookie." : "Account registration and sign-in are disabled until the production backend is connected."}</span></div>
+          <div className="auth-footnote"><ShieldCheck size={13} /><span>{connected ? admin ? "Administrator permissions are verified server-side after sign in." : "Passwords are salted and hashed. Your session is kept in a private HttpOnly cookie." : "Account registration and sign-in are disabled until the production backend is connected."}</span></div>
           <button type="button" className="auth-back" onClick={onClose}><ArrowLeft size={14} /> Back to Persora</button>
         </div>
       </section>

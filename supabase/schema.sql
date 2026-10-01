@@ -54,7 +54,7 @@ create table if not exists public.vault_items (
   user_id uuid not null references public.profiles(id) on delete cascade,
   section text not null check (section in (
     'documents', 'academics', 'subscriptions', 'family', 'purchases',
-    'accounts', 'memberships', 'study', 'business-card', 'urls'
+    'accounts', 'memberships', 'study', 'business-card', 'urls', 'notes'
   )),
   title text not null check (char_length(title) between 1 and 240),
   subtitle text,
@@ -64,6 +64,7 @@ create table if not exists public.vault_items (
   file_size bigint check (file_size is null or file_size >= 0),
   file_type text,
   favorite boolean not null default false,
+  pinned boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint file_reference_is_complete check (
@@ -71,8 +72,143 @@ create table if not exists public.vault_items (
     (file_key is not null and file_name is not null)
   )
 );
+alter table public.vault_items add column if not exists pinned boolean not null default false;
 alter table public.vault_items drop constraint if exists vault_items_user_id_fkey;
 alter table public.vault_items add constraint vault_items_user_id_fkey foreign key (user_id) references public.profiles(id) on delete cascade;
+
+-- Encrypted private Life Timeline. See the incremental migration for the matching upgrade path.
+create table if not exists public.timeline_events (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  event_type text not null check (event_type in ('automatic', 'manual')),
+  event_date date not null,
+  event_key text,
+  record_id uuid references public.vault_items(id) on delete cascade,
+  encrypted_payload text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint timeline_events_owner_key_unique unique (user_id, event_key),
+  constraint timeline_events_manual_has_no_key check (event_type <> 'manual' or event_key is null),
+  constraint timeline_events_auto_requires_key check (event_type <> 'automatic' or (event_key is not null and record_id is not null)),
+  constraint timeline_events_id_owner_unique unique (id, user_id)
+);
+create index if not exists timeline_events_owner_date_idx on public.timeline_events(user_id, event_date desc, created_at desc);
+create index if not exists timeline_events_record_idx on public.timeline_events(record_id) where record_id is not null;
+create table if not exists public.timeline_event_links (
+  event_id uuid not null,
+  owner_id uuid not null references public.profiles(id) on delete cascade,
+  record_id uuid not null references public.vault_items(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (event_id, record_id),
+  constraint timeline_event_links_owner_event_fk foreign key (event_id, owner_id) references public.timeline_events(id, user_id) on delete cascade
+);
+create index if not exists timeline_event_links_record_idx on public.timeline_event_links(record_id);
+alter table public.timeline_events enable row level security;
+alter table public.timeline_event_links enable row level security;
+revoke all on public.timeline_events, public.timeline_event_links from anon, authenticated;
+grant all on public.timeline_events, public.timeline_event_links to service_role;
+
+create table if not exists public.contacts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  full_name text not null check (char_length(full_name) between 1 and 160),
+  phone_numbers jsonb not null default '[]'::jsonb,
+  email text,
+  company text,
+  job_title text,
+  address text,
+  birthday date,
+  notes text,
+  category text not null default 'Other' check (category in ('Family','Friends','Work','Clients','Suppliers','Students','Other')),
+  photo_key text,
+  favorite boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists contacts_owner_name_idx on public.contacts(user_id, lower(full_name));
+create index if not exists contacts_owner_updated_idx on public.contacts(user_id, updated_at desc);
+
+create table if not exists public.business_cards (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  card_id text unique check (card_id is null or card_id ~ '^[A-F0-9]{32}$'),
+  is_public boolean not null default false,
+  full_name text not null check (char_length(full_name) between 1 and 160),
+  job_title text,
+  company text,
+  phone_numbers jsonb not null default '[]'::jsonb,
+  email text,
+  websites jsonb not null default '[]'::jsonb,
+  social_links jsonb not null default '[]'::jsonb,
+  address text,
+  bio text,
+  custom_links jsonb not null default '[]'::jsonb,
+  profile_photo_key text,
+  business_logo_key text,
+  card_style text not null default 'garden' check (card_style in ('garden', 'minimal', 'midnight', 'terracotta')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint business_cards_public_has_id check (not is_public or card_id is not null)
+);
+create index if not exists business_cards_owner_updated_idx on public.business_cards(user_id, updated_at desc);
+create index if not exists business_cards_public_idx on public.business_cards(card_id) where is_public = true;
+
+create table if not exists public.business_card_reports (
+  id uuid primary key default gen_random_uuid(),
+  business_card_id uuid not null references public.business_cards(id) on delete cascade,
+  reporter_hash text not null,
+  reason text not null check (reason in ('Spam or misleading','Inappropriate content','Impersonation','Other')),
+  details text,
+  created_at timestamptz not null default now(),
+  constraint business_card_reports_once_per_reporter unique (business_card_id, reporter_hash)
+);
+create index if not exists business_card_reports_created_idx on public.business_card_reports(created_at desc);
+
+create table if not exists public.vault_shares (
+  id uuid primary key default gen_random_uuid(),
+  item_id uuid not null references public.vault_items(id) on delete cascade,
+  owner_id uuid not null references public.profiles(id) on delete cascade,
+  recipient_id uuid not null references public.profiles(id) on delete cascade,
+  permission text not null default 'view' check (permission in ('view', 'comment', 'edit')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint vault_shares_not_self check (owner_id <> recipient_id),
+  constraint vault_shares_item_recipient_unique unique (item_id, recipient_id)
+);
+
+create table if not exists public.record_shares (
+  id uuid primary key default gen_random_uuid(),
+  resource_type text not null check (resource_type in ('contact', 'business_card')),
+  resource_id uuid not null,
+  owner_id uuid not null references public.profiles(id) on delete cascade,
+  recipient_id uuid not null references public.profiles(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  constraint record_shares_not_self check (owner_id <> recipient_id),
+  constraint record_shares_unique unique (resource_type, resource_id, recipient_id)
+);
+create index if not exists record_shares_owner_created_idx on public.record_shares(owner_id, created_at desc);
+create index if not exists record_shares_recipient_created_idx on public.record_shares(recipient_id, created_at desc);
+
+create table if not exists public.vault_share_comments (
+  id uuid primary key default gen_random_uuid(),
+  share_id uuid not null references public.vault_shares(id) on delete cascade,
+  author_id uuid not null references public.profiles(id) on delete cascade,
+  author_name text not null default 'Persora member',
+  body text not null check (char_length(body) between 1 and 5000),
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.share_notifications (
+  id uuid primary key default gen_random_uuid(),
+  recipient_id uuid not null references public.profiles(id) on delete cascade,
+  actor_id uuid references public.profiles(id) on delete set null,
+  actor_name text not null default 'Persora user',
+  kind text not null check (kind in ('shared', 'permission_changed', 'unshared')),
+  item_title text not null default 'Shared document',
+  message text not null check (char_length(message) between 1 and 500),
+  created_at timestamptz not null default now(),
+  read_at timestamptz
+);
 
 create table if not exists public.user_sessions (
   id uuid primary key default gen_random_uuid(),
@@ -190,6 +326,17 @@ insert into public.document_types (id, name, sort_order) values
 on conflict (id) do nothing;
 
 create index if not exists admin_audit_events_created_at_idx on public.admin_audit_events(created_at desc);
+-- Keep the section check current for databases created by an earlier schema version.
+alter table public.vault_items drop constraint if exists vault_items_section_check;
+alter table public.vault_items add constraint vault_items_section_check check (section in (
+  'documents', 'academics', 'subscriptions', 'family', 'purchases',
+  'accounts', 'memberships', 'study', 'business-card', 'urls', 'notes'
+));
+
+create index if not exists vault_shares_owner_created_idx on public.vault_shares(owner_id, created_at desc);
+create index if not exists vault_shares_recipient_created_idx on public.vault_shares(recipient_id, created_at desc);
+create index if not exists vault_share_comments_share_created_idx on public.vault_share_comments(share_id, created_at asc);
+create index if not exists share_notifications_recipient_created_idx on public.share_notifications(recipient_id, created_at desc);
 create index if not exists vault_items_owner_section_idx on public.vault_items(user_id, section);
 create index if not exists vault_items_owner_updated_idx on public.vault_items(user_id, updated_at desc);
 create index if not exists vault_items_metadata_gin_idx on public.vault_items using gin(metadata);
@@ -208,6 +355,8 @@ drop trigger if exists profiles_touch_updated_at on public.profiles;
 create trigger profiles_touch_updated_at before update on public.profiles for each row execute function public.touch_updated_at();
 drop trigger if exists vault_items_touch_updated_at on public.vault_items;
 create trigger vault_items_touch_updated_at before update on public.vault_items for each row execute function public.touch_updated_at();
+drop trigger if exists timeline_events_touch_updated_at on public.timeline_events;
+create trigger timeline_events_touch_updated_at before update on public.timeline_events for each row execute function public.touch_updated_at();
 drop trigger if exists subscription_plans_touch_updated_at on public.subscription_plans;
 create trigger subscription_plans_touch_updated_at before update on public.subscription_plans for each row execute function public.touch_updated_at();
 drop trigger if exists user_subscriptions_touch_updated_at on public.user_subscriptions;
@@ -309,8 +458,51 @@ begin
 end;
 $$;
 
+-- Private, owner-scoped medical records and references to existing Persora records.
+create table if not exists public.medical_records (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  title text not null check (char_length(title) between 1 and 200),
+  record_type text not null check (record_type in ('Prescription','Medical Report','Lab Test','Imaging / Scan','Doctor Visit','Hospital Record','Vaccination','Medical Certificate','Discharge Summary','Other')),
+  record_date date not null,
+  provider text not null default '', hospital text not null default '', specialty text not null default '', notes text not null default '',
+  diagnosis text not null default '', test_name text not null default '', test_result text not null default '', medication_notes text not null default '',
+  follow_up_date date, related_reminder_id uuid references public.vault_items(id) on delete set null,
+  file_key text, file_name text, file_size bigint check (file_size is null or file_size >= 0), file_type text,
+  created_at timestamptz not null default now(), updated_at timestamptz not null default now(),
+  constraint medical_records_file_reference_complete check (
+    (file_key is null and file_name is null and file_size is null and file_type is null) or
+    (file_key is not null and file_name is not null and file_size is not null and file_type is not null)
+  ),
+  constraint medical_records_id_owner_unique unique (id, user_id)
+);
+create index if not exists medical_records_owner_date_idx on public.medical_records(user_id, record_date desc, updated_at desc);
+create index if not exists medical_records_owner_type_idx on public.medical_records(user_id, record_type, record_date desc);
+create table if not exists public.medical_record_links (
+  medical_record_id uuid not null,
+  owner_id uuid not null references public.profiles(id) on delete cascade,
+  record_type text not null check (record_type in ('contact','vault_item')),
+  record_id uuid not null,
+  link_kind text not null default 'related' check (link_kind in ('related','reminder')),
+  created_at timestamptz not null default now(),
+  primary key (medical_record_id, record_type, record_id, link_kind),
+  constraint medical_record_links_owner_record_fk foreign key (medical_record_id, owner_id) references public.medical_records(id, user_id) on delete cascade
+);
+create index if not exists medical_record_links_target_idx on public.medical_record_links(owner_id, record_type, record_id);
+alter table public.medical_records enable row level security;
+alter table public.medical_record_links enable row level security;
+revoke all on public.medical_records, public.medical_record_links from anon, authenticated;
+grant all on public.medical_records, public.medical_record_links to service_role;
+
 alter table public.profiles enable row level security;
 alter table public.vault_items enable row level security;
+alter table public.contacts enable row level security;
+alter table public.business_cards enable row level security;
+alter table public.business_card_reports enable row level security;
+alter table public.vault_shares enable row level security;
+alter table public.record_shares enable row level security;
+alter table public.vault_share_comments enable row level security;
+alter table public.share_notifications enable row level security;
 alter table public.user_sessions enable row level security;
 alter table public.auth_login_attempts enable row level security;
 alter table public.admin_audit_events enable row level security;
@@ -332,12 +524,14 @@ drop policy if exists "document_types_public_read" on public.document_types;
 drop policy if exists "admin_audit_select_admin" on public.admin_audit_events;
 
 -- All application traffic goes through the authenticated Pages Function; direct browser DB access is closed.
-revoke all on public.profiles, public.vault_items, public.user_sessions, public.auth_login_attempts,
+revoke all on public.profiles, public.vault_items, public.contacts, public.business_cards, public.business_card_reports, public.user_sessions, public.auth_login_attempts,
+  public.vault_shares, public.record_shares, public.vault_share_comments, public.share_notifications,
   public.admin_audit_events, public.platform_settings, public.subscription_plans, public.user_subscriptions,
-  public.payment_records, public.document_types, public.admin_bootstrap_state from anon, authenticated;
-grant all on public.profiles, public.vault_items, public.user_sessions, public.auth_login_attempts,
+  public.payment_records, public.document_types, public.admin_bootstrap_state, public.timeline_events, public.timeline_event_links from anon, authenticated;
+grant all on public.profiles, public.vault_items, public.contacts, public.business_cards, public.business_card_reports, public.user_sessions, public.auth_login_attempts,
+  public.vault_shares, public.record_shares, public.vault_share_comments, public.share_notifications,
   public.admin_audit_events, public.platform_settings, public.subscription_plans, public.user_subscriptions,
-  public.payment_records, public.document_types, public.admin_bootstrap_state to service_role;
+  public.payment_records, public.document_types, public.admin_bootstrap_state, public.timeline_events, public.timeline_event_links to service_role;
 grant execute on function public.persora_hash_password(text) to service_role;
 grant execute on function public.persora_verify_password(text, text) to service_role;
 grant execute on function public.persora_claim_first_admin(uuid) to service_role;

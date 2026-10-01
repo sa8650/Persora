@@ -182,7 +182,7 @@
 .cta-actions > button:not(.shimmer-button) { border: 0; padding: 8px 0; color: #c1d4c0; background: transparent; font-size: 10.8px; font-weight: 650; cursor: pointer; }
 .landing-footer { display: grid; grid-template-columns: max-content 1fr; align-items: center; gap: 8px 20px; max-width: 1400px; min-height: 100px; margin: 0 auto; padding: 19px 5.5%; background: #fafbf8; }
 .footer-brand { grid-column: 1; grid-row: 1; font-size: 19.2px; }
-.landing-footer > p { grid-column: 2; grid-row: 1; margin: 0; color: #96a099; font-family: Georgia,serif; font-size: 13.2px; font-style: italic; }
+.landing-footer > p { grid-column: 2; grid-row: 1; margin: 0; color: #66806f; font-family: Georgia,serif; font-size: 13.2px; font-style: normal; letter-spacing: .01em; }
 .landing-footer-links { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; grid-column: 1; grid-row: 2; }
 .landing-footer-links a,.landing-footer-meta a,.landing-footer-meta button { border: 0; padding: 4px 0; color: #748178; background: transparent; font-size: 9.6px; font-weight: 650; cursor: pointer; }
 .landing-footer-links a:hover,.landing-footer-meta a:hover,.landing-footer-meta button:hover { color: #326b57; }
@@ -260,4 +260,29 @@
   .landing-plan-grid { grid-template-columns: 1fr; }
   .landing-plan-card { min-height: 355px; }
   .landing-cta h2 { font-size: 46.8px; }
+}
+
+/* Responsive guardrails: keep hero copy and decorative cards in their own space. */
+.hero-copy { min-width: 0; }
+.hero-copy h1 { max-width: 100%; font-size: clamp(3.6rem, 7vw, 6.1rem); line-height: 1.04; letter-spacing: -.055em; overflow-wrap: anywhere; }
+.hero-description { font-size: 15px; line-height: 1.72; }
+.hero-visual-wrap { min-width: 0; }
+.hero-float-card { max-width: min(235px, 47%); }
+.hero-float-card > div:last-child { min-width: 0; }
+.hero-float-card b,.hero-float-card span:not(.float-icon):not(.float-shield) { overflow-wrap: anywhere; }
+@media (max-width: 1050px) {
+  .hero-layout { grid-template-columns: minmax(0,.96fr) minmax(0,1.04fr); gap: 24px; }
+  .hero-visual { width: min(100%, 430px); }
+  .hero-float-card { max-width: 45%; }
+}
+@media (max-width: 760px) {
+  .hero-copy h1 { max-width: 100%; font-size: clamp(3.45rem, 12.5vw, 5.4rem); line-height: 1.04; }
+  .hero-visual-wrap { overflow: visible; }
+  .hero-float-card { max-width: 46%; }
+  .why-visual { overflow: hidden; }
+}
+@media (max-width: 480px) {
+  .hero-copy h1 { font-size: clamp(3.1rem, 14vw, 4.2rem); line-height: 1.06; }
+  .hero-float-card { max-width: 43%; gap: 6px; }
+  .hero-float-card b { line-height: 1.3; }
 }

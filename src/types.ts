@@ -10,10 +10,98 @@ export type SectionId =
   | "memberships"
   | "study"
   | "business-card"
-  | "urls";
+  | "urls"
+  | "notes";
 
-export type ViewId = "dashboard" | SectionId | "settings" | "billing";
+export type ViewId = "dashboard" | SectionId | "contacts" | "settings" | "billing" | "shared" | "timeline" | "medical-records";
+export type NotesRecordKind = "todo" | "reminder" | "alarm";
+export const MEDICAL_RECORD_TYPES = ["Prescription", "Medical Report", "Lab Test", "Imaging / Scan", "Doctor Visit", "Hospital Record", "Vaccination", "Medical Certificate", "Discharge Summary", "Other"] as const;
+export type MedicalRecordType = typeof MEDICAL_RECORD_TYPES[number];
+export interface MedicalRecordFile { key?: string; name: string; size: number; type: string; localOnly?: boolean }
+export interface MedicalRecordLink { recordType: "contact" | "vault_item"; recordId: string; linkKind: "related" | "reminder" }
+export interface MedicalRecord {
+  id: string; title: string; recordType: MedicalRecordType; recordDate: string; provider: string; hospital: string; specialty: string; notes: string;
+  diagnosis: string; testName: string; testResult: string; medicationNotes: string; followUpDate: string; relatedReminderId?: string;
+  file?: MedicalRecordFile; links: MedicalRecordLink[]; createdAt: string; updatedAt: string;
+}
+export type MedicalRecordDraft = Omit<MedicalRecord, "id" | "createdAt" | "updatedAt"> & { id?: string; fileUpload?: File | null; removeFile?: boolean };
+export interface TimelineAttachment { name: string; size: number; type: string; key?: string }
+export interface TimelineDraft { id?: string; eventDate: string; title: string; description: string; url: string; linkedRecordIds: string[]; attachment?: TimelineAttachment; attachmentFile?: File | null; removeAttachment?: boolean }
+export interface TimelineEvent {
+  id: string;
+  eventType: "automatic" | "manual";
+  eventDate: string;
+  title: string;
+  description: string;
+  url?: string;
+  eventKey?: string;
+  recordId?: string;
+  linkedRecordIds: string[];
+  attachment?: TimelineAttachment;
+  createdAt: string;
+  updatedAt: string;
+  pending?: boolean;
+}
+export interface ActiveScheduleAlert { id: string; item: VaultItem; kind: "reminder" | "alarm"; ringtoneId: string }
+export interface AlarmRingtone { id: string; name: string; type: string; size: number }
 export type AccountRole = "user" | "admin";
+export type SharePermission = "view" | "comment" | "edit";
+export type SharedDirection = "incoming" | "outgoing";
+
+export interface ShareUser {
+  id: string;
+  userId: string;
+  email: string;
+  fullName: string;
+}
+
+export interface SharedVaultEntry {
+  shareId: string;
+  permission: SharePermission;
+  createdAt: string;
+  item: VaultItem;
+  owner: ShareUser;
+  recipient: ShareUser;
+  direction: SharedDirection;
+}
+
+export interface RecordShareEntry {
+  shareId: string;
+  resourceType: "contact" | "business_card";
+  resourceId: string;
+  record: PersoraContact | DigitalBusinessCard;
+  owner: ShareUser;
+  recipient: ShareUser;
+  direction: SharedDirection;
+  createdAt: string;
+}
+
+export interface SharedItemAccess {
+  shareId: string;
+  permission: SharePermission;
+  direction: SharedDirection;
+  owner: ShareUser;
+  recipient: ShareUser;
+}
+
+export interface ShareNotification {
+  id: string;
+  kind: "shared" | "permission_changed" | "unshared" | "reminder" | "alarm";
+  itemTitle: string;
+  actorName: string;
+  message: string;
+  createdAt: string;
+  readAt?: string;
+}
+
+export interface ShareComment {
+  id: string;
+  shareId: string;
+  authorId: string;
+  authorName: string;
+  body: string;
+  createdAt: string;
+}
 
 export interface VaultFile {
   key?: string;
@@ -31,6 +119,71 @@ export interface VaultFilePreview {
   message?: string;
 }
 
+export const CONTACT_CATEGORIES = ["Family", "Friends", "Work", "Clients", "Suppliers", "Students", "Other"] as const;
+export type ContactCategory = typeof CONTACT_CATEGORIES[number];
+export interface ContactPhone { label: string; number: string }
+export interface TransferProgress { loaded: number; total: number; percent: number; remainingSeconds: number | null }
+export interface ContactImportProgress { completed: number; total: number; percent: number; remainingSeconds: number | null; currentName: string }
+export type BusinessSocialPlatform = "Facebook" | "Instagram" | "LinkedIn" | "X" | "YouTube" | "TikTok" | "WhatsApp" | "Telegram" | "GitHub" | "Pinterest";
+export type BusinessCardStyle = "garden" | "minimal" | "midnight" | "terracotta";
+export interface BusinessSocialLink { platform: BusinessSocialPlatform; url: string }
+export interface BusinessCustomLink { label: string; url: string }
+export interface DigitalBusinessCard {
+  id: string;
+  cardId?: string;
+  isPublic: boolean;
+  style: BusinessCardStyle;
+  fullName: string;
+  profilePhotoKey?: string;
+  profilePhotoDataUrl?: string;
+  businessLogoKey?: string;
+  businessLogoDataUrl?: string;
+  jobTitle: string;
+  company: string;
+  phoneNumbers: ContactPhone[];
+  email: string;
+  websites: string[];
+  socialLinks: BusinessSocialLink[];
+  address: string;
+  bio: string;
+  customLinks: BusinessCustomLink[];
+  createdAt: string;
+  updatedAt: string;
+}
+export type BusinessCardDraft = Omit<DigitalBusinessCard, "id" | "createdAt" | "updatedAt"> & {
+  id?: string;
+  profilePhotoFile?: File | null;
+  businessLogoFile?: File | null;
+  clearProfilePhoto?: boolean;
+  clearBusinessLogo?: boolean;
+};
+export interface PublicDigitalBusinessCard extends Omit<DigitalBusinessCard, "id" | "profilePhotoKey" | "businessLogoKey" | "createdAt" | "updatedAt"> {
+  profilePhotoUrl?: string;
+  businessLogoUrl?: string;
+}
+export interface PersoraContact {
+  id: string;
+  name: string;
+  phoneNumbers: ContactPhone[];
+  email: string;
+  company: string;
+  jobTitle: string;
+  address: string;
+  birthday: string;
+  notes: string;
+  category: ContactCategory;
+  photoKey?: string;
+  photoDataUrl?: string;
+  favorite: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+export type ContactDraft = Omit<PersoraContact, "id" | "createdAt" | "updatedAt"> & {
+  id?: string;
+  photoFile?: File | null;
+  clearPhoto?: boolean;
+};
+
 export interface VaultItem {
   id: string;
   section: SectionId;
@@ -41,6 +194,9 @@ export interface VaultItem {
   updatedAt: string;
   file?: VaultFile;
   favorite?: boolean;
+  pinned?: boolean;
+  /** Client-only access context for a shared record; never determines server authorization. */
+  sharedAccess?: SharedItemAccess;
 }
 
 export interface FieldDefinition {
@@ -86,6 +242,8 @@ export interface AdminProfile {
   account_status: "active" | "suspended";
   created_at: string;
   storage_bytes?: number;
+  storage_file_bytes?: number;
+  storage_database_bytes?: number;
 }
 
 export interface AdminMetrics { totalAccounts: number; activeAccounts: number; vaultEntries: number; pendingPayments: number }
@@ -146,7 +304,7 @@ export interface PaymentRecord {
   reviewed_by?: string | null;
   admin_note?: string | null;
 }
-export interface StorageUsage { bytesUsed: number; objectCount: number; storageLimitBytes: number; storageLimitGb: number; planName: string }
+export interface StorageUsage { bytesUsed: number; fileBytes: number; databaseBytes: number; databaseRecordCount: number; objectCount: number; storageLimitBytes: number; storageLimitGb: number; planName: string }
 export interface AdminConsoleSnapshot {
   metrics: AdminMetrics;
   profiles: AdminProfile[];
@@ -158,7 +316,7 @@ export interface AdminConsoleSnapshot {
   paymentMethods: PaymentMethod[];
   siteContent: SiteContent;
   storageSettings: StorageSettings;
-  storage: { status: "connected" | "unavailable"; bytesUsed: number; objectCount: number; usersWithFiles: number; byUser: Record<string, { bytes: number; objects: number }> };
+  storage: { status: "connected" | "unavailable"; databaseStatus: "connected" | "unavailable"; bytesUsed: number; databaseBytesUsed: number; databaseRecordCount: number; totalBytesUsed: number; objectCount: number; usersWithFiles: number; byUser: Record<string, { bytes: number; objects: number; databaseBytes: number; databaseRecords: number; totalBytes: number }> };
   system: { database: "connected" | "unavailable"; storage: "connected" | "unavailable"; supabaseUrlConfigured: boolean; secretKeyConfigured: boolean };
 }
 export interface BillingSnapshot {

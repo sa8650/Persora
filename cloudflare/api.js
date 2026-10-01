@@ -1,10 +1,23 @@
+import { handleTimeline, loadTimelineExport, readTimelineExportAttachment } from "./timeline.js";
+
 const DEFAULT_SETTINGS = {
   billing: { currency: "BDT", manualInstructions: "Follow the account details shown for your selected payment method.", billingEnabled: false },
   storage: { defaultFreeGb: 5, maxUploadMb: 25 },
   paymentMethods: [],
   siteContent: {},
+  alarmRingtones: [],
 };
 const MAX_CONFIGURABLE_UPLOAD_MB = 150;
+const MAX_ALARM_RINGTONE_BYTES = 10 * 1024 * 1024;
+const MAX_ALARM_RINGTONE_COUNT = 50;
+const ALARM_RINGTONE_FORMATS = {
+  mp3: { contentType: "audio/mpeg", accepted: ["audio/mpeg", "audio/mp3", "application/octet-stream"] },
+  wav: { contentType: "audio/wav", accepted: ["audio/wav", "audio/x-wav", "application/octet-stream"] },
+  ogg: { contentType: "audio/ogg", accepted: ["audio/ogg", "application/ogg", "application/octet-stream"] },
+  m4a: { contentType: "audio/mp4", accepted: ["audio/mp4", "audio/x-m4a", "audio/m4a", "application/octet-stream"] },
+  aac: { contentType: "audio/aac", accepted: ["audio/aac", "audio/x-aac", "application/octet-stream"] },
+  webm: { contentType: "audio/webm", accepted: ["audio/webm", "application/octet-stream"] },
+};
 class HttpError extends Error { constructor(message, status = 400) { super(message); this.status = status; } }
 
 export default {
@@ -67,6 +80,90 @@ export default {
       if (url.pathname === "/document-types" && request.method === "GET") {
         const types = await restRows("document_types?select=id,name,active,sort_order&active=eq.true&order=sort_order.asc,name.asc", env);
         return json(types, 200, origin);
+      }
+      const publicCardMatch = url.pathname.match(/^\/public-cards\/([A-Fa-f0-9]{32})(?:\/(photo|report))?$/);
+      if (publicCardMatch && url.pathname === `/public-cards/${publicCardMatch[1]}` && request.method === "GET") {
+        const row = await getPublicBusinessCard(publicCardMatch[1], env);
+        if (!row) return json({ error: "This public business card is unavailable." }, 404, origin);
+        return json(publicBusinessCardPayload(row, publicCardMatch[1]), 200, origin);
+      }
+      if (publicCardMatch && publicCardMatch[2] === "photo" && request.method === "GET") {
+        const kind = url.searchParams.get("kind") === "logo" ? "logo" : "profile";
+        const row = await getPublicBusinessCard(publicCardMatch[1], env);
+        const key = kind === "logo" ? row?.business_logo_key : row?.profile_photo_key;
+        if (!row || !key || !ownsKey(row.user_id, key)) return json({ error: "This public card image is unavailable." }, 404, origin);
+        const object = await env.VAULT_FILES.get(key);
+        if (!object || object.customMetadata?.ownerId !== row.user_id) return json({ error: "This public card image is unavailable." }, 404, origin);
+        return new Response(object.body, { status: 200, headers: { "Content-Type": safeContentType(object.httpMetadata?.contentType || "image/jpeg"), "Cache-Control": "no-store, max-age=0", ...corsHeaders(origin) } });
+      }
+      if (publicCardMatch && publicCardMatch[2] === "report" && request.method === "POST") {
+        const body = await readBody(request);
+        return json(await reportPublicBusinessCard(publicCardMatch[1], body, request, env), 200, origin);
+      }
+      if (url.pathname === "/business-cards" && request.method === "GET") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required." }, 401, origin);
+        const rows = await restRows(`business_cards?user_id=eq.${encodeURIComponent(identity.id)}&select=*&order=updated_at.desc`, env);
+        return json(rows, 200, origin);
+      }
+      if (url.pathname === "/business-cards" && request.method === "POST") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required." }, 401, origin);
+        return json(await saveBusinessCard(identity, await readBody(request), env), 200, origin);
+      }
+      if (url.pathname === "/business-cards" && request.method === "DELETE") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required." }, 401, origin);
+        const id = url.searchParams.get("id") || "";
+        if (!isUuid(id)) return json({ error: "Choose a valid business card." }, 400, origin);
+        const rows = await restRows(`business_cards?id=eq.${encodeURIComponent(id)}&user_id=eq.${encodeURIComponent(identity.id)}&select=profile_photo_key,business_logo_key`, env);
+        await supabaseAdminFetch(`/rest/v1/record_shares?resource_type=eq.business_card&resource_id=eq.${encodeURIComponent(id)}&owner_id=eq.${encodeURIComponent(identity.id)}`, env, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+        const result = await supabaseAdminFetch(`/rest/v1/business_cards?id=eq.${encodeURIComponent(id)}&user_id=eq.${encodeURIComponent(identity.id)}`, env, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+        if (!result.ok) return upstreamError(result, origin);
+        for (const key of [rows[0]?.profile_photo_key, rows[0]?.business_logo_key]) await deleteBusinessCardPhotoIfUnreferenced(identity.id, key, env);
+        return json({ ok: true }, 200, origin);
+      }
+      if (url.pathname === "/contacts" && request.method === "GET") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required." }, 401, origin);
+        const rows = await restRows(`contacts?user_id=eq.${encodeURIComponent(identity.id)}&select=*&order=full_name.asc`, env);
+        return json(rows, 200, origin);
+      }
+      if (url.pathname === "/contacts/photo" && request.method === "GET") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required." }, 401, origin);
+        const id = url.searchParams.get("id") || "";
+        if (!isUuid(id)) return json({ error: "Choose a valid contact." }, 400, origin);
+        const rows = await restRows(`contacts?id=eq.${encodeURIComponent(id)}&user_id=eq.${encodeURIComponent(identity.id)}&select=photo_key&limit=1`, env);
+        const key = rows[0]?.photo_key || "";
+        if (!key || !ownsKey(identity.id, key)) return json({ error: "This contact has no profile photo." }, 404, origin);
+        const object = await env.VAULT_FILES.get(key);
+        if (!object || object.customMetadata?.ownerId !== identity.id) return json({ error: "This contact photo is unavailable." }, 404, origin);
+        return new Response(object.body, { status: 200, headers: { "Content-Type": safeContentType(object.httpMetadata?.contentType || "image/jpeg"), "Cache-Control": "private, no-store", ...corsHeaders(origin) } });
+      }
+      if (url.pathname === "/contacts" && request.method === "POST") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required." }, 401, origin);
+        const body = await readBody(request);
+        return json(await saveContact(identity, body, env), 200, origin);
+      }
+      if (url.pathname === "/contacts/merge" && request.method === "POST") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required." }, 401, origin);
+        const body = await readBody(request);
+        return json(await mergeContacts(identity, body, env), 200, origin);
+      }
+      if (url.pathname === "/contacts" && request.method === "DELETE") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required." }, 401, origin);
+        const id = url.searchParams.get("id") || "";
+        if (!isUuid(id)) return json({ error: "Choose a valid contact." }, 400, origin);
+        const rows = await restRows(`contacts?id=eq.${encodeURIComponent(id)}&user_id=eq.${encodeURIComponent(identity.id)}&select=photo_key`, env);
+        await supabaseAdminFetch(`/rest/v1/record_shares?resource_type=eq.contact&resource_id=eq.${encodeURIComponent(id)}&owner_id=eq.${encodeURIComponent(identity.id)}`, env, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+        const response = await supabaseAdminFetch(`/rest/v1/contacts?id=eq.${encodeURIComponent(id)}&user_id=eq.${encodeURIComponent(identity.id)}`, env, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+        if (!response.ok) return upstreamError(response, origin);
+        await deleteContactPhotoIfUnreferenced(identity.id, rows[0]?.photo_key, env);
+        return json({ ok: true }, 200, origin);
       }
       if (url.pathname === "/vault/items" && request.method === "GET") {
         const identity = await authorize(request, env);
@@ -145,6 +242,178 @@ export default {
         return json(payment, 201, origin);
       }
 
+      if (url.pathname === "/record-shares" && request.method === "GET") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required." }, 401, origin);
+        const direction = url.searchParams.get("direction") === "outgoing" ? "outgoing" : "incoming";
+        return json(await listRecordShares(identity, direction, env), 200, origin);
+      }
+      if (url.pathname === "/record-shares" && request.method === "POST") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required." }, 401, origin);
+        return json(await createRecordShare(identity, await readBody(request), env), 201, origin);
+      }
+      if (url.pathname === "/record-shares" && request.method === "DELETE") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required." }, 401, origin);
+        return json(await revokeRecordShare(identity, await readBody(request), env), 200, origin);
+      }
+      if (url.pathname === "/shares" && request.method === "GET") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required." }, 401, origin);
+        const direction = url.searchParams.get("direction") === "outgoing" ? "outgoing" : "incoming";
+        return json(await listShares(identity, direction, env), 200, origin);
+      }
+      if (url.pathname === "/shares" && request.method === "POST") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required." }, 401, origin);
+        const body = await readBody(request);
+        return json(await createShare(identity, body, env), 201, origin);
+      }
+      if (url.pathname === "/shares" && request.method === "PATCH") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required." }, 401, origin);
+        const body = await readBody(request);
+        return json(await updateSharePermission(identity, body, env), 200, origin);
+      }
+      if (url.pathname === "/shares" && request.method === "DELETE") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required." }, 401, origin);
+        const body = await readBody(request);
+        return json(await revokeShare(identity, body.shareId, env), 200, origin);
+      }
+      if (url.pathname === "/shares/item" && request.method === "POST") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required." }, 401, origin);
+        const body = await readBody(request);
+        return json(await saveSharedVaultItem(identity, body, env), 200, origin);
+      }
+      if (url.pathname === "/shares/upload" && request.method === "DELETE") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required." }, 401, origin);
+        const key = url.searchParams.get("key") || "";
+        const object = await env.VAULT_FILES.get(key);
+        const ownerId = object?.customMetadata?.ownerId || "";
+        if (!object || !isUuid(ownerId) || !ownsKey(ownerId, key) || object.customMetadata?.sharedUploaderId !== identity.id) return json({ error: "That shared upload isn't available." }, 404, origin);
+        const references = await restRows(`vault_items?user_id=eq.${encodeURIComponent(ownerId)}&file_key=eq.${encodeURIComponent(key)}&select=id&limit=1`, env);
+        if (references.length) return json({ error: "That file is already attached to a document." }, 409, origin);
+        await env.VAULT_FILES.delete(key);
+        return json({ ok: true }, 200, origin);
+      }
+      if (url.pathname === "/shares/upload" && request.method === "POST") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required to upload a shared file." }, 401, origin);
+        const share = await requireEditableShare(identity, url.searchParams.get("shareId") || "", env);
+        const settings = await loadSettings(env);
+        const maxFileBytes = Math.max(1, Math.min(MAX_CONFIGURABLE_UPLOAD_MB, Number(settings.storage.maxUploadMb) || 25)) * 1024 * 1024;
+        const form = await request.formData();
+        const file = form.get("file");
+        if (!(file instanceof File) || !file.size || file.size > maxFileBytes) throw new HttpError(`Files must be between 1 byte and ${Math.floor(maxFileBytes / 1024 / 1024)} MB.`, 413);
+        const usage = await userStorageUsage(share.owner_id, env.VAULT_FILES, env);
+        if (usage.bytesUsed + file.size > usage.storageLimitBytes) throw new HttpError(`This file exceeds the original owner's ${usage.storageLimitGb} GB ${usage.planName} storage limit.`, 413);
+        const safeName = sanitizeFileName(file.name);
+        const key = `${share.owner_id}/${crypto.randomUUID()}-${safeName}`;
+        await env.VAULT_FILES.put(key, file.stream(), { httpMetadata: { contentType: safeContentType(file.type) }, customMetadata: { ownerId: share.owner_id, originalName: safeName, createdAt: new Date().toISOString(), sharedUploaderId: identity.id } });
+        return json({ key, name: file.name, size: file.size, type: safeContentType(file.type) }, 201, origin);
+      }
+      if (url.pathname === "/shares/comments" && request.method === "GET") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required." }, 401, origin);
+        return json(await listShareComments(identity, url.searchParams.get("shareId") || "", env), 200, origin);
+      }
+      if (url.pathname === "/shares/comments" && request.method === "POST") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required." }, 401, origin);
+        const body = await readBody(request);
+        return json(await addShareComment(identity, body, env), 201, origin);
+      }
+      if (url.pathname === "/notifications" && request.method === "GET") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required." }, 401, origin);
+        const rows = await restRows(`share_notifications?recipient_id=eq.${encodeURIComponent(identity.id)}&select=id,kind,item_title,actor_name,message,created_at,read_at&order=created_at.desc&limit=50`, env);
+        return json(rows, 200, origin);
+      }
+      if (url.pathname === "/notifications" && request.method === "PATCH") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required." }, 401, origin);
+        const response = await supabaseAdminFetch(`/rest/v1/share_notifications?recipient_id=eq.${encodeURIComponent(identity.id)}&read_at=is.null`, env, { method: "PATCH", headers: { "Content-Type": "application/json", Prefer: "return=minimal" }, body: JSON.stringify({ read_at: new Date().toISOString() }) });
+        if (!response.ok) return upstreamError(response, origin);
+        return json({ ok: true }, 200, origin);
+      }
+      if (url.pathname === "/medical-records" && request.method === "GET") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required to access private medical records." }, 401, origin);
+        const owner = encodeURIComponent(identity.id);
+        const rows = await restRows(`medical_records?user_id=eq.${owner}&select=*&order=record_date.desc,updated_at.desc`, env);
+        if (!rows.length) return json([], 200, origin);
+        const ids = rows.map((row) => row.id).filter(isUuid);
+        const links = ids.length ? await restRows(`medical_record_links?owner_id=eq.${owner}&medical_record_id=in.(${ids.join(",")})&select=medical_record_id,record_type,record_id,link_kind&order=created_at.asc`, env) : [];
+        const byRecord = new Map();
+        for (const link of links) { const key = link.medical_record_id; byRecord.set(key, [...(byRecord.get(key) || []), link]); }
+        return json(rows.map((row) => ({ ...row, links: byRecord.get(row.id) || [] })), 200, origin);
+      }
+      if (url.pathname === "/medical-records" && request.method === "POST") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required to access private medical records." }, 401, origin);
+        return json(await saveMedicalRecord(identity, await readBody(request), env), 200, origin);
+      }
+      if (url.pathname === "/medical-records" && request.method === "DELETE") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required to access private medical records." }, 401, origin);
+        const id = url.searchParams.get("id") || "";
+        if (!isUuid(id)) return json({ error: "Choose a valid medical record." }, 400, origin);
+        await removeMedicalRecord(identity, id, env);
+        return json({ ok: true }, 200, origin);
+      }
+      if (url.pathname === "/medical-records/upload" && request.method === "POST") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required to upload a private medical file." }, 401, origin);
+        const settings = await loadSettings(env);
+        const maxFileBytes = Math.max(1, Math.min(MAX_CONFIGURABLE_UPLOAD_MB, Number(settings.storage.maxUploadMb) || 25)) * 1024 * 1024;
+        const contentLength = Number(request.headers.get("content-length") || 0);
+        if (contentLength > maxFileBytes + 1024 * 1024) return json({ error: `Files must be ${Math.floor(maxFileBytes / 1024 / 1024)} MB or smaller.` }, 413, origin);
+        const form = await request.formData(); const file = form.get("file");
+        if (!(file instanceof File)) return json({ error: "Choose a medical record file to upload." }, 400, origin);
+        if (!file.size || file.size > maxFileBytes) return json({ error: `Files must be between 1 byte and ${Math.floor(maxFileBytes / 1024 / 1024)} MB.` }, 413, origin);
+        if (!env.VAULT_FILES) throw new HttpError("Private file storage is not configured.", 503);
+        const usage = await userStorageUsage(identity.id, env.VAULT_FILES, env);
+        if (usage.bytesUsed + file.size > usage.storageLimitBytes) return json({ error: `This file exceeds your ${usage.storageLimitGb} GB ${usage.planName} storage limit.` }, 413, origin);
+        const safeName = sanitizeFileName(file.name); const key = `${identity.id}/${crypto.randomUUID()}-${safeName}`;
+        const contentType = safeContentType(file.type);
+        await env.VAULT_FILES.put(key, file.stream(), { httpMetadata: { contentType }, customMetadata: { ownerId: identity.id, originalName: safeName, createdAt: new Date().toISOString(), medicalRecordUpload: "true" } });
+        return json({ key, name: file.name, size: file.size, type: contentType }, 201, origin);
+      }
+      if (url.pathname === "/medical-records/upload" && request.method === "DELETE") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required to remove a private medical file." }, 401, origin);
+        const key = url.searchParams.get("key") || "";
+        if (!ownsKey(identity.id, key) || !env.VAULT_FILES) return json({ error: "That upload isn't available." }, 404, origin);
+        const object = await env.VAULT_FILES.get(key);
+        if (!object || object.customMetadata?.ownerId !== identity.id || object.customMetadata?.medicalRecordUpload !== "true") return json({ error: "That upload isn't available." }, 404, origin);
+        const references = await restRows(`medical_records?user_id=eq.${encodeURIComponent(identity.id)}&file_key=eq.${encodeURIComponent(key)}&select=id&limit=1`, env);
+        if (references.length) return json({ error: "This file is attached to a medical record and cannot be removed as an upload." }, 409, origin);
+        await env.VAULT_FILES.delete(key);
+        return json({ ok: true }, 200, origin);
+      }
+      if (url.pathname === "/medical-records/file" && request.method === "GET") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required to open a private medical file." }, 401, origin);
+        const id = url.searchParams.get("id") || "";
+        if (!isUuid(id) || !env.VAULT_FILES) return json({ error: "That medical file isn't available." }, 404, origin);
+        const rows = await restRows(`medical_records?id=eq.${encodeURIComponent(id)}&user_id=eq.${encodeURIComponent(identity.id)}&select=file_key,file_name,file_type&limit=1`, env);
+        const row = rows[0]; const key = row?.file_key || "";
+        if (!row || !ownsKey(identity.id, key)) return json({ error: "That medical file isn't available." }, 404, origin);
+        const object = await env.VAULT_FILES.get(key);
+        if (!object || object.customMetadata?.ownerId !== identity.id || object.customMetadata?.medicalRecordUpload !== "true") return json({ error: "That medical file isn't available." }, 404, origin);
+        const name = row.file_name || object.customMetadata?.originalName || "medical-record";
+        return new Response(object.body, { status: 200, headers: { "Content-Type": safeContentType(row.file_type || object.httpMetadata?.contentType || "application/octet-stream"), "Content-Length": String(object.size), "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(name)}`, "X-File-Name": encodeURIComponent(name), "Cache-Control": "private, no-store, max-age=0", ...corsHeaders(origin) } });
+      }
+      if (url.pathname === "/timeline" || url.pathname.startsWith("/timeline/")) {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required to access your private timeline." }, 401, origin);
+        const timelineSettings = url.pathname === "/timeline/attachment" && request.method === "POST" ? await loadSettings(env) : null;
+        return await handleTimeline(request, identity, env, origin, userStorageUsage, timelineSettings?.storage.maxUploadMb);
+      }
       if (url.pathname === "/upload" && request.method === "POST") {
         const identity = await authorize(request, env);
         if (!identity) return json({ error: "Sign in is required to upload a private file." }, 401, origin);
@@ -172,9 +441,18 @@ export default {
         const identity = await authorize(request, env);
         if (!identity) return json({ error: "Sign in is required to open a private file." }, 401, origin);
         const key = url.searchParams.get("key") || "";
-        if (!ownsKey(identity.id, key)) return json({ error: "That file isn't available in your vault." }, 404, origin);
         const object = await env.VAULT_FILES.get(key);
-        if (!object || object.customMetadata?.ownerId !== identity.id) return json({ error: "That file isn't available in your vault." }, 404, origin);
+        const ownerId = object?.customMetadata?.ownerId || "";
+        if (!object || !isUuid(ownerId) || !ownsKey(ownerId, key)) return json({ error: "That file isn't available in your vault." }, 404, origin);
+        if (ownerId !== identity.id) {
+          const ownerItems = await restRows(`vault_items?user_id=eq.${encodeURIComponent(ownerId)}&file_key=eq.${encodeURIComponent(key)}&select=id`, env);
+          let authorizedShare = false;
+          for (const row of ownerItems) {
+            const matching = await restRows(`vault_shares?item_id=eq.${encodeURIComponent(row.id)}&owner_id=eq.${encodeURIComponent(ownerId)}&recipient_id=eq.${encodeURIComponent(identity.id)}&select=id&limit=1`, env);
+            if (matching.length) { authorizedShare = true; break; }
+          }
+          if (!authorizedShare) return json({ error: "That file isn't available in your vault." }, 404, origin);
+        }
         const name = object.customMetadata?.originalName || key.split("/").pop() || "persora-file";
         const headers = new Headers({
           "Content-Type": object.httpMetadata?.contentType || "application/octet-stream",
@@ -195,6 +473,65 @@ export default {
         const object = await env.VAULT_FILES.get(key);
         if (!object || object.customMetadata?.ownerId !== identity.id) return json({ error: "That file isn't available in your vault." }, 404, origin);
         await env.VAULT_FILES.delete(key);
+        return json({ ok: true }, 200, origin);
+      }
+
+      if (url.pathname === "/alarm-ringtones" && request.method === "GET") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in to view available alarm sounds." }, 401, origin);
+        const settings = await loadSettings(env);
+        return json(settings.alarmRingtones.map(publicAlarmRingtone), 200, origin);
+      }
+      const ringtoneAudioMatch = url.pathname.match(/^\/alarm-ringtones\/([0-9a-f-]{36})\/audio$/i);
+      if (ringtoneAudioMatch && request.method === "GET") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in to play this alarm sound." }, 401, origin);
+        const settings = await loadSettings(env);
+        const ringtone = settings.alarmRingtones.find((entry) => entry.id === ringtoneAudioMatch[1]);
+        if (!ringtone) return json({ error: "This alarm sound is no longer available." }, 404, origin);
+        const object = await env.VAULT_FILES.get(ringtone.fileKey);
+        if (!object || object.customMetadata?.ringtoneId !== ringtone.id) return json({ error: "This alarm sound could not be loaded." }, 404, origin);
+        return new Response(object.body, { status: 200, headers: { "Content-Type": ringtone.type, "Content-Length": String(ringtone.size), "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", ...corsHeaders(origin) } });
+      }
+      if (url.pathname === "/admin/alarm-ringtones" && request.method === "POST") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required." }, 401, origin);
+        if (!(await isAdministrator(identity.id, env))) return json({ error: "Administrator access is required." }, 403, origin);
+        const contentLength = Number(request.headers.get("content-length") || 0);
+        if (contentLength > MAX_ALARM_RINGTONE_BYTES + 128 * 1024) return json({ error: "Ringtone files must be 10 MB or smaller." }, 413, origin);
+        const form = await request.formData();
+        const file = form.get("file");
+        if (!(file instanceof File) || !file.size) return json({ error: "Choose an audio file to upload." }, 400, origin);
+        if (file.size > MAX_ALARM_RINGTONE_BYTES) return json({ error: "Ringtone files must be 10 MB or smaller." }, 413, origin);
+        const extension = String(file.name || "").split(".").pop().toLowerCase();
+        const format = Object.prototype.hasOwnProperty.call(ALARM_RINGTONE_FORMATS, extension) ? ALARM_RINGTONE_FORMATS[extension] : null;
+        const providedType = String(file.type || "").toLowerCase();
+        if (!format || (providedType && !format.accepted.includes(providedType))) throw new HttpError("Upload an MP3, WAV, OGG, M4A, AAC, or WebM audio file.", 415);
+        const name = String(form.get("name") || "").normalize("NFKC").replace(/[\u0000-\u001f\u007f]/g, " ").trim();
+        if (name.length < 2 || name.length > 80) throw new HttpError("Ringtone name must be 2–80 characters.", 400);
+        const settings = await loadSettings(env);
+        if (settings.alarmRingtones.length >= MAX_ALARM_RINGTONE_COUNT) throw new HttpError(`You can upload up to ${MAX_ALARM_RINGTONE_COUNT} ringtones.`, 409);
+        const id = crypto.randomUUID();
+        const fileKey = `system/ringtones/${id}.${extension}`;
+        await env.VAULT_FILES.put(fileKey, file.stream(), { httpMetadata: { contentType: format.contentType }, customMetadata: { kind: "alarm-ringtone", ringtoneId: id, originalName: sanitizeFileName(file.name), uploadedBy: identity.id, createdAt: new Date().toISOString() } });
+        const ringtone = { id, name, type: format.contentType, size: file.size, fileKey };
+        try { await savePlatformSetting("alarm_ringtones", [...settings.alarmRingtones, ringtone], identity.id, env); }
+        catch (error) { try { await env.VAULT_FILES.delete(fileKey); } catch { /* Asset cleanup can be retried. */ } throw error; }
+        await logAdminEvent(identity, { id: identity.id, email: identity.email || "" }, "manage_alarm_ringtone", env, { action: "upload", ringtone_id: id, ringtone_name: name });
+        return json(publicAlarmRingtone(ringtone), 201, origin);
+      }
+      if (url.pathname === "/admin/alarm-ringtones" && request.method === "DELETE") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required." }, 401, origin);
+        if (!(await isAdministrator(identity.id, env))) return json({ error: "Administrator access is required." }, 403, origin);
+        const id = url.searchParams.get("id") || "";
+        if (!isUuid(id)) return json({ error: "Choose a valid ringtone." }, 400, origin);
+        const settings = await loadSettings(env);
+        const target = settings.alarmRingtones.find((entry) => entry.id === id);
+        if (!target) return json({ error: "This ringtone is already unavailable." }, 404, origin);
+        await savePlatformSetting("alarm_ringtones", settings.alarmRingtones.filter((entry) => entry.id !== id), identity.id, env);
+        await env.VAULT_FILES.delete(target.fileKey);
+        await logAdminEvent(identity, { id: identity.id, email: identity.email || "" }, "manage_alarm_ringtone", env, { action: "delete", ringtone_id: id, ringtone_name: target.name });
         return json({ ok: true }, 200, origin);
       }
 
@@ -287,6 +624,12 @@ export default {
         await logAdminEvent(identity, target, isSuspending ? "suspend_user" : "restore_user", env);
         return json({ ok: true, action }, 200, origin);
       }
+      if (url.pathname === "/account/export" && request.method === "GET") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required to export account data." }, 401, origin);
+        const exported = await createAccountExport(identity, env);
+        return new Response(exported.stream, { status: 200, headers: { "Content-Type": "application/x-tar", "Content-Disposition": `attachment; filename="${exported.filename}"`, "Cache-Control": "no-store", ...corsHeaders(origin) } });
+      }
       if (url.pathname === "/account" && request.method === "DELETE") {
         const identity = await authorize(request, env);
         if (!identity) return json({ error: "Sign in is required to delete your account." }, 401, origin);
@@ -367,7 +710,7 @@ function randomLoginId() {
 }
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
 const DUMMY_PASSWORD = "persora-login-timing-padding-never-use";
-const VALID_SECTIONS = new Set(["documents", "academics", "subscriptions", "family", "purchases", "accounts", "memberships", "study", "business-card", "urls"]);
+const VALID_SECTIONS = new Set(["documents", "academics", "subscriptions", "family", "purchases", "accounts", "memberships", "study", "business-card", "urls", "notes"]);
 function validPasswordLength(password) { return typeof password === "string" && password.length >= 12 && new TextEncoder().encode(password).length <= 72; }
 function rpcValue(value) {
   if (Array.isArray(value)) return value.length ? rpcValue(value[0]) : null;
@@ -432,6 +775,46 @@ async function restRows(path, env) {
   const response = await fetch(`${base}/rest/v1/${path}`, { headers: serviceHeaders(env) });
   if (!response.ok) throw new Error(`Database request failed (${response.status}).`);
   return response.json();
+}
+async function restRowsPaged(path, env, pageSize = 1000) {
+  const result = [];
+  for (let start = 0; ; start += pageSize) {
+    const response = await supabaseAdminFetch(`/rest/v1/${path}`, env, { headers: { Range: `${start}-${start + pageSize - 1}`, Prefer: "count=exact" } });
+    if (!response.ok) throw new Error(`Database request failed (${response.status}).`);
+    const page = await response.json();
+    if (!Array.isArray(page)) throw new Error("The database returned an invalid record list.");
+    result.push(...page);
+    if (page.length < pageSize) break;
+  }
+  return result;
+}
+async function readUserDatabaseUsage(userId, env) {
+  const owner = encodeURIComponent(userId);
+  const paths = [
+    `vault_items?user_id=eq.${owner}&select=*&order=id.asc`,
+    `contacts?user_id=eq.${owner}&select=*&order=id.asc`,
+    `business_cards?user_id=eq.${owner}&select=*&order=id.asc`,
+    `timeline_events?user_id=eq.${owner}&select=*&order=id.asc`,
+    `timeline_event_links?owner_id=eq.${owner}&select=*&order=event_id.asc`,
+    `medical_records?user_id=eq.${owner}&select=*&order=id.asc`,
+    `medical_record_links?owner_id=eq.${owner}&select=*&order=medical_record_id.asc`,
+  ];
+  const tables = await Promise.all(paths.map((path) => restRowsPaged(path, env)));
+  const encoder = new TextEncoder();
+  let bytes = 0; let records = 0;
+  for (const rows of tables) for (const row of rows) { bytes += encoder.encode(JSON.stringify(row)).byteLength; records++; }
+  return { bytes, records };
+}
+async function summarizeDatabase(env) {
+  const paths = ["vault_items?select=*&order=id.asc", "contacts?select=*&order=id.asc", "business_cards?select=*&order=id.asc", "timeline_events?select=*&order=id.asc", "timeline_event_links?select=*&order=event_id.asc", "medical_records?select=*&order=id.asc", "medical_record_links?select=*&order=medical_record_id.asc"];
+  const tables = await Promise.all(paths.map((path) => restRowsPaged(path, env)));
+  const byUser = {}; const encoder = new TextEncoder(); let bytesUsed = 0; let recordCount = 0;
+  for (const rows of tables) for (const row of rows) {
+    const bytes = encoder.encode(JSON.stringify(row)).byteLength; bytesUsed += bytes; recordCount++;
+    const ownerId = isUuid(row.user_id) ? row.user_id : isUuid(row.owner_id) ? row.owner_id : "";
+    if (ownerId) { byUser[ownerId] ||= { bytes: 0, records: 0 }; byUser[ownerId].bytes += bytes; byUser[ownerId].records++; }
+  }
+  return { bytesUsed, recordCount, byUser };
 }
 async function callRpc(name, params, env) {
   const response = await supabaseAdminFetch(`/rest/v1/rpc/${name}`, env, {
@@ -578,6 +961,636 @@ async function changePassword(identity, body, env) {
   return { ok: true };
 }
 
+const SHARE_PERMISSIONS = new Set(["view", "comment", "edit"]);
+function shareProfile(profile) {
+  return {
+    id: String(profile.id),
+    userId: String(profile.login_id || ""),
+    email: String(profile.email || ""),
+    fullName: String(profile.full_name || "Persora member"),
+  };
+}
+async function profilesByIds(ids, env) {
+  const unique = [...new Set(ids.filter(isUuid))];
+  if (!unique.length) return [];
+  return restRows(`profiles?id=in.(${unique.join(",")})&select=id,login_id,email,full_name`, env);
+}
+async function listRecordShares(identity, direction, env) {
+  const field = direction === "outgoing" ? "owner_id" : "recipient_id";
+  const rows = await restRows(`record_shares?${field}=eq.${encodeURIComponent(identity.id)}&select=id,resource_type,resource_id,owner_id,recipient_id,created_at&order=created_at.desc&limit=300`, env);
+  if (!rows.length) return [];
+  const contactIds = [...new Set(rows.filter((row) => row.resource_type === "contact").map((row) => row.resource_id).filter(isUuid))];
+  const cardIds = [...new Set(rows.filter((row) => row.resource_type === "business_card").map((row) => row.resource_id).filter(isUuid))];
+  const userIds = [...new Set(rows.flatMap((row) => [row.owner_id, row.recipient_id]).filter(isUuid))];
+  const [contactRows, cardRows, profileRows] = await Promise.all([
+    contactIds.length ? restRows(`contacts?id=in.(${contactIds.join(",")})&select=*`, env) : Promise.resolve([]),
+    cardIds.length ? restRows(`business_cards?id=in.(${cardIds.join(",")})&select=*`, env) : Promise.resolve([]),
+    profilesByIds(userIds, env),
+  ]);
+  const contacts = new Map(contactRows.map((row) => [row.id, row]));
+  const cards = new Map(cardRows.map((row) => [row.id, row]));
+  const profiles = new Map(profileRows.map((row) => [row.id, shareProfile(row)]));
+  return rows.flatMap((share) => {
+    const owner = profiles.get(share.owner_id), recipient = profiles.get(share.recipient_id);
+    if (!owner || !recipient) return [];
+    const source = share.resource_type === "contact" ? contacts.get(share.resource_id) : cards.get(share.resource_id);
+    if (!source || source.user_id !== share.owner_id) return [];
+    const record = share.resource_type === "contact" ? {
+      id: source.id, full_name: source.full_name, phone_numbers: source.phone_numbers, email: source.email,
+      company: source.company, job_title: source.job_title, address: source.address, birthday: source.birthday,
+      notes: source.notes, category: source.category, favorite: source.favorite,
+      created_at: source.created_at, updated_at: source.updated_at,
+    } : {
+      id: source.id, full_name: source.full_name, job_title: source.job_title, company: source.company,
+      phone_numbers: source.phone_numbers, email: source.email, websites: source.websites, social_links: source.social_links,
+      address: source.address, bio: source.bio, custom_links: source.custom_links, card_style: source.card_style,
+      created_at: source.created_at, updated_at: source.updated_at,
+    };
+    return [{ shareId: share.id, resourceType: share.resource_type, resourceId: share.resource_id, record, owner, recipient, direction, createdAt: share.created_at }];
+  });
+}
+async function resolveShareRecipient(rawRecipient, ownerId, env) {
+  const raw = typeof rawRecipient === "string" ? rawRecipient.trim() : "";
+  let recipientRows = [];
+  if (/^[0-9]{7}$/.test(raw)) {
+    recipientRows = await restRows(`profiles?login_id=eq.${encodeURIComponent(raw)}&select=id,login_id,email,full_name,account_status`, env);
+  } else {
+    const email = raw.toLowerCase();
+    if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError("Enter a registered email address or seven-digit Persora ID.");
+    recipientRows = await restRows(`profiles?email=eq.${encodeURIComponent(email)}&select=id,login_id,email,full_name,account_status`, env);
+  }
+  const recipient = recipientRows[0];
+  if (!recipient || recipient.account_status !== "active") throw new HttpError("No active Persora account matches that email or ID.", 404);
+  if (recipient.id === ownerId) throw new HttpError("You already own this record.");
+  return recipient;
+}
+async function createRecordShare(identity, body, env) {
+  const resourceType = body.resourceType === "business_card" ? "business_card" : body.resourceType === "contact" ? "contact" : "";
+  const resourceId = typeof body.resourceId === "string" ? body.resourceId : "";
+  if (!resourceType || !isUuid(resourceId)) throw new HttpError("Choose a valid contact or business card to share.");
+  const table = resourceType === "contact" ? "contacts" : "business_cards";
+  const titleField = resourceType === "contact" ? "full_name" : "full_name";
+  const recordRows = await restRows(`${table}?id=eq.${encodeURIComponent(resourceId)}&user_id=eq.${encodeURIComponent(identity.id)}&select=id,${titleField}`, env);
+  if (!recordRows[0]) throw new HttpError("That record isn't available in your account.", 404);
+  const recipient = await resolveShareRecipient(body.recipient, identity.id, env);
+  const duplicates = await restRows(`record_shares?resource_type=eq.${resourceType}&resource_id=eq.${encodeURIComponent(resourceId)}&recipient_id=eq.${encodeURIComponent(recipient.id)}&select=id&limit=1`, env);
+  if (duplicates.length) throw new HttpError("This record is already shared with that account. Manage it in Shared documents.", 409);
+  const response = await supabaseAdminFetch("/rest/v1/record_shares", env, { method: "POST", headers: { "Content-Type": "application/json", Prefer: "return=representation" }, body: JSON.stringify({ resource_type: resourceType, resource_id: resourceId, owner_id: identity.id, recipient_id: recipient.id }) });
+  if (!response.ok) throw new HttpError("The record share could not be saved.", response.status >= 400 ? response.status : 502);
+  const result = await response.json(); const share = Array.isArray(result) ? result[0] : result;
+  const title = recordRows[0].full_name || (resourceType === "contact" ? "a contact" : "a business card");
+  await writeShareNotification(recipient.id, identity.id, identity.full_name, title, "shared", `${identity.full_name} shared ${resourceType === "contact" ? "a contact" : "a business card"} with you.`, env);
+  return { shareId: share.id, resourceType, resourceId, recipient: shareProfile(recipient) };
+}
+async function revokeRecordShare(identity, body, env) {
+  const shareId = typeof body.shareId === "string" ? body.shareId : "";
+  if (!isUuid(shareId)) throw new HttpError("Choose a valid share.");
+  const rows = await restRows(`record_shares?id=eq.${encodeURIComponent(shareId)}&owner_id=eq.${encodeURIComponent(identity.id)}&select=*`, env);
+  const share = rows[0];
+  if (!share) throw new HttpError("That record share is no longer available.", 404);
+  const response = await supabaseAdminFetch(`/rest/v1/record_shares?id=eq.${encodeURIComponent(share.id)}&owner_id=eq.${encodeURIComponent(identity.id)}`, env, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+  if (!response.ok) throw new HttpError("The record share could not be removed.", response.status >= 400 ? response.status : 502);
+  const recipients = await profilesByIds([share.recipient_id], env);
+  if (recipients[0]) {
+    const label = share.resource_type === "contact" ? "contact" : "business card";
+    await writeShareNotification(share.recipient_id, identity.id, identity.full_name, `a shared ${label}`, "unshared", `${identity.full_name} stopped sharing a ${label} with you.`, env);
+  }
+  return { ok: true };
+}
+async function listShares(identity, direction, env) {
+  const field = direction === "outgoing" ? "owner_id" : "recipient_id";
+  const rows = await restRows(`vault_shares?${field}=eq.${encodeURIComponent(identity.id)}&select=id,item_id,owner_id,recipient_id,permission,created_at&order=created_at.desc`, env);
+  if (!rows.length) return [];
+  const itemIds = [...new Set(rows.map((row) => row.item_id).filter(isUuid))];
+  const userIds = [...new Set(rows.flatMap((row) => [row.owner_id, row.recipient_id]).filter(isUuid))];
+  const [itemRows, profileRows] = await Promise.all([
+    restRows(`vault_items?id=in.(${itemIds.join(",")})&select=*`, env),
+    profilesByIds(userIds, env),
+  ]);
+  const items = new Map(itemRows.map((row) => [row.id, row]));
+  const profiles = new Map(profileRows.map((row) => [row.id, shareProfile(row)]));
+  return rows.flatMap((row) => {
+    const item = items.get(row.item_id), owner = profiles.get(row.owner_id), recipient = profiles.get(row.recipient_id);
+    if (!item || item.user_id !== row.owner_id || !owner || !recipient || !SHARE_PERMISSIONS.has(row.permission)) return [];
+    return [{ shareId: row.id, item, owner, recipient, permission: row.permission, createdAt: row.created_at, direction }];
+  });
+}
+async function createShare(identity, body, env) {
+  const itemId = typeof body.itemId === "string" ? body.itemId : "";
+  const rawRecipient = typeof body.recipient === "string" ? body.recipient.trim() : "";
+  const permission = typeof body.permission === "string" ? body.permission : "view";
+  if (!isUuid(itemId)) throw new HttpError("Choose a valid document to share.");
+  if (!SHARE_PERMISSIONS.has(permission)) throw new HttpError("Choose View, Comment, or Edit access.");
+  const itemRows = await restRows(`vault_items?id=eq.${encodeURIComponent(itemId)}&user_id=eq.${encodeURIComponent(identity.id)}&select=id,title`, env);
+  if (!itemRows[0]) throw new HttpError("That document is not available in your vault.", 404);
+  let recipientRows = [];
+  if (/^[0-9]{7}$/.test(rawRecipient)) {
+    recipientRows = await restRows(`profiles?login_id=eq.${encodeURIComponent(rawRecipient)}&select=id,login_id,email,full_name,account_status`, env);
+  } else {
+    const email = rawRecipient.toLowerCase();
+    if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError("Enter a registered email address or seven-digit Persora ID.");
+    recipientRows = await restRows(`profiles?email=eq.${encodeURIComponent(email)}&select=id,login_id,email,full_name,account_status`, env);
+  }
+  const recipient = recipientRows[0];
+  if (!recipient || recipient.account_status !== "active") throw new HttpError("No active Persora account matches that email or ID.", 404);
+  if (recipient.id === identity.id) throw new HttpError("You already own this document.");
+  const existing = await restRows(`vault_shares?item_id=eq.${encodeURIComponent(itemId)}&recipient_id=eq.${encodeURIComponent(recipient.id)}&select=id`, env);
+  if (existing.length) throw new HttpError("This document is already shared with that account. Update its access in Shared by me.", 409);
+  const response = await supabaseAdminFetch("/rest/v1/vault_shares", env, {
+    method: "POST", headers: { "Content-Type": "application/json", Prefer: "return=representation" },
+    body: JSON.stringify({ item_id: itemId, owner_id: identity.id, recipient_id: recipient.id, permission }),
+  });
+  if (!response.ok) {
+    if (response.status === 409) throw new HttpError("This document is already shared with that account.", 409);
+    throw new HttpError("The database rejected that sharing change.", response.status >= 400 ? response.status : 502);
+  }
+  const result = await response.json();
+  const share = Array.isArray(result) ? result[0] : result;
+  await writeShareNotification(recipient.id, identity.id, identity.full_name, itemRows[0].title, "shared", `${identity.full_name} shared “${itemRows[0].title}” with you.`, env);
+  return { shareId: share.id, itemId, recipient: shareProfile(recipient), permission: share.permission };
+}
+async function loadShareForOwner(identity, shareId, env) {
+  if (!isUuid(shareId)) throw new HttpError("Choose a valid share.");
+  const rows = await restRows(`vault_shares?id=eq.${encodeURIComponent(shareId)}&owner_id=eq.${encodeURIComponent(identity.id)}&select=*`, env);
+  if (!rows[0]) throw new HttpError("That share is no longer available.", 404);
+  return rows[0];
+}
+async function updateSharePermission(identity, body, env) {
+  const shareId = typeof body.shareId === "string" ? body.shareId : "";
+  const permission = typeof body.permission === "string" ? body.permission : "";
+  if (!SHARE_PERMISSIONS.has(permission)) throw new HttpError("Choose View, Comment, or Edit access.");
+  const share = await loadShareForOwner(identity, shareId, env);
+  if (share.permission === permission) return { ok: true };
+  const [itemRows, recipientRows] = await Promise.all([
+    restRows(`vault_items?id=eq.${encodeURIComponent(share.item_id)}&user_id=eq.${encodeURIComponent(identity.id)}&select=title`, env),
+    restRows(`profiles?id=eq.${encodeURIComponent(share.recipient_id)}&select=id`, env),
+  ]);
+  const response = await supabaseAdminFetch(`/rest/v1/vault_shares?id=eq.${encodeURIComponent(share.id)}&owner_id=eq.${encodeURIComponent(identity.id)}`, env, {
+    method: "PATCH", headers: { "Content-Type": "application/json", Prefer: "return=minimal" }, body: JSON.stringify({ permission, updated_at: new Date().toISOString() }),
+  });
+  if (!response.ok) throw new HttpError("The database rejected that sharing change.", response.status >= 400 ? response.status : 502);
+  const title = itemRows[0]?.title || "a shared document";
+  if (recipientRows[0]) await writeShareNotification(share.recipient_id, identity.id, identity.full_name, title, "permission_changed", `${identity.full_name} changed your access to “${title}” to ${permissionLabel(permission)}.`, env);
+  return { ok: true };
+}
+async function revokeShare(identity, shareIdValue, env) {
+  const share = await loadShareForOwner(identity, typeof shareIdValue === "string" ? shareIdValue : "", env);
+  const [itemRows, recipientRows] = await Promise.all([
+    restRows(`vault_items?id=eq.${encodeURIComponent(share.item_id)}&user_id=eq.${encodeURIComponent(identity.id)}&select=title`, env),
+    restRows(`profiles?id=eq.${encodeURIComponent(share.recipient_id)}&select=id`, env),
+  ]);
+  const response = await supabaseAdminFetch(`/rest/v1/vault_shares?id=eq.${encodeURIComponent(share.id)}&owner_id=eq.${encodeURIComponent(identity.id)}`, env, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+  if (!response.ok) throw new HttpError("The database rejected that sharing change.", response.status >= 400 ? response.status : 502);
+  const title = itemRows[0]?.title || "a shared document";
+  if (recipientRows[0]) await writeShareNotification(share.recipient_id, identity.id, identity.full_name, title, "unshared", `${identity.full_name} stopped sharing “${title}” with you.`, env);
+  return { ok: true };
+}
+async function requireEditableShare(identity, shareId, env) {
+  if (!isUuid(shareId)) throw new HttpError("Choose a valid share.");
+  const shares = await restRows(`vault_shares?id=eq.${encodeURIComponent(shareId)}&recipient_id=eq.${encodeURIComponent(identity.id)}&select=*`, env);
+  const share = shares[0];
+  if (!share) throw new HttpError("You no longer have access to this shared document.", 404);
+  if (share.permission !== "edit") throw new HttpError("This share only allows viewing or commenting.", 403);
+  const items = await restRows(`vault_items?id=eq.${encodeURIComponent(share.item_id)}&user_id=eq.${encodeURIComponent(share.owner_id)}&select=*`, env);
+  if (!items[0]) throw new HttpError("The original document is no longer available.", 404);
+  return { ...share, item: items[0] };
+}
+async function saveSharedVaultItem(identity, body, env) {
+  const shareId = typeof body.shareId === "string" ? body.shareId : "";
+  const share = await requireEditableShare(identity, shareId, env);
+  const current = share.item;
+  const id = typeof body.id === "string" ? body.id : "";
+  const title = typeof body.title === "string" ? body.title.trim() : "";
+  const subtitle = typeof body.subtitle === "string" ? body.subtitle.trim() : "";
+  const section = typeof body.section === "string" ? body.section : "";
+  if (id !== current.id || section !== current.section) throw new HttpError("Shared document identity and type cannot be changed.", 403);
+  if (!title || title.length > 240 || subtitle.length > 240) throw new HttpError("Enter a title and keep it under 240 characters.");
+  const metadata = body.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata) ? body.metadata : {};
+  const metadataBytes = new TextEncoder().encode(JSON.stringify(metadata)).length;
+  const entries = Object.entries(metadata);
+  if (entries.length > 40 || metadataBytes > 20_000 || entries.some(([key, value]) => key.length > 80 || typeof value !== "string" || value.length > 5000)) throw new HttpError("Some item details are too long.");
+  const file = body.file && typeof body.file === "object" ? body.file : null;
+  const fileKey = typeof file?.key === "string" ? file.key : "";
+  const fileName = typeof file?.name === "string" ? file.name.trim() : "";
+  if (fileKey) {
+    if (!ownsKey(share.owner_id, fileKey) || !fileName) throw new HttpError("That file is not available in the original owner's vault.", 403);
+    const object = await env.VAULT_FILES.get(fileKey);
+    if (!object || object.customMetadata?.ownerId !== share.owner_id) throw new HttpError("That file is not available in the original owner's vault.", 404);
+    if (fileKey !== current.file_key && object.customMetadata?.sharedUploaderId !== identity.id) throw new HttpError("A shared editor can attach only files uploaded through this shared document.", 403);
+  }
+  const nextRow = {
+    title, subtitle: subtitle || null, metadata,
+    file_key: fileKey || null, file_name: fileKey ? fileName.slice(0, 240) : null,
+    file_size: fileKey && Number.isFinite(Number(file.size)) ? Math.max(0, Number(file.size)) : null,
+    file_type: fileKey ? safeContentType(file.type) : null,
+    updated_at: new Date().toISOString(),
+  };
+  const response = await supabaseAdminFetch(`/rest/v1/vault_items?id=eq.${encodeURIComponent(current.id)}&user_id=eq.${encodeURIComponent(share.owner_id)}`, env, {
+    method: "PATCH", headers: { "Content-Type": "application/json", Prefer: "return=representation" }, body: JSON.stringify(nextRow),
+  });
+  if (!response.ok) throw new HttpError("The database rejected that sharing change.", response.status >= 400 ? response.status : 502);
+  const updatedRows = await response.json();
+  const saved = Array.isArray(updatedRows) ? updatedRows[0] : updatedRows;
+  if (!saved) throw new HttpError("The original document could not be found.", 404);
+  const oldKey = current.file_key || "";
+  if (oldKey && oldKey !== fileKey && ownsKey(share.owner_id, oldKey)) {
+    try { await env.VAULT_FILES.delete(oldKey); } catch (error) { console.error("Persora shared attachment cleanup pending", safeError(error)); }
+  }
+  return saved;
+}
+async function listShareComments(identity, shareId, env) {
+  if (!isUuid(shareId)) throw new HttpError("Choose a valid shared document.");
+  const shares = await restRows(`vault_shares?id=eq.${encodeURIComponent(shareId)}&select=id,owner_id,recipient_id`, env);
+  const share = shares[0];
+  if (!share || (share.owner_id !== identity.id && share.recipient_id !== identity.id)) throw new HttpError("You no longer have access to these comments.", 404);
+  const rows = await restRows(`vault_share_comments?share_id=eq.${encodeURIComponent(share.id)}&select=id,share_id,author_id,author_name,body,created_at&order=created_at.asc&limit=200`, env);
+  return rows.map((row) => ({ id: row.id, shareId: row.share_id, authorId: row.author_id, authorName: row.author_name, body: row.body, createdAt: row.created_at }));
+}
+async function addShareComment(identity, body, env) {
+  const shareId = typeof body.shareId === "string" ? body.shareId : "";
+  const text = typeof body.body === "string" ? body.body.trim() : "";
+  if (!isUuid(shareId) || !text || text.length > 5000) throw new HttpError("Write a comment up to 5,000 characters.");
+  const shares = await restRows(`vault_shares?id=eq.${encodeURIComponent(shareId)}&select=id,owner_id,recipient_id,permission`, env);
+  const share = shares[0];
+  if (!share || (share.owner_id !== identity.id && share.recipient_id !== identity.id)) throw new HttpError("You no longer have access to this shared document.", 404);
+  if (share.recipient_id === identity.id && !["comment", "edit"].includes(share.permission)) throw new HttpError("Your access level doesn't allow comments.", 403);
+  const response = await supabaseAdminFetch("/rest/v1/vault_share_comments", env, {
+    method: "POST", headers: { "Content-Type": "application/json", Prefer: "return=representation" },
+    body: JSON.stringify({ share_id: share.id, author_id: identity.id, author_name: identity.full_name, body: text }),
+  });
+  if (!response.ok) throw new HttpError("The database rejected that sharing change.", response.status >= 400 ? response.status : 502);
+  const result = await response.json();
+  const row = Array.isArray(result) ? result[0] : result;
+  return { id: row.id, shareId: row.share_id, authorId: row.author_id, authorName: row.author_name, body: row.body, createdAt: row.created_at };
+}
+async function writeShareNotification(recipientId, actorId, actorName, itemTitle, kind, message, env) {
+  const response = await supabaseAdminFetch("/rest/v1/share_notifications", env, {
+    method: "POST", headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
+    body: JSON.stringify({ recipient_id: recipientId, actor_id: actorId, actor_name: actorName || "A Persora user", item_title: itemTitle, kind, message }),
+  });
+  if (!response.ok) console.error("Persora could not save a share notification", response.status);
+}
+function permissionLabel(permission) { return permission === "edit" ? "Edit" : permission === "comment" ? "Comment" : "View"; }
+
+const BUSINESS_SOCIAL_PLATFORMS = new Set(["Facebook", "Instagram", "LinkedIn", "X", "YouTube", "TikTok", "WhatsApp", "Telegram", "GitHub", "Pinterest"]);
+const BUSINESS_CARD_STYLES = new Set(["garden", "minimal", "midnight", "terracotta"]);
+const BUSINESS_PHOTO_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+function securePublicCardId() { return randomHex(16).toUpperCase(); }
+async function getPublicBusinessCard(cardId, env) {
+  if (!/^[A-F0-9]{32}$/i.test(cardId)) return null;
+  const rows = await restRows(`business_cards?card_id=eq.${encodeURIComponent(cardId.toUpperCase())}&is_public=eq.true&select=*`, env);
+  return rows[0] || null;
+}
+function publicBusinessCardPayload(row, cardId) {
+  return {
+    card_id: cardId.toUpperCase(), is_public: true, card_style: BUSINESS_CARD_STYLES.has(row.card_style) ? row.card_style : "garden", full_name: row.full_name, job_title: row.job_title, company: row.company,
+    phone_numbers: row.phone_numbers, email: row.email, websites: row.websites, social_links: row.social_links,
+    address: row.address, bio: row.bio, custom_links: row.custom_links,
+    ...(row.profile_photo_key ? { profilePhotoUrl: `/api/public-cards/${cardId.toUpperCase()}/photo?kind=profile` } : {}),
+    ...(row.business_logo_key ? { businessLogoUrl: `/api/public-cards/${cardId.toUpperCase()}/photo?kind=logo` } : {}),
+  };
+}
+function cleanBusinessUrl(value, field) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  const withProtocol = /^[a-z][a-z0-9+.-]*:\/\//i.test(text) ? text : `https://${text}`;
+  let parsed;
+  try { parsed = new URL(withProtocol); } catch { throw new HttpError(`${field} must be a valid website URL.`); }
+  if (!["http:", "https:"].includes(parsed.protocol) || !parsed.hostname || text.length > 500) throw new HttpError(`${field} must be a valid HTTP or HTTPS URL.`);
+  return parsed.href;
+}
+async function validateBusinessPhoto(identity, key, env) {
+  if (!key) return "";
+  if (!ownsKey(identity.id, key)) throw new HttpError("That business card image is not in your account.", 403);
+  const object = await env.VAULT_FILES.get(key);
+  const contentType = String(object?.httpMetadata?.contentType || "").toLowerCase();
+  if (!object || object.customMetadata?.ownerId !== identity.id || !BUSINESS_PHOTO_TYPES.has(contentType)) throw new HttpError("Choose a JPG, PNG, WEBP, or GIF image uploaded to your account.");
+  return key;
+}
+async function saveBusinessCard(identity, body, env) {
+  const requestedId = typeof body.id === "string" ? body.id : "";
+  if (requestedId && !isUuid(requestedId)) throw new HttpError("Choose a valid business card.");
+  const existingRows = requestedId ? await restRows(`business_cards?id=eq.${encodeURIComponent(requestedId)}&select=*`, env) : [];
+  const existing = existingRows[0];
+  if (existing && existing.user_id !== identity.id) throw new HttpError("That business card belongs to another account.", 403);
+  const fullName = validateContactText(body.fullName, "Full name", 160);
+  if (!fullName) throw new HttpError("Full name is required.");
+  const jobTitle = validateContactText(typeof body.jobTitle === "string" ? body.jobTitle : "", "Job title", 160);
+  const company = validateContactText(typeof body.company === "string" ? body.company : "", "Company", 160);
+  const email = validateContactText(typeof body.email === "string" ? body.email : "", "Email", 254).toLowerCase();
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError("Enter a valid email address.");
+  const address = validateContactText(typeof body.address === "string" ? body.address : "", "Address", 1200);
+  const bio = validateContactText(typeof body.bio === "string" ? body.bio : "", "About", 1200);
+  const sourcePhones = Array.isArray(body.phoneNumbers) ? body.phoneNumbers : [];
+  if (sourcePhones.length > 20) throw new HttpError("A card can have up to 20 phone numbers.");
+  const phoneNumbers = sourcePhones.map((phone) => {
+    const number = validateContactText(typeof phone?.number === "string" ? phone.number : "", "Phone number", 40);
+    if (!number || !/^\+?[\d\s().-]{3,32}$/.test(number) || number.replace(/\D/g, "").length < 7 || number.replace(/\D/g, "").length > 15) throw new HttpError("Enter a valid phone number with 7 to 15 digits.");
+    const label = validateContactText(typeof phone?.label === "string" ? phone.label : "Mobile", "Phone label", 32) || "Mobile";
+    return { label, number };
+  });
+  const sourceWebsites = Array.isArray(body.websites) ? body.websites : [];
+  if (sourceWebsites.length > 10) throw new HttpError("Add up to 10 websites.");
+  const websites = [...new Set(sourceWebsites.map((value) => cleanBusinessUrl(value, "Website")).filter(Boolean))];
+  const sourceSocials = Array.isArray(body.socialLinks) ? body.socialLinks : [];
+  if (sourceSocials.length > 16) throw new HttpError("Add up to 16 social profiles.");
+  const socialLinks = sourceSocials.map((link) => {
+    const platform = typeof link?.platform === "string" ? link.platform : "";
+    if (!BUSINESS_SOCIAL_PLATFORMS.has(platform)) throw new HttpError("Choose a supported social network.");
+    const url = cleanBusinessUrl(link.url, `${platform} link`);
+    if (!url) throw new HttpError("Add a URL for each social profile.");
+    return { platform, url };
+  });
+  const sourceLinks = Array.isArray(body.customLinks) ? body.customLinks : [];
+  if (sourceLinks.length > 20) throw new HttpError("Add up to 20 custom links.");
+  const customLinks = sourceLinks.map((link) => {
+    const label = validateContactText(typeof link?.label === "string" ? link.label : "", "Link label", 60);
+    const url = cleanBusinessUrl(link?.url, "Custom link");
+    if (!label || !url) throw new HttpError("Each custom link needs a label and valid URL.");
+    return { label, url };
+  });
+  const profilePhotoKey = await validateBusinessPhoto(identity, typeof body.profilePhotoKey === "string" ? body.profilePhotoKey : "", env);
+  const businessLogoKey = await validateBusinessPhoto(identity, typeof body.businessLogoKey === "string" ? body.businessLogoKey : "", env);
+  const isPublic = Boolean(body.isPublic);
+  const style = typeof body.style === "string" && BUSINESS_CARD_STYLES.has(body.style) ? body.style : "garden";
+  const cardId = existing?.card_id || (isPublic ? securePublicCardId() : null);
+  const now = new Date().toISOString();
+  const row = {
+    user_id: identity.id, card_id: cardId, is_public: isPublic, card_style: style, full_name: fullName, job_title: jobTitle || null, company: company || null,
+    phone_numbers: phoneNumbers, email: email || null, websites, social_links: socialLinks,
+    address: address || null, bio: bio || null, custom_links: customLinks,
+    profile_photo_key: profilePhotoKey || null, business_logo_key: businessLogoKey || null, updated_at: now,
+  };
+  const path = existing ? `/rest/v1/business_cards?id=eq.${encodeURIComponent(existing.id)}&user_id=eq.${encodeURIComponent(identity.id)}` : "/rest/v1/business_cards";
+  const response = await supabaseAdminFetch(path, env, { method: existing ? "PATCH" : "POST", headers: { "Content-Type": "application/json", Prefer: "return=representation" }, body: JSON.stringify(row) });
+  if (!response.ok) {
+    const failure = await response.clone().json().catch(() => ({}));
+    const diagnostic = `${failure.code || ""} ${failure.message || ""} ${failure.details || ""}`.toLowerCase();
+    console.error("Persora business-card save was rejected", response.status, failure.code || "unknown");
+    if (diagnostic.includes("business_cards") && (diagnostic.includes("schema cache") || diagnostic.includes("does not exist") || diagnostic.includes("could not find"))) {
+      throw new HttpError("Business-card storage is not fully set up. Apply the business-card and account-sharing/card-style Supabase migrations, then try again.", 503);
+    }
+    if (failure.code === "23505") throw new HttpError("A unique business-card URL conflict occurred. Please try saving again.", 409);
+    throw new HttpError("The business card could not be saved. Please refresh the page and try again; if it continues, check that the latest Supabase migrations are applied.", response.status >= 400 ? response.status : 502);
+  }
+  const result = await response.json(); const saved = Array.isArray(result) ? result[0] : result;
+  if (!saved) throw new HttpError("The business card could not be saved.", 500);
+  if (existing?.profile_photo_key && existing.profile_photo_key !== profilePhotoKey) await deleteBusinessCardPhotoIfUnreferenced(identity.id, existing.profile_photo_key, env);
+  if (existing?.business_logo_key && existing.business_logo_key !== businessLogoKey) await deleteBusinessCardPhotoIfUnreferenced(identity.id, existing.business_logo_key, env);
+  return saved;
+}
+async function deleteBusinessCardPhotoIfUnreferenced(userId, key, env) {
+  if (!key || !ownsKey(userId, key) || !env.VAULT_FILES) return;
+  const [profile, logo] = await Promise.all([
+    restRows(`business_cards?user_id=eq.${encodeURIComponent(userId)}&profile_photo_key=eq.${encodeURIComponent(key)}&select=id&limit=1`, env),
+    restRows(`business_cards?user_id=eq.${encodeURIComponent(userId)}&business_logo_key=eq.${encodeURIComponent(key)}&select=id&limit=1`, env),
+  ]);
+  if (!profile.length && !logo.length) {
+    try { const object = await env.VAULT_FILES.get(key); if (object?.customMetadata?.ownerId === userId) await env.VAULT_FILES.delete(key); }
+    catch (error) { console.error("Persora business-card image cleanup pending", safeError(error)); }
+  }
+}
+async function reportPublicBusinessCard(cardId, body, request, env) {
+  const card = await getPublicBusinessCard(cardId, env);
+  if (!card) throw new HttpError("This public business card is unavailable.", 404);
+  const allowed = new Set(["Spam or misleading", "Inappropriate content", "Impersonation", "Other"]);
+  const reason = typeof body.reason === "string" ? body.reason : "";
+  if (!allowed.has(reason)) throw new HttpError("Choose a report reason.");
+  const details = validateContactText(typeof body.details === "string" ? body.details : "", "Report details", 500);
+  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+  const reporterHash = await sha256Hex(`${env.SUPABASE_SECRET_KEY || ""}:public-business-card-report:${ip}:${card.id}`);
+  const existing = await restRows(`business_card_reports?business_card_id=eq.${encodeURIComponent(card.id)}&reporter_hash=eq.${encodeURIComponent(reporterHash)}&select=id&limit=1`, env);
+  if (existing.length) return { ok: true, alreadyReported: true };
+  const response = await supabaseAdminFetch("/rest/v1/business_card_reports", env, {
+    method: "POST", headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
+    body: JSON.stringify({ business_card_id: card.id, reporter_hash: reporterHash, reason, details: details || null }),
+  });
+  if (!response.ok && response.status !== 409) throw new HttpError("The report could not be submitted.", response.status >= 400 ? response.status : 502);
+  return { ok: true };
+}
+
+const MEDICAL_RECORD_TYPES = new Set(["Prescription", "Medical Report", "Lab Test", "Imaging / Scan", "Doctor Visit", "Hospital Record", "Vaccination", "Medical Certificate", "Discharge Summary", "Other"]);
+function medicalDate(value, label, required = false) {
+  const date = typeof value === "string" ? value.trim() : "";
+  if (!date && !required) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(`${date}T12:00:00Z`)) || new Date(`${date}T12:00:00Z`).toISOString().slice(0, 10) !== date) throw new HttpError(`Choose a valid ${label.toLowerCase()}.`);
+  return date;
+}
+async function deleteMedicalFileIfUnreferenced(userId, key, env) {
+  if (!key || !ownsKey(userId, key) || !env.VAULT_FILES) return;
+  const references = await restRows(`medical_records?user_id=eq.${encodeURIComponent(userId)}&file_key=eq.${encodeURIComponent(key)}&select=id&limit=1`, env);
+  if (references.length) return;
+  try { const object = await env.VAULT_FILES.get(key); if (object?.customMetadata?.ownerId === userId && object.customMetadata?.medicalRecordUpload === "true") await env.VAULT_FILES.delete(key); }
+  catch (error) { console.error("Persora medical file cleanup pending", safeError(error)); }
+}
+async function saveMedicalRecord(identity, body, env) {
+  const id = typeof body.id === "string" && body.id ? body.id : crypto.randomUUID();
+  if (!isUuid(id)) throw new HttpError("Choose a valid medical record.");
+  const existingRows = await restRows(`medical_records?id=eq.${encodeURIComponent(id)}&select=id,user_id,file_key,updated_at&limit=1`, env);
+  const existing = existingRows[0];
+  if (existing && existing.user_id !== identity.id) throw new HttpError("That medical record belongs to another account.", 403);
+  const title = validateContactText(typeof body.title === "string" ? body.title : "", "Record title", 200);
+  if (!title) throw new HttpError("Medical record title is required.");
+  const recordType = typeof body.recordType === "string" ? body.recordType : "";
+  if (!MEDICAL_RECORD_TYPES.has(recordType)) throw new HttpError("Choose a valid medical record type.");
+  const recordDate = medicalDate(body.recordDate, "Record date", true);
+  const followUpDate = medicalDate(body.followUpDate, "Follow-up date", false);
+  const clean = (value, field, limit) => validateContactText(typeof value === "string" ? value : "", field, limit);
+  const provider = clean(body.provider, "Healthcare provider", 160);
+  const hospital = clean(body.hospital, "Hospital or clinic", 180);
+  const specialty = clean(body.specialty, "Medical specialty", 120);
+  const notes = clean(body.notes, "Notes", 5000);
+  const diagnosis = clean(body.diagnosis, "Diagnosis", 400);
+  const testName = clean(body.testName, "Test name", 180);
+  const testResult = clean(body.testResult, "Test result summary", 600);
+  const medicationNotes = clean(body.medicationNotes, "Medication notes", 2000);
+  const linksInput = Array.isArray(body.links) ? body.links : [];
+  if (linksInput.length > 50) throw new HttpError("A medical record can link to up to 50 other records.");
+  const links = [];
+  const seenLinks = new Set();
+  for (const link of linksInput) {
+    if (!link || (link.recordType !== "contact" && link.recordType !== "vault_item") || !isUuid(link.recordId)) throw new HttpError("One of the linked Persora records is invalid.");
+    const key = `${link.recordType}:${link.recordId}`;
+    if (!seenLinks.has(key)) { links.push({ recordType: link.recordType, recordId: link.recordId, linkKind: "related" }); seenLinks.add(key); }
+  }
+  const relatedReminderId = typeof body.relatedReminderId === "string" && body.relatedReminderId ? body.relatedReminderId : "";
+  if (relatedReminderId && !isUuid(relatedReminderId)) throw new HttpError("Choose a valid related reminder.");
+  if (relatedReminderId) {
+    links.push({ recordType: "vault_item", recordId: relatedReminderId, linkKind: "reminder" });
+  }
+  const contactIds = [...new Set(links.filter((link) => link.recordType === "contact").map((link) => link.recordId))];
+  const itemIds = [...new Set(links.filter((link) => link.recordType === "vault_item").map((link) => link.recordId))];
+  const owner = encodeURIComponent(identity.id);
+  const [contacts, items] = await Promise.all([
+    contactIds.length ? restRows(`contacts?user_id=eq.${owner}&id=in.(${contactIds.join(",")})&select=id`, env) : Promise.resolve([]),
+    itemIds.length ? restRows(`vault_items?user_id=eq.${owner}&id=in.(${itemIds.join(",")})&select=id,metadata`, env) : Promise.resolve([]),
+  ]);
+  if (contacts.length !== contactIds.length || items.length !== itemIds.length) throw new HttpError("Medical records can only link to records in your own Persora account.", 403);
+  if (relatedReminderId) {
+    const reminder = items.find((item) => item.id === relatedReminderId);
+    if (!reminder || reminder.metadata?.recordType !== "reminder") throw new HttpError("Choose a reminder from your own Persora records.", 400);
+  }
+  let file = null;
+  if (body.file && typeof body.file === "object") {
+    const key = typeof body.file.key === "string" ? body.file.key : "";
+    if (!ownsKey(identity.id, key) || !env.VAULT_FILES) throw new HttpError("Choose a private file uploaded to your account.", 403);
+    const object = await env.VAULT_FILES.get(key);
+    if (!object || object.customMetadata?.ownerId !== identity.id || (key !== existing?.file_key && object.customMetadata?.medicalRecordUpload !== "true")) throw new HttpError("That medical file is not available in your account.", 404);
+    const otherReferences = await restRows(`medical_records?user_id=eq.${owner}&file_key=eq.${encodeURIComponent(key)}&select=id&limit=2`, env);
+    if (otherReferences.some((entry) => entry.id !== id)) throw new HttpError("This file is already attached to another medical record. Upload a separate copy only if you intend to store one.", 409);
+    file = { key, name: clean(object.customMetadata?.originalName || body.file.name, "File name", 180) || "medical-record-file", size: Number(object.size), type: safeContentType(object.httpMetadata?.contentType || body.file.type || "application/octet-stream") };
+  }
+  const row = {
+    user_id: identity.id, title, record_type: recordType, record_date: recordDate, provider, hospital, specialty, notes,
+    diagnosis, test_name: testName, test_result: testResult, medication_notes: medicationNotes, follow_up_date: followUpDate,
+    related_reminder_id: relatedReminderId || null, file_key: file?.key || null, file_name: file?.name || null, file_size: file?.size ?? null, file_type: file?.type || null,
+    updated_at: new Date().toISOString(),
+  };
+  const response = await supabaseAdminFetch(existing ? `/rest/v1/medical_records?id=eq.${encodeURIComponent(id)}&user_id=eq.${owner}` : "/rest/v1/medical_records", env, {
+    method: existing ? "PATCH" : "POST", headers: { "Content-Type": "application/json", Prefer: "return=representation" },
+    body: JSON.stringify(existing ? row : { id, ...row }),
+  });
+  if (!response.ok) throw new HttpError("The database could not save this medical record.", response.status >= 400 ? response.status : 502);
+  const savedRows = await response.json(); const saved = Array.isArray(savedRows) ? savedRows[0] : savedRows;
+  if (!saved) throw new HttpError("This medical record could not be saved.", 500);
+  if (existing) {
+    const deleted = await supabaseAdminFetch(`/rest/v1/medical_record_links?medical_record_id=eq.${encodeURIComponent(id)}&owner_id=eq.${owner}`, env, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+    if (!deleted.ok) throw new HttpError("The record was saved, but its links could not be updated. Refresh and try again.", 502);
+  }
+  if (links.length) {
+    const linkRows = links.map((link) => ({ medical_record_id: id, owner_id: identity.id, record_type: link.recordType, record_id: link.recordId, link_kind: link.linkKind }));
+    const linked = await supabaseAdminFetch("/rest/v1/medical_record_links", env, { method: "POST", headers: { "Content-Type": "application/json", Prefer: "return=minimal" }, body: JSON.stringify(linkRows) });
+    if (!linked.ok) throw new HttpError("The record was saved, but its links could not be saved. Refresh and try again.", 502);
+  }
+  if (existing?.file_key && existing.file_key !== file?.key) await deleteMedicalFileIfUnreferenced(identity.id, existing.file_key, env);
+  return { ...saved, links: links.map((link) => ({ record_type: link.recordType, record_id: link.recordId, link_kind: link.linkKind })) };
+}
+async function removeMedicalRecord(identity, id, env) {
+  const owner = encodeURIComponent(identity.id);
+  const rows = await restRows(`medical_records?id=eq.${encodeURIComponent(id)}&user_id=eq.${owner}&select=id,file_key&limit=1`, env);
+  if (!rows.length) throw new HttpError("That medical record isn't available in your account.", 404);
+  const response = await supabaseAdminFetch(`/rest/v1/medical_records?id=eq.${encodeURIComponent(id)}&user_id=eq.${owner}`, env, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+  if (!response.ok) throw new HttpError("The medical record could not be deleted.", response.status >= 400 ? response.status : 502);
+  if (rows[0].file_key) await deleteMedicalFileIfUnreferenced(identity.id, rows[0].file_key, env);
+}
+
+const CONTACT_CATEGORIES = new Set(["Family", "Friends", "Work", "Clients", "Suppliers", "Students", "Other"]);
+function validateContactText(value, field, maxLength) {
+  if (typeof value !== "string") throw new HttpError(`${field} must be text.`);
+  const trimmed = value.trim();
+  if (trimmed.length > maxLength) throw new HttpError(`${field} must be ${maxLength} characters or fewer.`);
+  return trimmed;
+}
+async function saveContact(identity, body, env) {
+  const id = typeof body.id === "string" && body.id ? body.id : crypto.randomUUID();
+  if (!isUuid(id)) throw new HttpError("Choose a valid contact.");
+  const fullName = validateContactText(body.name, "Name", 160);
+  if (!fullName) throw new HttpError("Contact name is required.");
+  const email = validateContactText(typeof body.email === "string" ? body.email : "", "Email", 254).toLowerCase();
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError("Enter a valid email address.");
+  const company = validateContactText(typeof body.company === "string" ? body.company : "", "Company", 160);
+  const jobTitle = validateContactText(typeof body.jobTitle === "string" ? body.jobTitle : "", "Job title", 160);
+  const address = validateContactText(typeof body.address === "string" ? body.address : "", "Address", 1200);
+  const notes = validateContactText(typeof body.notes === "string" ? body.notes : "", "Notes", 5000);
+  const category = typeof body.category === "string" && CONTACT_CATEGORIES.has(body.category) ? body.category : "Other";
+  const birthday = typeof body.birthday === "string" ? body.birthday.trim() : "";
+  if (birthday && (!/^\d{4}-\d{2}-\d{2}$/.test(birthday) || Number.isNaN(Date.parse(`${birthday}T12:00:00Z`)))) throw new HttpError("Choose a valid birthday.");
+  const sourcePhones = Array.isArray(body.phoneNumbers) ? body.phoneNumbers : [];
+  if (sourcePhones.length > 20) throw new HttpError("A contact can have up to 20 phone numbers.");
+  const phoneNumbers = sourcePhones.map((phone) => {
+    const number = validateContactText(typeof phone?.number === "string" ? phone.number : "", "Phone number", 40);
+    if (!number || !/^\+?[\d\s().-]{3,32}$/.test(number) || number.replace(/\D/g, "").length < 3) throw new HttpError("Enter a valid phone number.");
+    const label = validateContactText(typeof phone?.label === "string" ? phone.label : "Mobile", "Phone label", 32) || "Mobile";
+    return { label, number };
+  }).filter((phone) => phone.number);
+  const photoKey = typeof body.photoKey === "string" ? body.photoKey : "";
+  if (photoKey) {
+    if (!ownsKey(identity.id, photoKey)) throw new HttpError("That profile photo is not in your account.", 403);
+    const photo = await env.VAULT_FILES.get(photoKey);
+    const photoType = String(photo?.httpMetadata?.contentType || "").toLowerCase();
+    if (!photo || photo.customMetadata?.ownerId !== identity.id || !["image/jpeg", "image/png", "image/webp", "image/gif"].includes(photoType)) throw new HttpError("That profile photo is unavailable or uses an unsupported image type.", 404);
+  }
+  const existing = await restRows(`contacts?id=eq.${encodeURIComponent(id)}&select=id,user_id,photo_key,updated_at`, env);
+  if (existing[0] && existing[0].user_id !== identity.id) throw new HttpError("That contact belongs to another account.", 403);
+  const expectedUpdatedAt = typeof body.expectedUpdatedAt === "string" ? body.expectedUpdatedAt : "";
+  if (expectedUpdatedAt && (!existing[0] || existing[0].updated_at !== expectedUpdatedAt)) {
+    throw new HttpError("This contact changed on another device. Refresh before saving your edit.", 409);
+  }
+  const row = {
+    full_name: fullName, phone_numbers: phoneNumbers, email: email || null, company: company || null,
+    job_title: jobTitle || null, address: address || null, birthday: birthday || null, notes: notes || null,
+    category, photo_key: photoKey || null, favorite: Boolean(body.favorite), updated_at: new Date().toISOString(),
+  };
+  const isUpdate = Boolean(existing[0]);
+  const path = isUpdate
+    ? `/rest/v1/contacts?id=eq.${encodeURIComponent(id)}&user_id=eq.${encodeURIComponent(identity.id)}${expectedUpdatedAt ? `&updated_at=eq.${encodeURIComponent(expectedUpdatedAt)}` : ""}`
+    : "/rest/v1/contacts";
+  const response = await supabaseAdminFetch(path, env, {
+    method: isUpdate ? "PATCH" : "POST", headers: { "Content-Type": "application/json", Prefer: "return=representation" },
+    body: JSON.stringify(isUpdate ? row : { id, user_id: identity.id, ...row }),
+  });
+  if (!response.ok) throw new HttpError("The database could not save this contact.", response.status >= 400 ? response.status : 502);
+  const result = await response.json();
+  const saved = Array.isArray(result) ? result[0] : result;
+  if (!saved && expectedUpdatedAt) throw new HttpError("This contact changed on another device. Refresh before saving your edit.", 409);
+  if (!saved) throw new HttpError("This contact could not be saved.", 500);
+  if (existing[0]?.photo_key && existing[0].photo_key !== photoKey) await deleteContactPhotoIfUnreferenced(identity.id, existing[0].photo_key, env);
+  return saved;
+}
+async function deleteContactPhotoIfUnreferenced(userId, key, env) {
+  if (!key || !ownsKey(userId, key) || !env.VAULT_FILES) return;
+  const references = await restRows(`contacts?user_id=eq.${encodeURIComponent(userId)}&photo_key=eq.${encodeURIComponent(key)}&select=id&limit=1`, env);
+  if (!references.length) {
+    try {
+      const object = await env.VAULT_FILES.get(key);
+      if (object?.customMetadata?.ownerId === userId) await env.VAULT_FILES.delete(key);
+    } catch (error) { console.error("Persora contact photo cleanup pending", safeError(error)); }
+  }
+}
+async function mergeContacts(identity, body, env) {
+  const primaryId = typeof body.primaryId === "string" ? body.primaryId : "";
+  const duplicateIds = Array.isArray(body.duplicateIds) ? [...new Set(body.duplicateIds.filter((id) => typeof id === "string" && isUuid(id) && id !== primaryId))] : [];
+  if (!isUuid(primaryId) || !duplicateIds.length || duplicateIds.length > 20) throw new HttpError("Choose a contact and at least one duplicate to merge.");
+  const ids = [primaryId, ...duplicateIds];
+  const rows = await restRows(`contacts?user_id=eq.${encodeURIComponent(identity.id)}&id=in.(${ids.join(",")})&select=*`, env);
+  if (rows.length !== ids.length) throw new HttpError("One or more selected contacts are no longer available.", 404);
+  const primary = rows.find((row) => row.id === primaryId);
+  const others = rows.filter((row) => row.id !== primaryId);
+  const firstText = (key) => String(primary[key] || others.map((row) => row[key]).find(Boolean) || "");
+  const phones = new Map();
+  for (const contact of [primary, ...others]) for (const phone of Array.isArray(contact.phone_numbers) ? contact.phone_numbers : []) {
+    const number = String(phone?.number || "").trim();
+    const key = number.replace(/\D/g, "");
+    if (number && !phones.has(key)) phones.set(key, { label: String(phone.label || "Mobile"), number });
+  }
+  const noteBlocks = [...new Set([primary, ...others].filter((row) => String(row.notes || "").trim()).map((row) => `${row.id === primaryId ? "" : `${row.full_name}: `}${String(row.notes).trim()}`))];
+  const photoKey = primary.photo_key || others.find((row) => row.photo_key)?.photo_key || null;
+  const mergedRow = {
+    full_name: firstText("full_name"), phone_numbers: [...phones.values()], email: firstText("email") || null,
+    company: firstText("company") || null, job_title: firstText("job_title") || null, address: firstText("address") || null,
+    birthday: firstText("birthday") || null, notes: noteBlocks.join("\n\n") || null,
+    category: primary.category || "Other", photo_key: photoKey, favorite: rows.some((row) => Boolean(row.favorite)), updated_at: new Date().toISOString(),
+  };
+  const update = await supabaseAdminFetch(`/rest/v1/contacts?id=eq.${encodeURIComponent(primaryId)}&user_id=eq.${encodeURIComponent(identity.id)}`, env, {
+    method: "PATCH", headers: { "Content-Type": "application/json", Prefer: "return=representation" }, body: JSON.stringify(mergedRow),
+  });
+  if (!update.ok) throw new HttpError("The contact merge could not be saved.", update.status >= 400 ? update.status : 502);
+  const result = await update.json();
+  const saved = Array.isArray(result) ? result[0] : result;
+  if (!saved) throw new HttpError("The contact merge could not be saved.", 500);
+  const duplicateShares = await restRows(`record_shares?owner_id=eq.${encodeURIComponent(identity.id)}&resource_type=eq.contact&resource_id=in.(${duplicateIds.join(",")})&select=id,resource_id,recipient_id`, env);
+  for (const share of duplicateShares) {
+    const alreadyShared = await restRows(`record_shares?owner_id=eq.${encodeURIComponent(identity.id)}&resource_type=eq.contact&resource_id=eq.${encodeURIComponent(primaryId)}&recipient_id=eq.${encodeURIComponent(share.recipient_id)}&select=id&limit=1`, env);
+    const path = alreadyShared.length ? `/rest/v1/record_shares?id=eq.${encodeURIComponent(share.id)}` : `/rest/v1/record_shares?id=eq.${encodeURIComponent(share.id)}&owner_id=eq.${encodeURIComponent(identity.id)}`;
+    const response = await supabaseAdminFetch(path, env, alreadyShared.length ? { method: "DELETE", headers: { Prefer: "return=minimal" } } : { method: "PATCH", headers: { "Content-Type": "application/json", Prefer: "return=minimal" }, body: JSON.stringify({ resource_id: primaryId }) });
+    if (!response.ok) throw new HttpError("The contact was merged, but its shared access could not be moved. Refresh and review the shares.", 502);
+  }
+  const remove = await supabaseAdminFetch(`/rest/v1/contacts?user_id=eq.${encodeURIComponent(identity.id)}&id=in.(${duplicateIds.join(",")})`, env, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+  if (!remove.ok) throw new HttpError("The merged contact was saved, but duplicates could not be removed. Refresh and try again.", 502);
+  for (const row of others) if (row.photo_key && row.photo_key !== photoKey) await deleteContactPhotoIfUnreferenced(identity.id, row.photo_key, env);
+  return saved;
+}
+
 async function saveOwnedVaultItem(identity, body, env) {
   const id = typeof body.id === "string" ? body.id : "";
   const section = typeof body.section === "string" ? body.section : "";
@@ -605,7 +1618,7 @@ async function saveOwnedVaultItem(identity, body, env) {
     file_key: fileKey || null, file_name: fileKey ? fileName.slice(0, 240) : null,
     file_size: fileKey && Number.isFinite(Number(file.size)) ? Math.max(0, Number(file.size)) : null,
     file_type: fileKey ? safeContentType(file.type) : null,
-    favorite: Boolean(body.favorite), updated_at: new Date().toISOString(),
+    favorite: Boolean(body.favorite), pinned: Boolean(body.pinned), updated_at: new Date().toISOString(),
   };
   const isUpdate = Boolean(existing[0]);
   const path = isUpdate
@@ -666,6 +1679,24 @@ async function bootstrapStatus(env) {
 function slugify(value) {
   return String(value || "").normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60);
 }
+function publicAlarmRingtone(entry) {
+  return { id: entry.id, name: entry.name, type: entry.type, size: entry.size };
+}
+function cleanAlarmRingtoneSetting(value) {
+  if (!Array.isArray(value) || value.length > MAX_ALARM_RINGTONE_COUNT) throw new HttpError("Alarm ringtone list is invalid.", 400);
+  const ids = new Set();
+  return value.map((entry) => {
+    if (!entry || typeof entry !== "object" || !isUuid(entry.id)) throw new HttpError("An alarm ringtone entry is invalid.", 400);
+    const name = typeof entry.name === "string" ? entry.name.trim().slice(0, 80) : "";
+    const type = typeof entry.type === "string" ? entry.type : "";
+    const size = Number(entry.size);
+    const fileKey = typeof entry.fileKey === "string" ? entry.fileKey : "";
+    if (name.length < 2 || !Object.values(ALARM_RINGTONE_FORMATS).some((format) => format.contentType === type) || !Number.isFinite(size) || size < 1 || size > MAX_ALARM_RINGTONE_BYTES || fileKey !== `system/ringtones/${entry.id}.${fileKey.split(".").pop()}` || !/^system\/ringtones\/[0-9a-f-]{36}\.(mp3|wav|ogg|m4a|aac|webm)$/i.test(fileKey)) throw new HttpError("An alarm ringtone entry contains invalid file details.", 400);
+    if (ids.has(entry.id)) throw new HttpError("Ringtone IDs must be unique.", 400);
+    ids.add(entry.id);
+    return { id: entry.id, name, type, size, fileKey };
+  });
+}
 async function loadSettings(env) {
   const rows = await restRows("platform_settings?select=setting_key,value", env);
   const stored = Object.fromEntries((rows || []).map((row) => [row.setting_key, row.value || {}]));
@@ -674,6 +1705,7 @@ async function loadSettings(env) {
     storage: { ...DEFAULT_SETTINGS.storage, ...(stored.storage || {}) },
     paymentMethods: Array.isArray(stored.payment_methods) ? stored.payment_methods : DEFAULT_SETTINGS.paymentMethods,
     siteContent: stored.site_content && typeof stored.site_content === "object" && !Array.isArray(stored.site_content) ? stored.site_content : DEFAULT_SETTINGS.siteContent,
+    alarmRingtones: Array.isArray(stored.alarm_ringtones) ? stored.alarm_ringtones : DEFAULT_SETTINGS.alarmRingtones,
   };
 }
 function publicPlan(row, currency) {
@@ -720,9 +1752,12 @@ async function userStorageUsage(userId, bucket, env) {
   const storageLimitGb = active
     ? (isFreePlan ? Number(currentPlan?.storage_gb || subscription.storage_limit_gb) : Number(subscription.storage_limit_gb))
     : Number(settings.storage.defaultFreeGb) || 5;
-  const usage = await readUsage(bucket, `${userId}/`);
+  const [usage, databaseUsage] = await Promise.all([readUsage(bucket, `${userId}/`), readUserDatabaseUsage(userId, env)]);
   return {
-    bytesUsed: usage.bytes,
+    bytesUsed: usage.bytes + databaseUsage.bytes,
+    fileBytes: usage.bytes,
+    databaseBytes: databaseUsage.bytes,
+    databaseRecordCount: databaseUsage.records,
     objectCount: usage.objectCount,
     storageLimitBytes: storageLimitGb * 1024 * 1024 * 1024,
     storageLimitGb,
@@ -810,6 +1845,8 @@ async function savePlatformSetting(key, value, actorId, env) {
       seenIds.add(id);
       return { id, name, accountName, accountIdentifier, instructions, active: entry.active, sort_order: sortOrder };
     });
+  } else if (key === "alarm_ringtones") {
+    value = cleanAlarmRingtoneSetting(value);
   } else if (key === "site_content") {
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new HttpError("Invalid website content.", 400);
     const limits = { privacyTitle: 120, privacyBody: 12000, termsTitle: 120, termsBody: 12000, contactTitle: 120, contactBody: 4000, contactEmail: 254, contactPhone: 80, contactWhatsApp: 80, contactAddress: 500 };
@@ -892,6 +1929,96 @@ async function reviewPayment(body, identity, env) {
   await logAdminEvent(identity, target || { id: payment.user_id, email: "" }, decision === "approved" ? "approve_payment" : "reject_payment", env, { payment_id: paymentId, amount: payment.amount, currency: payment.currency });
   return { ok: true, status: decision };
 }
+async function createAccountExport(identity, env) {
+  if (!env.VAULT_FILES) throw new Error("Private file storage is unavailable for this export.");
+  const owner = encodeURIComponent(identity.id);
+  const [profileRows, items, contacts, cards, medicalRecords, medicalRecordLinks, documentShares, recordShares, notifications, authoredComments, subscriptions, payments, files, timelineExport] = await Promise.all([
+    restRows(`profiles?id=eq.${owner}&select=id,login_id,email,full_name,timezone,avatar_url,created_at,updated_at`, env),
+    restRowsPaged(`vault_items?user_id=eq.${owner}&select=*&order=id.asc`, env),
+    restRowsPaged(`contacts?user_id=eq.${owner}&select=*&order=id.asc`, env),
+    restRowsPaged(`business_cards?user_id=eq.${owner}&select=*&order=id.asc`, env),
+    restRowsPaged(`medical_records?user_id=eq.${owner}&select=*&order=id.asc`, env),
+    restRowsPaged(`medical_record_links?owner_id=eq.${owner}&select=*&order=medical_record_id.asc`, env),
+    restRowsPaged(`vault_shares?or=(owner_id.eq.${owner},recipient_id.eq.${owner})&select=*&order=created_at.asc`, env),
+    restRowsPaged(`record_shares?or=(owner_id.eq.${owner},recipient_id.eq.${owner})&select=*&order=created_at.asc`, env),
+    restRowsPaged(`share_notifications?recipient_id=eq.${owner}&select=*&order=created_at.asc`, env),
+    restRowsPaged(`vault_share_comments?author_id=eq.${owner}&select=*&order=created_at.asc`, env),
+    restRows(`user_subscriptions?user_id=eq.${owner}&select=*&limit=1`, env),
+    restRowsPaged(`payment_records?user_id=eq.${owner}&select=*&order=submitted_at.asc`, env),
+    listAccountFiles(env.VAULT_FILES, identity.id),
+    loadTimelineExport(identity, env),
+  ]);
+  const ordinaryFiles = files.filter((file) => !file.key.startsWith(`${identity.id}/timeline/`));
+  const indexedFiles = [
+    ...ordinaryFiles.map((file) => ({ ...file, exportSize: file.size, exportName: sanitizeFileName(file.key.slice(file.key.indexOf("/") + 1)) })),
+    ...timelineExport.attachments.map((file) => ({ ...file, exportSize: file.size, exportName: sanitizeFileName(file.name) })),
+  ];
+  const attachmentManifest = indexedFiles.map((file, index) => ({
+    key: file.key, path: `files/${String(index + 1).padStart(6, "0")}-${file.exportName.slice(0, 78)}`,
+    size: file.exportSize, type: file.type || "application/octet-stream",
+  }));
+  const manifest = {
+    format: "persora-complete-export-v1", exportedAt: new Date().toISOString(),
+    account: profileRows[0] || { login_id: identity.login_id || "", email: identity.email || "", full_name: identity.full_name || "" },
+    data: { vaultItems: items, contacts, businessCards: cards, medicalRecords, medicalRecordLinks, documentShares, recordShares, notifications, authoredShareComments: authoredComments, subscriptions, paymentHistory: payments, timelineEvents: timelineExport.events },
+    attachments: attachmentManifest,
+    note: "Private attachment bytes, including medical-record files, are included under files/. Timeline text is decrypted only for this authenticated account export; timeline attachment files are decrypted into the archive. Session tokens, password hashes, and other accounts' private records are excluded.",
+  };
+  const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest, null, 2));
+  const entries = [
+    { name: "persora-export.json", size: manifestBytes.byteLength, stream: new Blob([manifestBytes]).stream() },
+    ...ordinaryFiles.map((file, index) => ({ ...file, size: attachmentManifest[index].size, name: attachmentManifest[index].path })),
+    ...timelineExport.attachments.map((file, index) => ({ name: attachmentManifest[ordinaryFiles.length + index].path, size: file.size, openStream: async () => new Blob([await readTimelineExportAttachment(identity, file.key, env)]).stream() })),
+  ];
+  const stream = tarReadableStream(entries, env.VAULT_FILES);
+  return { stream, filename: `persora-export-${new Date().toISOString().slice(0, 10)}.tar` };
+}
+async function listAccountFiles(bucket, userId) {
+  const files = []; let cursor;
+  do {
+    const page = await bucket.list({ prefix: `${userId}/`, cursor, limit: 1000 });
+    for (const object of page.objects) if (ownsKey(userId, object.key)) files.push({ key: object.key, size: Number(object.size) || 0, type: object.httpMetadata?.contentType || "application/octet-stream" });
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor);
+  return files;
+}
+function tarHeader(name, size) {
+  const header = new Uint8Array(512); const view = new DataView(header.buffer);
+  const write = (text, offset, length) => { const bytes = new TextEncoder().encode(String(text)); header.set(bytes.subarray(0, length), offset); };
+  const octal = (value, length) => String(Math.max(0, Math.floor(Number(value) || 0)).toString(8)).padStart(length - 1, "0").slice(-(length - 1)) + "\0";
+  write(name, 0, 100); write(octal(0o644, 8), 100, 8); write(octal(0, 8), 108, 8); write(octal(0, 8), 116, 8);
+  write(octal(size, 12), 124, 12); write(octal(Math.floor(Date.now() / 1000), 12), 136, 12); header.fill(32, 148, 156); write("0", 156, 1); write("ustar\0", 257, 6); write("00", 263, 2);
+  let checksum = 0; for (const byte of header) checksum += byte;
+  write(`${checksum.toString(8).padStart(6, "0")}\0 `, 148, 8);
+  return header;
+}
+async function* streamReader(reader) { try { while (true) { const part = await reader.read(); if (part.done) break; yield part.value; } } finally { try { reader.releaseLock(); } catch {} } }
+function tarReadableStream(entries, bucket) {
+  async function* generate() {
+    const encoder = new TextEncoder();
+    for (const entry of entries) {
+      let source = entry.stream;
+      if (!source && typeof entry.openStream === "function") source = await entry.openStream();
+      if (!source) {
+        const object = await bucket.get(entry.key);
+        if (!object?.body) continue;
+        source = object.body;
+      }
+      yield tarHeader(entry.name, entry.size);
+      const reader = source.getReader(); let emitted = 0;
+      for await (const chunk of streamReader(reader)) { emitted += chunk.byteLength; yield chunk; }
+      if (emitted !== entry.size) throw new Error(`An attachment changed during export: ${entry.name}`);
+      const padding = (512 - (entry.size % 512)) % 512;
+      if (padding) yield new Uint8Array(padding);
+    }
+    yield new Uint8Array(1024);
+  }
+  const iterator = generate();
+  return new ReadableStream({
+    async pull(controller) { try { const part = await iterator.next(); if (part.done) controller.close(); else controller.enqueue(part.value); } catch (error) { controller.error(error); } },
+    async cancel() { await iterator.return?.(); },
+  });
+}
 async function summarizeBucket(bucket) {
   let cursor;
   let bytesUsed = 0;
@@ -915,7 +2042,7 @@ async function summarizeBucket(bucket) {
 }
 async function loadAdminConsole(env) {
   const settings = await loadSettings(env);
-  const [profileRows, eventRows, plans, typeRows, paymentRows, totalAccounts, activeAccounts, vaultEntries, pendingPayments, storageResult] = await Promise.all([
+  const [profileRows, eventRows, plans, typeRows, paymentRows, totalAccounts, activeAccounts, vaultEntries, pendingPayments, storageResult, databaseResult] = await Promise.all([
     restRows("profiles?select=id,login_id,email,full_name,role,account_status,created_at&order=created_at.desc&limit=1000", env),
     restRows("admin_audit_events?select=id,actor_email,event_type,target_user_id,target_email,created_at,details&order=created_at.desc&limit=30", env),
     listPlans(env, false),
@@ -926,6 +2053,7 @@ async function loadAdminConsole(env) {
     countRows("vault_items", "id", env),
     countRows("payment_records?status=eq.pending", "id", env),
     summarizeBucket(env.VAULT_FILES).then((data) => ({ status: "connected", ...data })).catch(() => ({ status: "unavailable", bytesUsed: 0, objectCount: 0, usersWithFiles: 0, byUser: {} })),
+    summarizeDatabase(env).then((data) => ({ status: "connected", ...data })).catch(() => ({ status: "unavailable", bytesUsed: 0, recordCount: 0, byUser: {} })),
   ]);
   const profileMap = new Map(profileRows.map((profile) => [profile.id, profile]));
   const planMap = new Map(plans.map((plan) => [plan.id, plan]));
@@ -936,9 +2064,16 @@ async function loadAdminConsole(env) {
     storage_gb: Number(planMap.get(payment.plan_id)?.storage_gb || 0),
   }));
   const billing = { ...settings.billing };
+  const accountIds = new Set([...Object.keys(storageResult.byUser), ...Object.keys(databaseResult.byUser)]);
+  const combinedByUser = Object.fromEntries([...accountIds].map((id) => {
+    const file = storageResult.byUser[id] || { bytes: 0, objects: 0 };
+    const database = databaseResult.byUser[id] || { bytes: 0, records: 0 };
+    return [id, { bytes: file.bytes, objects: file.objects, databaseBytes: database.bytes, databaseRecords: database.records, totalBytes: file.bytes + database.bytes }];
+  }));
+  const totalCombinedBytes = storageResult.bytesUsed + databaseResult.bytesUsed;
   return {
     metrics: { totalAccounts, activeAccounts, vaultEntries, pendingPayments },
-    profiles: profileRows.map((profile) => ({ ...profile, storage_bytes: storageResult.byUser[profile.id]?.bytes || 0 })),
+    profiles: profileRows.map((profile) => ({ ...profile, storage_bytes: combinedByUser[profile.id]?.totalBytes || 0, storage_file_bytes: combinedByUser[profile.id]?.bytes || 0, storage_database_bytes: combinedByUser[profile.id]?.databaseBytes || 0 })),
     events: eventRows,
     plans: plans.map((plan) => publicPlan(plan, billing.currency)),
     documentTypes: typeRows,
@@ -947,8 +2082,8 @@ async function loadAdminConsole(env) {
     paymentMethods: settings.paymentMethods,
     siteContent: settings.siteContent,
     storageSettings: settings.storage,
-    storage: storageResult,
-    system: { database: "connected", storage: storageResult.status, supabaseUrlConfigured: Boolean(getSupabaseUrl(env)), secretKeyConfigured: Boolean(env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY) },
+    storage: { ...storageResult, databaseBytesUsed: databaseResult.bytesUsed, databaseRecordCount: databaseResult.recordCount, totalBytesUsed: totalCombinedBytes, databaseStatus: databaseResult.status, byUser: combinedByUser },
+    system: { database: databaseResult.status, storage: storageResult.status, supabaseUrlConfigured: Boolean(getSupabaseUrl(env)), secretKeyConfigured: Boolean(env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY) },
   };
 }
 

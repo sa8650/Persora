@@ -8,6 +8,7 @@ import {
   IdCard,
   KeyRound,
   Link2,
+  StickyNote,
   ShieldCheck,
   ShoppingBag,
 } from "lucide-react";
@@ -36,11 +37,20 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     previewKeys: ["type", "documentNumber", "expiryDate"],
     fields: [
       { key: "title", label: "Document title", kind: "text", placeholder: "e.g. Bangladesh passport", required: true },
-      { key: "type", label: "Document type", kind: "select", options: ["National ID / NID", "Passport", "Birth certificate", "Student ID", "Job ID / Employee ID", "Driving licence", "Tax ID / TIN", "Visa", "Residence permit", "Work permit", "Health card", "Insurance", "Certificate", "Contract", "Other"], required: true },
+      { key: "type", label: "Document type", kind: "select", options: ["National ID / NID", "Passport", "Birth certificate", "Student ID", "Job ID / Employee ID", "Driving licence", "Tax ID / TIN", "Visa", "Residence permit", "Work permit", "Health card", "Insurance", "Certificate", "Contract", "CV / Resume", "Other"], required: true },
       { key: "documentNumber", label: "Document number", kind: "text", placeholder: "Optional" },
       { key: "issueDate", label: "Issue date", kind: "date" },
       { key: "expiryDate", label: "Expiry date", kind: "date" },
       { key: "member", label: "Belongs to", kind: "select", options: ["Me", "Spouse", "Father", "Mother", "Child", "Sibling", "Other"] },
+      { key: "targetRole", label: "Target role", kind: "text", placeholder: "e.g. Product Designer" },
+      { key: "email", label: "Contact email", kind: "email" },
+      { key: "phone", label: "Phone", kind: "text" },
+      { key: "location", label: "Location", kind: "text", placeholder: "City, country" },
+      { key: "portfolio", label: "LinkedIn / portfolio", kind: "url", placeholder: "https://" },
+      { key: "summary", label: "Professional summary", kind: "textarea", wide: true },
+      { key: "experience", label: "Experience", kind: "textarea", wide: true },
+      { key: "education", label: "Education", kind: "textarea", wide: true },
+      { key: "skills", label: "Skills", kind: "textarea", wide: true },
       { key: "notes", label: "Notes", kind: "textarea", placeholder: "Add a reminder or any useful details", wide: true },
     ],
   },
@@ -56,10 +66,15 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     previewKeys: ["type", "institution", "year"],
     fields: [
       { key: "title", label: "Record title", kind: "text", placeholder: "e.g. BSc in Computer Science", required: true },
-      { key: "type", label: "Record type", kind: "select", options: ["SSC / Secondary certificate", "HSC / Higher secondary certificate", "Diploma", "Bachelor's degree", "Master's degree", "PhD", "Mark sheet", "Transcript", "Certificate", "Admission document", "Exam document", "Training record", "Other"], required: true },
+      { key: "type", label: "Record type", kind: "select", options: ["SSC / Secondary certificate", "HSC / Higher secondary certificate", "Diploma", "Bachelor's degree", "Master's degree", "PhD", "Mark sheet", "Transcript", "Certificate", "Admission record", "Admission letter", "Admission payment slip", "Admission application", "Exam document", "Training record", "Other"], required: true },
       { key: "institution", label: "Institution", kind: "text", placeholder: "School, college or university" },
       { key: "year", label: "Year completed", kind: "text", placeholder: "e.g. 2024" },
       { key: "grade", label: "Grade / result", kind: "text", placeholder: "Optional" },
+      { key: "program", label: "Program / course", kind: "text", placeholder: "e.g. BSc in Computer Science" },
+      { key: "admissionSession", label: "Admission session", kind: "text", placeholder: "e.g. Fall 2026" },
+      { key: "applicationNumber", label: "Application / student ID", kind: "text" },
+      { key: "paymentAmount", label: "Payment amount", kind: "text", placeholder: "e.g. ৳ 15,000" },
+      { key: "paymentDate", label: "Payment date", kind: "date" },
       { key: "notes", label: "Notes", kind: "textarea", wide: true },
     ],
   },
@@ -142,7 +157,7 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     previewKeys: ["accountType", "username", "email"],
     fields: [
       { key: "title", label: "Service name", kind: "text", placeholder: "e.g. Google", required: true },
-      { key: "accountType", label: "Category", kind: "select", options: ["Email", "Social media", "Banking / payments", "Shopping", "Education", "Freelance", "Work", "Cloud services", "Developer", "Gaming", "Streaming", "Government", "Business", "Other"] },
+      { key: "accountType", label: "Account type", kind: "select", options: ["Facebook", "Instagram", "LinkedIn", "X", "TikTok", "YouTube", "WhatsApp", "Telegram", "GitHub", "Pinterest", "Google", "Gmail", "Microsoft", "Apple", "Amazon", "Netflix", "Spotify", "Discord", "Reddit", "PayPal", "Email", "Social media", "Banking / payments", "Shopping", "Education", "Freelance", "Work", "Cloud services", "Developer", "Gaming", "Streaming", "Government", "Business", "Other"] },
       { key: "username", label: "Username", kind: "text" },
       { key: "email", label: "Account email", kind: "email" },
       { key: "website", label: "Login URL", kind: "url", placeholder: "https://" },
@@ -193,6 +208,22 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
       { key: "semester", label: "Semester / year", kind: "text" },
       { key: "tags", label: "Tags", kind: "text", placeholder: "Separate tags with commas" },
       { key: "notes", label: "Notes", kind: "textarea", wide: true },
+    ],
+  },
+  {
+    id: "notes",
+    label: "Tasks & Notes",
+    eyebrow: "Tasks, notes & reminders",
+    singular: "note",
+    description: "Keep tasks moving, set reminders and alarms, and save thoughts in one private, searchable space.",
+    icon: StickyNote,
+    color: "yellow",
+    titleLabel: "Note title",
+    previewKeys: ["tags"],
+    fields: [
+      { key: "title", label: "Note title", kind: "text", placeholder: "e.g. Ideas for the weekend", required: true },
+      { key: "content", label: "Note", kind: "textarea", placeholder: "Write your note here…", wide: true },
+      { key: "tags", label: "Tags", kind: "text", placeholder: "Separate tags with commas", wide: true },
     ],
   },
   {
@@ -286,9 +317,9 @@ export const INITIAL_ITEMS: VaultItem[] = [
 ];
 
 export const NAV_GROUPS: { label: string; ids: SectionId[] }[] = [
-  { label: "Personal life", ids: ["documents", "academics", "subscriptions", "family"] },
-  { label: "Everyday", ids: ["purchases", "accounts", "memberships"] },
-  { label: "Knowledge & identity", ids: ["study", "business-card", "urls"] },
+  { label: "Personal life", ids: ["documents", "academics", "family"] },
+  { label: "Everyday", ids: ["subscriptions", "purchases", "accounts", "memberships"] },
+  { label: "Knowledge & identity", ids: ["study", "notes", "business-card", "urls"] },
 ];
 
 export const BRAND_ICON = ShieldCheck;

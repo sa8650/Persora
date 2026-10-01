@@ -33,8 +33,9 @@ If Git is already set up, keep its existing history and remote. Do not commit `.
 
 1. Create a Supabase project and wait for it to finish provisioning.
 2. Open that project’s **SQL Editor**.
-3. Open `supabase/schema.sql`, copy the entire file into the SQL Editor, and run it. It creates Persora profiles, seven-digit login IDs, password hashes, server-side sessions, rate-limit state, vault/billing/admin tables, RLS policies, and restricted Postgres functions.
-4. In **Project Settings → API Keys** (sometimes shown as **Settings → API**), copy and keep ready:
+3. Open `supabase/schema.sql`, copy the entire file into the SQL Editor, and run it. It creates Persora profiles, seven-digit login IDs, password hashes, server-side sessions, rate-limit state, vault/billing/admin tables, private medical-record tables, RLS policies, and restricted Postgres functions.
+4. For an already-running Persora database, apply `supabase/migrations/20261001_life_timeline.sql` and `supabase/migrations/202610010001_medical_records.sql` in the SQL Editor before deploying the matching features.
+5. In **Project Settings → API Keys** (sometimes shown as **Settings → API**), copy and keep ready:
    - The **Project URL**, e.g. `https://abcdefghijkl.supabase.co`.
    - A server-only **Secret key**, usually beginning `sb_secret_...`. If your project still uses the legacy service-role JWT, use that value in the same Pages secret described below.
 
@@ -70,6 +71,7 @@ In the Pages project, open **Settings → Variables and Secrets** (may appear as
 | `VITE_USE_PAGES_FUNCTIONS` | `true` | Plain text variable | Build-time switch: frontend calls the same-origin `/api/*` route. |
 | `SUPABASE_URL` | Your Supabase Project URL | Plain text variable | Database endpoint read by the server-side Pages Function. |
 | `SUPABASE_SECRET_KEY` | Your Supabase Secret key (or legacy service-role JWT) | **Encrypted secret** | Server-only database operations and custom auth. Never prefix this with `VITE_`. |
+| `TIMELINE_ENCRYPTION_KEY` | A dedicated stable random value, e.g. output from `openssl rand -hex 32` | **Encrypted secret** | Required before posting any timeline event. AES-256-GCM key material for timeline text and files. Back it up securely; changing or removing it without re-encrypting existing data makes timeline content unreadable. |
 | `ADMIN_BOOTSTRAP_SECRET` | A newly generated random value | **Encrypted secret; temporary** | Allows the first trusted owner to claim administrator access once. Remove after step 8. |
 
 Generate the bootstrap value locally, for example:
@@ -123,6 +125,9 @@ All future administrator access requires a real Persora account with the admin r
 - Sign out and sign back in using that ID and password.
 - Add a vault record, reload the page, and verify the record persists.
 - Attach a small PDF or image, open the record, and confirm the file is served only after signing in.
+- Apply the Life Timeline migration; add a dated record; check that its due-date event appears once, links to the source record, and catches up after an offline interval.
+- Post a manual timeline event with an attachment, edit it, download the file, and delete the event. Confirm timeline title/description/URL are ciphertext in `timeline_events.encrypted_payload` and the R2 object bytes are encrypted; date/type/link metadata remains queryable.
+- Keep `TIMELINE_ENCRYPTION_KEY` stable and test authenticated account export includes readable timeline data and attachments.
 - Change the account password in Settings and verify the new password works.
 - Confirm the R2 bucket remains private.
 - Visit `/admin` as the claimed owner. Check account management, plans, payment methods/review, document types, editable Privacy/Terms/Contact pages, storage settings, service status, and audit history.

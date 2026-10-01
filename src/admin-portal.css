@@ -278,3 +278,23 @@
   .admin-access-card { padding: 25px 18px; }
   .admin-access-card h1 { font-size: 31.2px; }
 }
+
+.admin-ringtone-grid { align-items: start; }
+.admin-ringtone-list { display: flex; flex-direction: column; gap: 8px; margin: 15px 0; }
+.admin-ringtone-row { display: grid; grid-template-columns: 38px minmax(110px,1fr) minmax(140px,230px) auto; align-items: center; gap: 10px; border: 1px solid #e9eee7; border-radius: 11px; padding: 10px; background: #fcfdfb; }
+.admin-ringtone-icon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; color: #6c8b70; background: #eef5ec; }
+.admin-ringtone-copy { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.admin-ringtone-copy b { overflow: hidden; color: #4c6251; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.admin-ringtone-copy small { color: #9ba69d; font-size: 8px; }
+.admin-ringtone-row audio { width: 100%; height: 32px; }
+.admin-ringtone-delete { display: inline-flex; align-items: center; gap: 5px; }
+.admin-ringtone-file-label { display: flex; flex-direction: column; gap: 7px; }
+.admin-ringtone-file-label input[type=file] { width: 100%; border: 1px dashed #cddbc9; border-radius: 9px; padding: 12px; color: #667b69; background: #fafcf9; font: inherit; font-size: 9px; }
+.admin-ringtone-file-label small { color: #92a094; font-size: 8px; }
+.admin-ringtone-note { margin-top: 13px; }
+@media (max-width: 700px) {
+  .admin-ringtone-row { grid-template-columns: 34px minmax(0,1fr) auto; }
+  .admin-ringtone-row audio { grid-column: 2 / -1; }
+  .admin-ringtone-delete { grid-column: 3; grid-row: 1; }
+}
+@media (max-width: 470px) { .admin-ringtone-row { grid-template-columns: 32px minmax(0,1fr); } .admin-ringtone-row audio,.admin-ringtone-delete { grid-column: 2; grid-row: auto; justify-self: start; } }
