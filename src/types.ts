@@ -8,6 +8,7 @@ export type SectionId =
   | "purchases"
   | "accounts"
   | "memberships"
+  | "wallet-cards"
   | "study"
   | "business-card"
   | "urls"
@@ -22,7 +23,7 @@ export interface MedicalRecordLink { recordType: "contact" | "vault_item"; recor
 export interface MedicalRecord {
   id: string; title: string; recordType: MedicalRecordType; recordDate: string; provider: string; hospital: string; specialty: string; notes: string;
   diagnosis: string; testName: string; testResult: string; medicationNotes: string; followUpDate: string; relatedReminderId?: string;
-  file?: MedicalRecordFile; links: MedicalRecordLink[]; createdAt: string; updatedAt: string;
+  file?: MedicalRecordFile; links: MedicalRecordLink[]; folderId?: string; createdAt: string; updatedAt: string;
 }
 export type MedicalRecordDraft = Omit<MedicalRecord, "id" | "createdAt" | "updatedAt"> & { id?: string; fileUpload?: File | null; removeFile?: boolean };
 export interface TimelineAttachment { name: string; size: number; type: string; key?: string }
@@ -149,6 +150,7 @@ export interface DigitalBusinessCard {
   customLinks: BusinessCustomLink[];
   createdAt: string;
   updatedAt: string;
+  folderId?: string;
 }
 export type BusinessCardDraft = Omit<DigitalBusinessCard, "id" | "createdAt" | "updatedAt"> & {
   id?: string;
@@ -177,6 +179,7 @@ export interface PersoraContact {
   favorite: boolean;
   createdAt: string;
   updatedAt: string;
+  folderId?: string;
 }
 export type ContactDraft = Omit<PersoraContact, "id" | "createdAt" | "updatedAt"> & {
   id?: string;
@@ -195,6 +198,7 @@ export interface VaultItem {
   file?: VaultFile;
   favorite?: boolean;
   pinned?: boolean;
+  folderId?: string;
   /** Client-only access context for a shared record; never determines server authorization. */
   sharedAccess?: SharedItemAccess;
 }
@@ -222,6 +226,19 @@ export interface SectionDefinition {
   previewKeys: string[];
   dateKey?: string;
 }
+
+export type VaultFolderScope = SectionId | "contacts" | "business-cards" | "medical-records";
+export type VaultFolderColor = "blue" | "sky" | "teal" | "violet" | "amber" | "rose" | "slate" | "mint";
+export interface VaultFolder {
+  id: string;
+  scope: VaultFolderScope;
+  name: string;
+  color: VaultFolderColor;
+  pinned: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+export type VaultFolderDraft = Omit<VaultFolder, "id" | "createdAt" | "updatedAt"> & { id?: string };
 
 export interface AppUser {
   id: string;
@@ -285,7 +302,7 @@ export interface SiteContent {
   contactWhatsApp: string;
   contactAddress: string;
 }
-export interface BillingSettings { currency: string; manualInstructions: string; billingEnabled: boolean }
+export interface BillingSettings { currency: string; manualInstructions: string; billingEnabled: boolean; minTermMonths: number; maxTermMonths: number }
 export interface StorageSettings { defaultFreeGb: number; maxUploadMb: number }
 export interface PaymentRecord {
   id: string;
@@ -299,6 +316,9 @@ export interface PaymentRecord {
   method: string;
   reference: string;
   status: "pending" | "approved" | "rejected";
+  billing_period?: "monthly" | "yearly";
+  duration_count?: number;
+  term_months?: number;
   submitted_at: string;
   reviewed_at?: string | null;
   reviewed_by?: string | null;

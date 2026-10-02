@@ -1,7 +1,7 @@
 import { handleTimeline, loadTimelineExport, readTimelineExportAttachment } from "./timeline.js";
 
 const DEFAULT_SETTINGS = {
-  billing: { currency: "BDT", manualInstructions: "Follow the account details shown for your selected payment method.", billingEnabled: false },
+  billing: { currency: "BDT", manualInstructions: "Follow the account details shown for your selected payment method.", billingEnabled: false, minTermMonths: 1, maxTermMonths: 12 },
   storage: { defaultFreeGb: 5, maxUploadMb: 25 },
   paymentMethods: [],
   siteContent: {},
@@ -184,6 +184,29 @@ export default {
         const id = url.searchParams.get("id") || "";
         if (!isUuid(id)) return json({ error: "Choose a valid vault item." }, 400, origin);
         const result = await supabaseAdminFetch(`/rest/v1/vault_items?id=eq.${encodeURIComponent(id)}&user_id=eq.${encodeURIComponent(identity.id)}`, env, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+        if (!result.ok) return upstreamError(result, origin);
+        return json({ ok: true }, 200, origin);
+      }
+      if (url.pathname === "/vault/folders" && request.method === "GET") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required." }, 401, origin);
+        const scope = url.searchParams.get("scope") || "";
+        if (!VALID_FOLDER_SCOPES.has(scope)) return json({ error: "Choose a valid page for its folders." }, 400, origin);
+        const rows = await restRows(`vault_folders?user_id=eq.${encodeURIComponent(identity.id)}&scope=eq.${encodeURIComponent(scope)}&select=id,scope,name,color,pinned,created_at,updated_at&order=pinned.desc,name.asc`, env);
+        return json(rows, 200, origin);
+      }
+      if (url.pathname === "/vault/folders" && request.method === "POST") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required." }, 401, origin);
+        return json(await saveVaultFolder(identity, await readBody(request), env), 200, origin);
+      }
+      if (url.pathname === "/vault/folders" && request.method === "DELETE") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required." }, 401, origin);
+        const id = url.searchParams.get("id") || "";
+        const scope = url.searchParams.get("scope") || "";
+        if (!isUuid(id) || !VALID_FOLDER_SCOPES.has(scope)) return json({ error: "Choose a valid page folder." }, 400, origin);
+        const result = await supabaseAdminFetch(`/rest/v1/vault_folders?id=eq.${encodeURIComponent(id)}&user_id=eq.${encodeURIComponent(identity.id)}&scope=eq.${encodeURIComponent(scope)}`, env, { method: "DELETE", headers: { Prefer: "return=minimal" } });
         if (!result.ok) return upstreamError(result, origin);
         return json({ ok: true }, 200, origin);
       }
@@ -710,7 +733,9 @@ function randomLoginId() {
 }
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
 const DUMMY_PASSWORD = "persora-login-timing-padding-never-use";
-const VALID_SECTIONS = new Set(["documents", "academics", "subscriptions", "family", "purchases", "accounts", "memberships", "study", "business-card", "urls", "notes"]);
+const VALID_SECTIONS = new Set(["documents", "academics", "subscriptions", "family", "purchases", "accounts", "memberships", "wallet-cards", "study", "business-card", "urls", "notes"]);
+const VALID_FOLDER_SCOPES = new Set([...VALID_SECTIONS, "contacts", "business-cards", "medical-records"]);
+const VALID_FOLDER_COLORS = new Set(["blue", "sky", "teal", "violet", "amber", "rose", "slate", "mint"]);
 function validPasswordLength(password) { return typeof password === "string" && password.length >= 12 && new TextEncoder().encode(password).length <= 72; }
 function rpcValue(value) {
   if (Array.isArray(value)) return value.length ? rpcValue(value[0]) : null;
@@ -1312,6 +1337,7 @@ async function saveBusinessCard(identity, body, env) {
   const profilePhotoKey = await validateBusinessPhoto(identity, typeof body.profilePhotoKey === "string" ? body.profilePhotoKey : "", env);
   const businessLogoKey = await validateBusinessPhoto(identity, typeof body.businessLogoKey === "string" ? body.businessLogoKey : "", env);
   const isPublic = Boolean(body.isPublic);
+  const folderId = await resolveVaultFolderId(identity, body.folderId, "business-cards", env);
   const style = typeof body.style === "string" && BUSINESS_CARD_STYLES.has(body.style) ? body.style : "garden";
   const cardId = existing?.card_id || (isPublic ? securePublicCardId() : null);
   const now = new Date().toISOString();
@@ -1319,7 +1345,7 @@ async function saveBusinessCard(identity, body, env) {
     user_id: identity.id, card_id: cardId, is_public: isPublic, card_style: style, full_name: fullName, job_title: jobTitle || null, company: company || null,
     phone_numbers: phoneNumbers, email: email || null, websites, social_links: socialLinks,
     address: address || null, bio: bio || null, custom_links: customLinks,
-    profile_photo_key: profilePhotoKey || null, business_logo_key: businessLogoKey || null, updated_at: now,
+    profile_photo_key: profilePhotoKey || null, business_logo_key: businessLogoKey || null, folder_id: folderId, updated_at: now,
   };
   const path = existing ? `/rest/v1/business_cards?id=eq.${encodeURIComponent(existing.id)}&user_id=eq.${encodeURIComponent(identity.id)}` : "/rest/v1/business_cards";
   const response = await supabaseAdminFetch(path, env, { method: existing ? "PATCH" : "POST", headers: { "Content-Type": "application/json", Prefer: "return=representation" }, body: JSON.stringify(row) });
@@ -1440,10 +1466,11 @@ async function saveMedicalRecord(identity, body, env) {
     if (otherReferences.some((entry) => entry.id !== id)) throw new HttpError("This file is already attached to another medical record. Upload a separate copy only if you intend to store one.", 409);
     file = { key, name: clean(object.customMetadata?.originalName || body.file.name, "File name", 180) || "medical-record-file", size: Number(object.size), type: safeContentType(object.httpMetadata?.contentType || body.file.type || "application/octet-stream") };
   }
+  const folderId = await resolveVaultFolderId(identity, body.folderId, "medical-records", env);
   const row = {
     user_id: identity.id, title, record_type: recordType, record_date: recordDate, provider, hospital, specialty, notes,
     diagnosis, test_name: testName, test_result: testResult, medication_notes: medicationNotes, follow_up_date: followUpDate,
-    related_reminder_id: relatedReminderId || null, file_key: file?.key || null, file_name: file?.name || null, file_size: file?.size ?? null, file_type: file?.type || null,
+    related_reminder_id: relatedReminderId || null, file_key: file?.key || null, file_name: file?.name || null, file_size: file?.size ?? null, file_type: file?.type || null, folder_id: folderId,
     updated_at: new Date().toISOString(),
   };
   const response = await supabaseAdminFetch(existing ? `/rest/v1/medical_records?id=eq.${encodeURIComponent(id)}&user_id=eq.${owner}` : "/rest/v1/medical_records", env, {
@@ -1516,10 +1543,11 @@ async function saveContact(identity, body, env) {
   if (expectedUpdatedAt && (!existing[0] || existing[0].updated_at !== expectedUpdatedAt)) {
     throw new HttpError("This contact changed on another device. Refresh before saving your edit.", 409);
   }
+  const folderId = await resolveVaultFolderId(identity, body.folderId, "contacts", env);
   const row = {
     full_name: fullName, phone_numbers: phoneNumbers, email: email || null, company: company || null,
     job_title: jobTitle || null, address: address || null, birthday: birthday || null, notes: notes || null,
-    category, photo_key: photoKey || null, favorite: Boolean(body.favorite), updated_at: new Date().toISOString(),
+    category, photo_key: photoKey || null, favorite: Boolean(body.favorite), folder_id: folderId, updated_at: new Date().toISOString(),
   };
   const isUpdate = Boolean(existing[0]);
   const path = isUpdate
@@ -1569,7 +1597,7 @@ async function mergeContacts(identity, body, env) {
     full_name: firstText("full_name"), phone_numbers: [...phones.values()], email: firstText("email") || null,
     company: firstText("company") || null, job_title: firstText("job_title") || null, address: firstText("address") || null,
     birthday: firstText("birthday") || null, notes: noteBlocks.join("\n\n") || null,
-    category: primary.category || "Other", photo_key: photoKey, favorite: rows.some((row) => Boolean(row.favorite)), updated_at: new Date().toISOString(),
+    category: primary.category || "Other", photo_key: photoKey, favorite: rows.some((row) => Boolean(row.favorite)), folder_id: primary.folder_id || null, updated_at: new Date().toISOString(),
   };
   const update = await supabaseAdminFetch(`/rest/v1/contacts?id=eq.${encodeURIComponent(primaryId)}&user_id=eq.${encodeURIComponent(identity.id)}`, env, {
     method: "PATCH", headers: { "Content-Type": "application/json", Prefer: "return=representation" }, body: JSON.stringify(mergedRow),
@@ -1591,6 +1619,43 @@ async function mergeContacts(identity, body, env) {
   return saved;
 }
 
+async function resolveVaultFolderId(identity, value, scope, env) {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value !== "string" || !isUuid(value)) throw new HttpError("Choose a valid folder from this page.", 400);
+  const rows = await restRows(`vault_folders?id=eq.${encodeURIComponent(value)}&user_id=eq.${encodeURIComponent(identity.id)}&scope=eq.${encodeURIComponent(scope)}&select=id&limit=1`, env);
+  if (!rows.length) throw new HttpError("That folder does not belong to this page. Move records only within their own page.", 403);
+  return value;
+}
+
+async function saveVaultFolder(identity, body, env) {
+  const id = typeof body.id === "string" ? body.id : "";
+  const scope = typeof body.scope === "string" ? body.scope : "";
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  const color = typeof body.color === "string" ? body.color : "blue";
+  if (!VALID_FOLDER_SCOPES.has(scope)) throw new HttpError("Choose a valid page for this folder.", 400);
+  if (name.length < 1 || name.length > 64) throw new HttpError("Enter a folder name between 1 and 64 characters.", 400);
+  if (!VALID_FOLDER_COLORS.has(color)) throw new HttpError("Choose a folder color from the palette.", 400);
+  if (id && !isUuid(id)) throw new HttpError("Choose a valid folder.", 400);
+  if (id) {
+    const owned = await restRows(`vault_folders?id=eq.${encodeURIComponent(id)}&user_id=eq.${encodeURIComponent(identity.id)}&scope=eq.${encodeURIComponent(scope)}&select=id&limit=1`, env);
+    if (!owned.length) throw new HttpError("That folder does not belong to this page.", 404);
+  }
+  const record = { scope, name, color, pinned: Boolean(body.pinned), updated_at: new Date().toISOString() };
+  const response = await supabaseAdminFetch(id ? `/rest/v1/vault_folders?id=eq.${encodeURIComponent(id)}&user_id=eq.${encodeURIComponent(identity.id)}&scope=eq.${encodeURIComponent(scope)}` : "/rest/v1/vault_folders", env, {
+    method: id ? "PATCH" : "POST", headers: { "Content-Type": "application/json", Prefer: "return=representation" },
+    body: JSON.stringify(id ? record : { user_id: identity.id, ...record }),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    if (response.status === 409 || body.code === "23505") throw new HttpError("A folder with that name already exists in this page.", 409);
+    throw new HttpError(body.message || "The folder could not be saved.", response.status >= 400 && response.status < 500 ? response.status : 502);
+  }
+  const saved = await response.json();
+  const row = Array.isArray(saved) ? saved[0] : saved;
+  if (!row) throw new HttpError("The folder could not be saved.", 500);
+  return row;
+}
+
 async function saveOwnedVaultItem(identity, body, env) {
   const id = typeof body.id === "string" ? body.id : "";
   const section = typeof body.section === "string" ? body.section : "";
@@ -1600,6 +1665,13 @@ async function saveOwnedVaultItem(identity, body, env) {
   if (!VALID_SECTIONS.has(section)) throw new HttpError("Choose a valid vault section.");
   if (!title || title.length > 240 || subtitle.length > 240) throw new HttpError("Enter a title and keep it under 240 characters.");
   const metadata = body.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata) ? body.metadata : {};
+  if (section === "wallet-cards") {
+    const allowedCardFields = new Set(["network", "cardType", "issuer", "cardholder", "lastFour", "expiryMonth", "expiryYear", "currency", "notes"]);
+    if (Object.keys(metadata).some((key) => !allowedCardFields.has(key))) throw new HttpError("Wallet cards only save masked card details. Full card numbers and security codes are not accepted.", 400);
+    if (metadata.lastFour && !/^\d{4}$/.test(String(metadata.lastFour))) throw new HttpError("Enter only the card's four ending digits.", 400);
+    if (metadata.expiryMonth && !/^(0[1-9]|1[0-2])$/.test(String(metadata.expiryMonth))) throw new HttpError("Choose a valid card expiry month.", 400);
+    if (metadata.network && !["Visa", "Mastercard", "American Express", "UnionPay", "Discover", "Other"].includes(String(metadata.network))) throw new HttpError("Choose a supported card network.", 400);
+  }
   const entries = Object.entries(metadata);
   const metadataBytes = new TextEncoder().encode(JSON.stringify(metadata)).length;
   if (entries.length > 40 || metadataBytes > 20_000 || entries.some(([key, value]) => key.length > 80 || typeof value !== "string" || value.length > 5000)) throw new HttpError("Some item details are too long.");
@@ -1611,10 +1683,12 @@ async function saveOwnedVaultItem(identity, body, env) {
     const object = await env.VAULT_FILES.get(fileKey);
     if (!object || object.customMetadata?.ownerId !== identity.id) throw new HttpError("That file is not available in your vault.", 404);
   }
-  const existing = await restRows(`vault_items?id=eq.${encodeURIComponent(id)}&select=user_id`, env);
+  const existing = await restRows(`vault_items?id=eq.${encodeURIComponent(id)}&select=user_id,section`, env);
   if (existing[0] && existing[0].user_id !== identity.id) throw new HttpError("That vault item belongs to another account.", 403);
+  if (existing[0] && existing[0].section !== section) throw new HttpError("A saved record cannot be moved to a different page. Create a new record in that page instead.", 403);
+  const folderId = await resolveVaultFolderId(identity, body.folderId, section, env);
   const row = {
-    section, title, subtitle: subtitle || null, metadata,
+    section, title, subtitle: subtitle || null, metadata, folder_id: folderId,
     file_key: fileKey || null, file_name: fileKey ? fileName.slice(0, 240) : null,
     file_size: fileKey && Number.isFinite(Number(file.size)) ? Math.max(0, Number(file.size)) : null,
     file_type: fileKey ? safeContentType(file.type) : null,
@@ -1792,22 +1866,28 @@ async function createPaymentRequest(identity, body, env) {
   const planId = typeof body.planId === "string" ? body.planId : "";
   const methodId = typeof body.methodId === "string" ? body.methodId.trim().slice(0, 80) : "";
   const reference = typeof body.reference === "string" ? body.reference.trim().slice(0, 180) : "";
-  if (!isUuid(planId) || !methodId || reference.length < 1) throw new HttpError("Choose a plan, payment method, and transaction reference.", 400);
+  const billingPeriod = body.billingPeriod === "monthly" || body.billingPeriod === "yearly" ? body.billingPeriod : "";
+  const durationCount = Number(body.durationCount);
+  if (!isUuid(planId) || !methodId || reference.length < 1 || !billingPeriod || !Number.isInteger(durationCount) || durationCount < 1 || durationCount > 120) throw new HttpError("Choose a plan, payment method, valid billing period, duration, and transaction reference.", 400);
   const settings = await loadSettings(env);
   if (!settings.billing.billingEnabled) throw new HttpError("Manual subscription payments are not enabled yet. Please check back later.", 409);
+  const minTermMonths = Math.max(1, Math.trunc(Number(settings.billing.minTermMonths) || 1));
+  const maxTermMonths = Math.min(120, Math.max(minTermMonths, Math.trunc(Number(settings.billing.maxTermMonths) || 12)));
+  const termMonths = durationCount * (billingPeriod === "yearly" ? 12 : 1);
+  if (termMonths < minTermMonths || termMonths > maxTermMonths) throw new HttpError(`Choose a term from ${minTermMonths} to ${maxTermMonths} months, as configured by the administrator.`, 400);
   const methodConfig = settings.paymentMethods.find((entry) => entry && entry.id === methodId && entry.active === true);
   if (!methodConfig) throw new HttpError("That payment method is unavailable. Refresh and choose an active method.", 409);
   const method = methodConfig.name;
   const rows = await restRows(`subscription_plans?id=eq.${encodeURIComponent(planId)}&active=eq.true&select=id,name,storage_gb,price_per_gb_monthly`, env);
   const plan = rows[0];
   if (!plan) throw new HttpError("That plan is no longer available.", 404);
-  const amount = Number((Number(plan.storage_gb) * Number(plan.price_per_gb_monthly)).toFixed(2));
+  const amount = Number((Number(plan.storage_gb) * Number(plan.price_per_gb_monthly) * termMonths).toFixed(2));
   if (amount <= 0) throw new HttpError("The free plan does not require a payment request.", 400);
   const pending = await restRows(`payment_records?user_id=eq.${encodeURIComponent(identity.id)}&status=eq.pending&select=id&limit=1`, env);
   if (pending.length) throw new HttpError("You already have a payment request waiting for review.", 409);
   const response = await supabaseAdminFetch("/rest/v1/payment_records", env, {
     method: "POST", headers: { "Content-Type": "application/json", Prefer: "return=representation" },
-    body: JSON.stringify({ user_id: identity.id, plan_id: plan.id, amount, currency: settings.billing.currency, method, reference, status: "pending" }),
+    body: JSON.stringify({ user_id: identity.id, plan_id: plan.id, amount, currency: settings.billing.currency, method, reference, billing_period: billingPeriod, duration_count: durationCount, term_months: termMonths, status: "pending" }),
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));

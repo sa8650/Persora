@@ -1,19 +1,22 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
 import { ArrowRight, BriefcaseBusiness, Check, Copy, ExternalLink, Globe2, ImagePlus, Mail, MapPin, Phone, Plus, Share2, ShieldCheck, Trash2, UserRound, X } from "lucide-react";
-import type { BusinessCardDraft, BusinessCardStyle, BusinessCustomLink, BusinessSocialLink, BusinessSocialPlatform, ContactPhone, DigitalBusinessCard, TransferProgress } from "../types";
+import type { BusinessCardDraft, BusinessCardStyle, BusinessCustomLink, BusinessSocialLink, BusinessSocialPlatform, ContactPhone, DigitalBusinessCard, TransferProgress, VaultFolder } from "../types";
 import { humanSize, initials } from "../lib/utils";
 import { fetchPublicBusinessCardPhoto, fetchVaultFile } from "../lib/backend";
 import SocialBrandIcon from "./SocialBrandIcon";
 import { TransferProgressIndicator } from "./ProgressIndicator";
 import ShareRecordDialog from "./ShareRecordDialog";
+import ModalPortal from "./ModalPortal";
+import MoreOptionsMenu from "./MoreOptionsMenu";
+import VaultFolderShelf from "./VaultFolderShelf";
 
 const SOCIAL_PLATFORMS: BusinessSocialPlatform[] = ["Facebook", "Instagram", "LinkedIn", "X", "YouTube", "TikTok", "WhatsApp", "Telegram", "GitHub", "Pinterest"];
 const PHONE_LABELS = ["Mobile", "Work", "Office", "Other"];
 const CARD_STYLES: { id: BusinessCardStyle; name: string; note: string }[] = [
-  { id: "garden", name: "Garden", note: "Persora green" },
-  { id: "minimal", name: "Minimal", note: "Soft ivory" },
-  { id: "midnight", name: "Midnight", note: "Deep ink" },
-  { id: "terracotta", name: "Terracotta", note: "Warm clay" },
+  { id: "garden", name: "Signature", note: "Persora blue" },
+  { id: "minimal", name: "Minimal", note: "Soft neutral" },
+  { id: "midnight", name: "Midnight", note: "Deep blue" },
+  { id: "terracotta", name: "Warm", note: "Warm accent" },
 ];
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const emptyCard = (): BusinessCardDraft => ({
@@ -33,7 +36,9 @@ const normalizePhoneInput = (value: string) => {
 const allowedPhotoTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
 export interface BusinessCardsViewProps {
+  userId: string;
   cards: DigitalBusinessCard[];
+  demoMode: boolean;
   connected: boolean;
   onSave: (draft: BusinessCardDraft, onProgress?: (progress: TransferProgress) => void) => Promise<DigitalBusinessCard>;
   onDelete: (card: DigitalBusinessCard) => Promise<void>;
@@ -42,16 +47,24 @@ export interface BusinessCardsViewProps {
   notify: (message: string, kind?: "success" | "error") => void;
 }
 
-export default function BusinessCardsView({ cards, connected, onSave, onDelete, onShare, onRefresh, notify }: BusinessCardsViewProps) {
+export default function BusinessCardsView({ userId, cards, demoMode, connected, onSave, onDelete, onShare, onRefresh, notify }: BusinessCardsViewProps) {
   const [editor, setEditor] = useState<DigitalBusinessCard | null | false>(false);
   const [deleteTarget, setDeleteTarget] = useState<DigitalBusinessCard | null>(null);
   const [shareTarget, setShareTarget] = useState<DigitalBusinessCard | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [copiedId, setCopiedId] = useState("");
   const [savingDelete, setSavingDelete] = useState(false);
-  const sortedCards = useMemo(() => [...cards].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)), [cards]);
+  const [folders, setFolders] = useState<VaultFolder[]>([]);
+  const [selectedFolderId, setSelectedFolderId] = useState("");
+  const folderCards = selectedFolderId ? cards.filter((card) => card.folderId === selectedFolderId) : cards;
+  const folderCounts = Object.fromEntries(folders.map((folder) => [folder.id, cards.filter((card) => card.folderId === folder.id).length]));
+  const sortedCards = useMemo(() => [...folderCards].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)), [folderCards]);
   const openEditor = (card?: DigitalBusinessCard) => setEditor(card || null);
   const refresh = async () => { setRefreshing(true); try { await onRefresh(); } catch (error) { notify(error instanceof Error ? error.message : "Couldn't refresh business cards.", "error"); } finally { setRefreshing(false); } };
+  const moveCardFolder = async (card: DigitalBusinessCard, folderId: string | null) => {
+    try { const saved = await onSave({ ...card, folderId: folderId || undefined }); notify(folderId ? `Moved to ${folders.find((folder) => folder.id === folderId)?.name || "folder"}.` : "Business card moved out of its folder."); return saved; }
+    catch (error) { notify(error instanceof Error ? error.message : "The business card could not be moved.", "error"); }
+  };
   const copyUrl = async (card: DigitalBusinessCard) => {
     const url = urlFor(card.cardId);
     if (!url) return;
@@ -69,17 +82,18 @@ export default function BusinessCardsView({ cards, connected, onSave, onDelete, 
   return <div className="business-cards-page">
     <section className="business-cards-hero"><div className="business-cards-hero-copy"><span className="section-eyebrow">Your identity, beautifully shared</span><h2>Introduce yourself<br/><em>with confidence.</em></h2><p>Create a polished digital card. Keep it private or publish a link anyone can open.</p><div className="business-cards-hero-stats"><span><b>{cards.length}</b> cards</span><span><b>{cards.filter((card) => card.isPublic).length}</b> public</span><span><ShieldCheck size={13}/> You control each link</span></div></div><div className="business-cards-hero-mark"><span><BriefcaseBusiness size={30}/></span><i/><i/><i/></div></section>
     {!connected && <div className="business-cards-demo-notice"><ShieldCheck size={15}/><span>Demo cards are saved in this browser. Sign in with the Persora cloud API to publish public URLs.</span></div>}
-    <div className="business-cards-toolbar"><div><span className="section-eyebrow">Your cards</span><h3>Digital business cards <small>{cards.length}</small></h3></div><div><button type="button" className="business-card-refresh" onClick={() => void refresh()} disabled={refreshing} aria-label="Sync business cards">{refreshing ? "Syncing…" : "Sync"}</button><button type="button" className="business-card-create" onClick={() => openEditor()}><Plus size={15}/> Create a card</button></div></div>
+    <div className="business-cards-toolbar"><div><span className="section-eyebrow">Your cards</span><h3>Digital business cards <small>{folderCards.length}</small></h3></div><div><button type="button" className="business-card-refresh" onClick={() => void refresh()} disabled={refreshing} aria-label="Sync business cards">{refreshing ? "Syncing…" : "Sync"}</button><button type="button" className="business-card-create" onClick={() => openEditor()}><Plus size={15}/> Create a card</button></div></div>
+    <VaultFolderShelf userId={userId} scope="business-cards" pageLabel="Business Cards" demoMode={demoMode} totalCount={cards.length} folderCounts={folderCounts} selectedFolderId={selectedFolderId} onSelectFolder={setSelectedFolderId} onFoldersChange={setFolders} notify={notify}/>
     {sortedCards.length ? <div className="business-card-grid">{sortedCards.map((card) => <article className="business-card-manager-card" key={card.id}>
-      <div className="business-card-manager-top"><span className={`business-card-visibility ${card.isPublic ? "is-public" : "is-private"}`}><i/>{card.isPublic ? "Public" : "Private"}</span><button type="button" className="business-card-menu-delete" onClick={() => setDeleteTarget(card)} aria-label={`Delete ${card.fullName}'s card`} title="Delete card"><Trash2 size={15}/></button></div>
+      <div className="business-card-manager-top"><span className={`business-card-visibility ${card.isPublic ? "is-public" : "is-private"}`}><i/>{card.isPublic ? "Public" : "Private"}</span><MoreOptionsMenu label={`${card.fullName} card options`} actions={[{ label: "Edit business card", icon: UserRound, onSelect: () => openEditor(card) }, { label: "Share card", icon: Share2, onSelect: () => setShareTarget(card) }, { label: "Delete card", icon: Trash2, danger: true, onSelect: () => setDeleteTarget(card) }]} folders={folders} folderId={card.folderId} onMoveFolder={(folderId) => void moveCardFolder(card, folderId)}/></div>
       <button className="business-card-manager-profile" onClick={() => openEditor(card)} type="button"><BusinessCardImage dataUrl={card.profilePhotoDataUrl} storageKey={card.profilePhotoKey} className="business-card-manager-avatar" alt={card.fullName}/><span><b>{card.fullName || "Untitled card"}</b><small>{[card.jobTitle, card.company].filter(Boolean).join(" · ") || "Add a role and company"}</small></span></button>
       <div className="business-card-manager-meta"><span><Phone size={13}/>{card.phoneNumbers[0]?.number || "No phone added"}</span><span><Globe2 size={13}/>{card.websites.length ? `${card.websites.length} website${card.websites.length === 1 ? "" : "s"}` : "No website added"}</span></div>
       {card.isPublic && card.cardId ? <div className="business-card-public-link"><a href={urlFor(card.cardId)} target="_blank" rel="noreferrer"><ExternalLink size={13}/><span>{urlFor(card.cardId).replace(window.location.origin, "")}</span></a><button type="button" onClick={() => void copyUrl(card)} aria-label="Copy public card link" title="Copy public URL">{copiedId === card.id ? <Check size={14}/> : <Copy size={14}/>}</button></div> : <div className="business-card-private-note"><ShieldCheck size={13}/> Only you can see this card</div>}
       <div className="business-card-manager-actions"><button type="button" onClick={() => openEditor(card)}><UserRound size={14}/> Edit card</button><button type="button" onClick={() => setShareTarget(card)} disabled={!connected} title="Share privately with a Persora user"><Share2 size={14}/> Share</button>{card.isPublic && card.cardId && <a href={urlFor(card.cardId)} target="_blank" rel="noreferrer"><ArrowRight size={14}/> View public</a>}</div>
     </article>)}</div> : <div className="business-cards-empty"><span><BriefcaseBusiness size={22}/></span><h3>Your first introduction starts here.</h3><p>Add your name, details, and links to create a card you can keep private or share with a public URL.</p><button className="business-card-create" onClick={() => openEditor()}><Plus size={15}/> Create your first card</button></div>}
-    {editor !== false && <BusinessCardEditor key={editor?.id || "new-business-card"} card={editor || undefined} connected={connected} onClose={() => setEditor(false)} onSave={async (draft, onProgress) => { const saved = await onSave(draft, onProgress); setEditor(false); notify(saved.isPublic ? "Your card is public and ready to share." : "Your private business card is saved."); return saved; }} />}
-    {shareTarget && <ShareRecordDialog kind="business card" title={shareTarget.fullName} onClose={() => setShareTarget(null)} onShare={(recipient) => onShare(shareTarget, recipient)}/>}
-    {deleteTarget && <div className="modal-backdrop business-card-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !savingDelete && setDeleteTarget(null)}><section className="business-card-confirm" role="alertdialog" aria-modal="true"><span><Trash2 size={19}/></span><h2>Delete this card?</h2><p>{deleteTarget.isPublic ? "Its public URL will stop working immediately. " : ""}“{deleteTarget.fullName}” will be removed from your business cards.</p><div><button className="quiet-button" onClick={() => setDeleteTarget(null)} disabled={savingDelete}>Cancel</button><button className="contacts-danger-button" onClick={() => void deleteCard()} disabled={savingDelete}>{savingDelete ? "Deleting…" : "Delete card"}</button></div></section></div>}
+    {editor !== false && <ModalPortal><BusinessCardEditor key={editor?.id || "new-business-card"} card={editor || undefined} connected={connected} onClose={() => setEditor(false)} onSave={async (draft, onProgress) => { const saved = await onSave(draft, onProgress); setEditor(false); notify(saved.isPublic ? "Your card is public and ready to share." : "Your private business card is saved."); return saved; }} /></ModalPortal>}
+    {shareTarget && <ModalPortal><ShareRecordDialog kind="business card" title={shareTarget.fullName} onClose={() => setShareTarget(null)} onShare={(recipient) => onShare(shareTarget, recipient)}/></ModalPortal>}
+    {deleteTarget && <ModalPortal><div className="modal-backdrop business-card-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !savingDelete && setDeleteTarget(null)}><section className="business-card-confirm" role="alertdialog" aria-modal="true"><span><Trash2 size={19}/></span><h2>Delete this card?</h2><p>{deleteTarget.isPublic ? "Its public URL will stop working immediately. " : ""}“{deleteTarget.fullName}” will be removed from your business cards.</p><div><button className="quiet-button" onClick={() => setDeleteTarget(null)} disabled={savingDelete}>Cancel</button><button className="contacts-danger-button" onClick={() => void deleteCard()} disabled={savingDelete}>{savingDelete ? "Deleting…" : "Delete card"}</button></div></section></div></ModalPortal>}
   </div>;
 }
 

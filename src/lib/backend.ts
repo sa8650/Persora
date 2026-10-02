@@ -4,6 +4,9 @@ export {
   fetchVaultFile,
   isPagesApiConfigured,
   loadVaultItems,
+  loadVaultFolders,
+  saveVaultFolder,
+  deleteVaultFolder,
   loadContacts,
   saveContactRecord,
   deleteContactRecord,
@@ -46,5 +49,6 @@ export {
   deleteMedicalRecord,
   uploadMedicalRecordFile,
   deleteUnattachedMedicalRecordFile,
+  fetchMedicalRecordFile,
   downloadMedicalRecordFile,
 } from "./cloud";

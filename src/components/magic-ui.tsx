@@ -1,26 +1,29 @@
-import { useRef, type ButtonHTMLAttributes, type HTMLAttributes, type MouseEvent, type ReactNode } from "react";
+import { useRef, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from "react";
+import { MagicCard as RegistryMagicCard } from "./ui/magic-card";
+import { ShimmerButton as RegistryShimmerButton } from "./ui/shimmer-button";
 
 interface MagicCardProps extends HTMLAttributes<HTMLDivElement> {
   children: ReactNode;
   glowColor?: string;
 }
 
-export function MagicCard({ children, className = "", glowColor = "rgba(77, 155, 130, 0.13)", onMouseMove, ...props }: MagicCardProps) {
-  const ref = useRef<HTMLDivElement>(null);
-  const handleMove = (event: MouseEvent<HTMLDivElement>) => {
-    if (ref.current) {
-      const bounds = ref.current.getBoundingClientRect();
-      ref.current.style.setProperty("--mouse-x", `${event.clientX - bounds.left}px`);
-      ref.current.style.setProperty("--mouse-y", `${event.clientY - bounds.top}px`);
-      ref.current.style.setProperty("--magic-glow", glowColor);
-    }
-    onMouseMove?.(event);
-  };
+/**
+ * Persora's small adapter around the Magic UI registry card. Keeping the
+ * interaction target inside the card preserves the existing click/keyboard
+ * behavior while the registry component owns its pointer-reactive edge glow.
+ */
+export function MagicCard({ children, className = "", glowColor = "rgba(26, 115, 232, .12)", ...props }: MagicCardProps) {
   return (
-    <div ref={ref} className={`magic-card ${className}`} onMouseMove={handleMove} {...props}>
-      <span className="magic-card-spotlight" aria-hidden="true" />
-      {children}
-    </div>
+    <RegistryMagicCard
+      className={`magic-card ${className}`}
+      gradientSize={260}
+      gradientFrom="rgba(26, 115, 232, .48)"
+      gradientTo="rgba(138, 180, 248, .22)"
+      gradientColor={glowColor}
+      gradientOpacity={0.42}
+    >
+      <div className="magic-card-content" {...props}>{children}</div>
+    </RegistryMagicCard>
   );
 }
 
@@ -31,10 +34,16 @@ interface ShimmerButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 export function ShimmerButton({ children, className = "", soft = false, ...props }: ShimmerButtonProps) {
   return (
-    <button className={`shimmer-button ${soft ? "shimmer-button-soft" : ""} ${className}`} {...props}>
-      <span className="shimmer-button-label">{children}</span>
-      <span className="shimmer-button-shine" aria-hidden="true" />
-    </button>
+    <RegistryShimmerButton
+      {...props}
+      className={`shimmer-button ${soft ? "shimmer-button-soft" : ""} ${className}`}
+      background={soft ? "#e8f0fe" : "#1a73e8"}
+      shimmerColor={soft ? "#8ab4f8" : "#ffffff"}
+      shimmerDuration="3.4s"
+      borderRadius="12px"
+    >
+      <span className="shimmer-content">{children}</span>
+    </RegistryShimmerButton>
   );
 }
 
@@ -47,5 +56,6 @@ export function BorderBeam({ className = "" }: { className?: string }) {
 }
 
 export function BlurFade({ children, className = "", delay = 0 }: { children: ReactNode; className?: string; delay?: number }) {
-  return <div className={`blur-fade ${className}`} style={{ animationDelay: `${delay}ms` }}>{children}</div>;
+  const style = useRef({ animationDelay: `${delay}ms` }).current;
+  return <div className={`blur-fade ${className}`} style={style}>{children}</div>;
 }

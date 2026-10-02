@@ -1,4 +1,4 @@
-import type { AdminConsoleSnapshot, AdminMetrics, AlarmRingtone, BillingSnapshot, BusinessCardDraft, BusinessSocialLink, DigitalBusinessCard, DocumentTypeOption, MedicalRecord, MedicalRecordDraft, MedicalRecordFile, MedicalRecordLink, PersoraContact, PaymentRecord, PublicDigitalBusinessCard, ShareComment, ShareNotification, SharePermission, SharedDirection, SharedVaultEntry, RecordShareEntry, SiteContent, SubscriptionPlan, TimelineAttachment, TimelineDraft, TimelineEvent, TransferProgress, VaultFile, VaultItem } from "../types";
+import type { AdminConsoleSnapshot, AdminMetrics, AlarmRingtone, BillingSnapshot, BusinessCardDraft, BusinessSocialLink, DigitalBusinessCard, DocumentTypeOption, MedicalRecord, MedicalRecordDraft, MedicalRecordFile, MedicalRecordLink, PersoraContact, PaymentRecord, PublicDigitalBusinessCard, ShareComment, ShareNotification, SharePermission, SharedDirection, SharedVaultEntry, RecordShareEntry, SiteContent, SubscriptionPlan, TimelineAttachment, TimelineDraft, TimelineEvent, TransferProgress, VaultFile, VaultFolder, VaultFolderDraft, VaultFolderScope, VaultItem } from "../types";
 import { DEFAULT_SITE_CONTENT } from "../data/siteContent";
 
 const pagesFunctionsEnabled = import.meta.env.VITE_USE_PAGES_FUNCTIONS === "true";
@@ -64,12 +64,35 @@ function fromRow(row: Record<string, unknown>): VaultItem {
     ...(file ? { file } : {}),
     favorite: Boolean(row.favorite),
     pinned: Boolean(row.pinned),
+    ...(typeof row.folder_id === "string" && row.folder_id ? { folderId: row.folder_id } : {}),
   };
 }
 
 export async function loadVaultItems(): Promise<VaultItem[]> {
   const rows = await pagesApiJson<Record<string, unknown>[]>("/vault/items");
   return Array.isArray(rows) ? rows.map(fromRow) : [];
+}
+
+function vaultFolderFromRow(row: Record<string, unknown>): VaultFolder {
+  return {
+    id: String(row.id || ""), scope: String(row.scope || "documents") as VaultFolderScope,
+    name: String(row.name || "Untitled folder"), color: String(row.color || "blue") as VaultFolder["color"],
+    pinned: Boolean(row.pinned), createdAt: String(row.created_at || new Date().toISOString()), updatedAt: String(row.updated_at || new Date().toISOString()),
+  };
+}
+
+export async function loadVaultFolders(scope: VaultFolderScope): Promise<VaultFolder[]> {
+  const rows = await pagesApiJson<Record<string, unknown>[]>(`/vault/folders?scope=${encodeURIComponent(scope)}`);
+  return Array.isArray(rows) ? rows.map(vaultFolderFromRow) : [];
+}
+
+export async function saveVaultFolder(folder: VaultFolderDraft): Promise<VaultFolder> {
+  const row = await postJson<Record<string, unknown>>("/vault/folders", folder);
+  return vaultFolderFromRow(row);
+}
+
+export async function deleteVaultFolder(id: string, scope: VaultFolderScope): Promise<void> {
+  await pagesApiRequest(`/vault/folders?id=${encodeURIComponent(id)}&scope=${encodeURIComponent(scope)}`, { method: "DELETE" });
 }
 
 function contactFromRow(row: Record<string, unknown>): PersoraContact {
@@ -82,7 +105,7 @@ function contactFromRow(row: Record<string, unknown>): PersoraContact {
     address: String(row.address || ""), birthday: String(row.birthday || ""), notes: String(row.notes || ""),
     category: String(row.category || "Other") as PersoraContact["category"],
     ...(typeof row.photo_key === "string" && row.photo_key ? { photoKey: row.photo_key } : {}),
-    favorite: Boolean(row.favorite), createdAt: String(row.created_at || new Date().toISOString()), updatedAt: String(row.updated_at || new Date().toISOString()),
+    favorite: Boolean(row.favorite), ...(typeof row.folder_id === "string" && row.folder_id ? { folderId: row.folder_id } : {}), createdAt: String(row.created_at || new Date().toISOString()), updatedAt: String(row.updated_at || new Date().toISOString()),
   };
 }
 
@@ -95,7 +118,7 @@ export async function saveContactRecord(contact: Omit<PersoraContact, "id" | "cr
   const row = await postJson<Record<string, unknown>>("/contacts", {
     id: contact.id, name: contact.name, phoneNumbers: contact.phoneNumbers, email: contact.email,
     company: contact.company, jobTitle: contact.jobTitle, address: contact.address, birthday: contact.birthday,
-    notes: contact.notes, category: contact.category, favorite: contact.favorite, photoKey: contact.photoKey || null,
+    notes: contact.notes, category: contact.category, favorite: contact.favorite, photoKey: contact.photoKey || null, folderId: contact.folderId || null,
   });
   return contactFromRow(row);
 }
@@ -131,6 +154,7 @@ function businessCardFromRow(row: Record<string, unknown>): DigitalBusinessCard 
     address: String(row.address || ""), bio: String(row.bio || ""),
     customLinks: links.filter((link): link is Record<string, unknown> => Boolean(link) && typeof link === "object" && !Array.isArray(link)).map((link) => ({ label: String(link.label || "Link"), url: String(link.url || "") })).filter((link) => link.url),
     createdAt: String(row.created_at || new Date().toISOString()), updatedAt: String(row.updated_at || new Date().toISOString()),
+    ...(typeof row.folder_id === "string" && row.folder_id ? { folderId: row.folder_id } : {}),
   };
 }
 
@@ -143,7 +167,7 @@ export async function saveBusinessCard(card: BusinessCardDraft): Promise<Digital
   const row = await postJson<Record<string, unknown>>("/business-cards", {
     id: card.id, cardId: card.cardId || null, isPublic: card.isPublic, style: card.style || "garden", fullName: card.fullName, jobTitle: card.jobTitle, company: card.company,
     phoneNumbers: card.phoneNumbers, email: card.email, websites: card.websites, socialLinks: card.socialLinks, address: card.address, bio: card.bio,
-    customLinks: card.customLinks, profilePhotoKey: card.profilePhotoKey || null, businessLogoKey: card.businessLogoKey || null,
+    customLinks: card.customLinks, profilePhotoKey: card.profilePhotoKey || null, businessLogoKey: card.businessLogoKey || null, folderId: card.folderId || null,
   });
   return businessCardFromRow(row);
 }
@@ -294,7 +318,8 @@ function medicalRecordFromRow(row: Record<string, unknown>): MedicalRecord {
     recordDate: String(row.record_date || ""), provider: String(row.provider || ""), hospital: String(row.hospital || ""), specialty: String(row.specialty || ""), notes: String(row.notes || ""),
     diagnosis: String(row.diagnosis || ""), testName: String(row.test_name || ""), testResult: String(row.test_result || ""), medicationNotes: String(row.medication_notes || ""),
     followUpDate: String(row.follow_up_date || ""), ...(typeof row.related_reminder_id === "string" && row.related_reminder_id ? { relatedReminderId: row.related_reminder_id } : {}),
-    ...(file ? { file } : {}), links: links.filter((link) => link.linkKind !== "reminder"), createdAt: String(row.created_at || ""), updatedAt: String(row.updated_at || ""),
+    ...(file ? { file } : {}), links: links.filter((link) => link.linkKind !== "reminder"),
+    ...(typeof row.folder_id === "string" && row.folder_id ? { folderId: row.folder_id } : {}), createdAt: String(row.created_at || ""), updatedAt: String(row.updated_at || ""),
   };
 }
 
@@ -307,7 +332,7 @@ export async function saveMedicalRecord(draft: MedicalRecordDraft): Promise<Medi
   const row = await postJson<Record<string, unknown>>("/medical-records", {
     id: draft.id, title: draft.title, recordType: draft.recordType, recordDate: draft.recordDate, provider: draft.provider, hospital: draft.hospital, specialty: draft.specialty, notes: draft.notes,
     diagnosis: draft.diagnosis, testName: draft.testName, testResult: draft.testResult, medicationNotes: draft.medicationNotes, followUpDate: draft.followUpDate,
-    relatedReminderId: draft.relatedReminderId || null, links: draft.links, file: draft.removeFile ? null : draft.file || null,
+    relatedReminderId: draft.relatedReminderId || null, links: draft.links, file: draft.removeFile ? null : draft.file || null, folderId: draft.folderId || null,
   });
   return medicalRecordFromRow(row);
 }
@@ -326,11 +351,16 @@ export async function deleteUnattachedMedicalRecordFile(key: string): Promise<vo
   await pagesApiRequest(`/medical-records/upload?key=${encodeURIComponent(key)}`, { method: "DELETE" });
 }
 
-export async function downloadMedicalRecordFile(recordId: string): Promise<void> {
+export async function fetchMedicalRecordFile(recordId: string): Promise<{ blob: Blob; name: string }> {
   const response = await pagesApiRequest(`/medical-records/file?id=${encodeURIComponent(recordId)}`);
-  const blob = await response.blob(); const objectUrl = URL.createObjectURL(blob);
   const encoded = response.headers.get("X-File-Name"); let name = "medical-record";
   if (encoded) { try { name = decodeURIComponent(encoded); } catch { name = encoded; } }
+  return { blob: await response.blob(), name };
+}
+
+export async function downloadMedicalRecordFile(recordId: string): Promise<void> {
+  const { blob, name } = await fetchMedicalRecordFile(recordId);
+  const objectUrl = URL.createObjectURL(blob);
   const anchor = document.createElement("a"); anchor.href = objectUrl; anchor.download = name; document.body.appendChild(anchor); anchor.click(); anchor.remove();
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
 }
@@ -523,8 +553,8 @@ export async function loadBilling(): Promise<BillingSnapshot> {
   return pagesApiJson<BillingSnapshot>("/billing");
 }
 
-export async function submitPaymentRequest(planId: string, methodId: string, reference: string): Promise<PaymentRecord> {
-  return postJson("/payments", { planId, methodId, reference });
+export async function submitPaymentRequest(planId: string, methodId: string, reference: string, billingPeriod: "monthly" | "yearly", durationCount: number): Promise<PaymentRecord> {
+  return postJson("/payments", { planId, methodId, reference, billingPeriod, durationCount });
 }
 
 export async function loadStorageUsage(): Promise<BillingSnapshot["storage"]> {

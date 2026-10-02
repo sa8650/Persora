@@ -1,5 +1,4 @@
 import { useState, type FormEvent } from "react";
-import "../admin-portal.css";
 import { ArrowLeft, ArrowRight, KeyRound, LockKeyhole, ShieldCheck } from "lucide-react";
 import type { AppUser } from "../types";
 import type { AuthMode } from "./AuthDialog";

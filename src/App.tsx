@@ -1,5 +1,4 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ShieldCheck } from "lucide-react";
 import { DEMO_USER, SECTION_BY_ID, SECTION_DEFINITIONS } from "./data";
 import LandingPage from "./components/LandingPage";
 import AuthDialog, { type AuthMode } from "./components/AuthDialog";
@@ -12,6 +11,7 @@ import PublicInfoPage from "./components/PublicInfoPage";
 import { ConfirmDialog, ItemDetailDialog, ItemEditorDialog, ShareManagementDialog, TodoEditorDialog, ToastNotice } from "./components/VaultDialogs";
 import type { ActiveScheduleAlert, AppUser, BusinessCardDraft, ContactDraft, ContactImportProgress, DigitalBusinessCard, DocumentTypeOption, MedicalRecord, MedicalRecordDraft, MedicalRecordFile, NotesRecordKind, PersoraContact, SectionId, ShareComment, ShareNotification, SharePermission, SharedVaultEntry, RecordShareEntry, SiteContent, SubscriptionPlan, TimelineDraft, TimelineEvent, TransferProgress, VaultFilePreview, VaultItem, ViewId } from "./types";
 import { DEFAULT_SITE_CONTENT } from "./data/siteContent";
+import PersoraBootScreen from "./components/PersoraBootScreen";
 import {
   deleteOwnAccount,
   deleteVaultFile,
@@ -55,6 +55,7 @@ import {
   deleteMedicalRecord,
   uploadMedicalRecordFile,
   deleteUnattachedMedicalRecordFile,
+  fetchMedicalRecordFile,
   downloadMedicalRecordFile,
 } from "./lib/backend";
 import { loadAdminBootstrapStatus, loadDocumentTypes, loadPublicPlans, loadPublicSiteContent } from "./lib/cloud";
@@ -454,6 +455,19 @@ commitContacts(getLocalContacts(DEMO_USER.id));
     notify(oldItem ? "Your changes are saved." : `${candidate.title} is safely in your vault.`);
   };
 
+  const handleMoveVaultItem = async (item: VaultItem, folderId: string | null) => {
+    if (!user) throw new Error("Sign in before moving a record.");
+    const updated: VaultItem = { ...item, folderId: folderId || undefined, updatedAt: new Date().toISOString() };
+    if (user.demo) {
+      const next = items.map((entry) => entry.id === item.id ? updated : entry);
+      setItems(next); putLocalItems(next); return;
+    }
+    if (!isPagesApiConfigured) throw new Error("Connect the Persora cloud API to move private records between folders.");
+    const saved = await saveVaultItem(updated);
+    setItems((current) => current.map((entry) => entry.id === saved.id ? saved : entry));
+    setSharedByMe((current) => current.map((entry) => entry.item.id === saved.id ? { ...entry, item: saved } : entry));
+  };
+
   const handleDeleteItem = async () => {
     if (!deleteTarget || !user) return;
     const target = deleteTarget;
@@ -627,7 +641,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
         id: draft.id || createId(), name: draft.name.trim(), phoneNumbers: draft.phoneNumbers, email: draft.email.trim(),
         company: draft.company.trim(), jobTitle: draft.jobTitle.trim(), address: draft.address.trim(), birthday: draft.birthday,
         notes: draft.notes.trim(), category: draft.category, favorite: Boolean(draft.favorite),
-        ...(photoDataUrl ? { photoDataUrl } : {}), createdAt: existing?.createdAt || now, updatedAt: now,
+        ...(photoDataUrl ? { photoDataUrl } : {}), ...(draft.folderId ? { folderId: draft.folderId } : {}), createdAt: existing?.createdAt || now, updatedAt: now,
       };
       const current = contactsRef.current;
       const next = existing ? current.map((contact) => contact.id === saved.id ? saved : contact) : [saved, ...current];
@@ -646,7 +660,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       const saved = await saveContactRecord({
         ...(draft.id ? { id: draft.id } : {}), name: draft.name.trim(), phoneNumbers: draft.phoneNumbers, email: draft.email.trim(),
         company: draft.company.trim(), jobTitle: draft.jobTitle.trim(), address: draft.address.trim(), birthday: draft.birthday,
-        notes: draft.notes.trim(), category: draft.category, favorite: Boolean(draft.favorite), photoKey,
+        notes: draft.notes.trim(), category: draft.category, favorite: Boolean(draft.favorite), photoKey, folderId: draft.folderId,
       });
       const current = contactsRef.current;
       const next = existing ? current.map((contact) => contact.id === saved.id ? saved : contact) : [saved, ...current];
@@ -736,7 +750,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
         phoneNumbers: draft.phoneNumbers, email: draft.email.trim(), websites: draft.websites, socialLinks: draft.socialLinks,
         address: draft.address.trim(), bio: draft.bio.trim(), customLinks: draft.customLinks,
         ...(profilePhotoDataUrl ? { profilePhotoDataUrl } : {}), ...(businessLogoDataUrl ? { businessLogoDataUrl } : {}),
-        createdAt: existing?.createdAt || now, updatedAt: now,
+        createdAt: existing?.createdAt || now, updatedAt: now, ...(draft.folderId ? { folderId: draft.folderId } : {}),
       };
       const current = businessCardsRef.current;
       const next = existing ? current.map((card) => card.id === saved.id ? saved : card) : [saved, ...current];
@@ -806,7 +820,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
         provider: draft.provider, hospital: draft.hospital, specialty: draft.specialty, notes: draft.notes,
         diagnosis: draft.diagnosis, testName: draft.testName, testResult: draft.testResult, medicationNotes: draft.medicationNotes,
         followUpDate: draft.followUpDate, ...(draft.relatedReminderId ? { relatedReminderId: draft.relatedReminderId } : {}),
-        ...(file ? { file } : {}), links: draft.links.filter((link) => link.linkKind !== "reminder"), createdAt: existing?.createdAt || now, updatedAt: now,
+        ...(file ? { file } : {}), links: draft.links.filter((link) => link.linkKind !== "reminder"), ...(draft.folderId ? { folderId: draft.folderId } : {}), createdAt: existing?.createdAt || now, updatedAt: now,
       };
       const next = existing ? medicalRecordsRef.current.map((record) => record.id === saved.id ? saved : record) : [saved, ...medicalRecordsRef.current];
       commitMedicalRecords(next); return saved;
@@ -846,6 +860,15 @@ commitContacts(getLocalContacts(DEMO_USER.id));
     }
     try { await downloadMedicalRecordFile(record.id); }
     catch (error) { notify(error instanceof Error ? error.message : "Couldn't open the medical record file.", "error"); }
+  };
+
+  const handlePreviewMedicalRecordFile = async (record: MedicalRecord): Promise<{ blob: Blob; name: string }> => {
+    if (user?.demo) {
+      const file = demoMedicalFiles.current.get(record.id);
+      if (!file) throw new Error("This demo attachment is no longer available after refreshing the page.");
+      return { blob: file, name: file.name };
+    }
+    return fetchMedicalRecordFile(record.id);
   };
 
   const handleSaveTimelineEvent = async (draft: TimelineDraft) => {
@@ -1067,7 +1090,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
 
   const realUser = user?.demo ? null : user;
   return <>
-    {publicCardId ? <PublicBusinessCardPage cardId={publicCardId}/> : authRestoring || siteContentLoading ? <AppBootScreen /> : adminRoute ? realUser?.role === "admin" ? <Suspense fallback={<AppBootScreen />}><AdminConsole user={realUser} onBackToVault={backToVault} onSignOut={() => void handleSignOut()} notify={notify} /></Suspense> : <Suspense fallback={<AppBootScreen />}><AdminAccessPage
+    {publicCardId ? <PublicBusinessCardPage cardId={publicCardId}/> : authRestoring || siteContentLoading ? <PersoraBootScreen /> : adminRoute ? realUser?.role === "admin" ? <Suspense fallback={<PersoraBootScreen />}><AdminConsole user={realUser} onBackToVault={backToVault} onSignOut={() => void handleSignOut()} notify={notify} /></Suspense> : <Suspense fallback={<PersoraBootScreen />}><AdminAccessPage
       user={realUser}
       status={bootstrapStatus}
       backendConnected={isPagesApiConfigured}
@@ -1099,6 +1122,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       onSaveMedicalRecord={handleSaveMedicalRecord}
       onDeleteMedicalRecord={handleDeleteMedicalRecord}
       onOpenMedicalRecordFile={(record) => { void handleOpenMedicalRecordFile(record); }}
+      onPreviewMedicalRecordFile={handlePreviewMedicalRecordFile}
       onRefreshMedicalRecords={handleRefreshMedicalRecords}
       view={view}
       search={search}
@@ -1124,6 +1148,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       onMarkNotificationsRead={() => void handleMarkNotificationsRead()}
       onToggleFavorite={handleToggleFavorite}
       onTogglePin={handleTogglePin}
+      onMoveVaultItem={handleMoveVaultItem}
       onSaveContact={handleSaveContact}
       onDeleteContact={handleDeleteContact}
       onMergeContacts={handleMergeContacts}
@@ -1178,8 +1203,4 @@ commitContacts(getLocalContacts(DEMO_USER.id));
     </ConfirmDialog>}
     {toast && <ToastNotice key={toast.id} message={toast.message} kind={toast.kind} onClose={() => setToast(null)} />}
   </>;
-}
-
-function AppBootScreen() {
-  return <main className="app-boot-screen" role="status" aria-live="polite"><span className="app-boot-mark"><ShieldCheck size={24}/></span><b>Persora</b><span>Restoring your private workspace…</span><i/></main>;
 }

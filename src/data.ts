@@ -11,6 +11,7 @@ import {
   StickyNote,
   ShieldCheck,
   ShoppingBag,
+  WalletCards,
 } from "lucide-react";
 import type { AppUser, SectionDefinition, SectionId, VaultItem } from "./types";
 
@@ -128,7 +129,7 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     singular: "purchase record",
     description: "Invoices, serial numbers and warranty dates—right where you can find them when you need them.",
     icon: ShoppingBag,
-    color: "teal",
+    color: "blue",
     titleLabel: "Product name",
     dateKey: "warrantyExpiry",
     previewKeys: ["brand", "purchaseDate", "warrantyExpiry"],
@@ -173,7 +174,7 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     singular: "membership",
     description: "Keep membership IDs, loyalty cards and renewal dates ready in one digital wallet.",
     icon: CreditCard,
-    color: "green",
+    color: "blue",
     titleLabel: "Membership name",
     dateKey: "expiryDate",
     previewKeys: ["organization", "memberId", "expiryDate"],
@@ -187,6 +188,29 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
       { key: "level", label: "Membership level", kind: "text", placeholder: "e.g. Gold" },
       { key: "website", label: "Website", kind: "url", placeholder: "https://" },
       { key: "notes", label: "Notes", kind: "textarea", wide: true },
+    ],
+  },
+  {
+    id: "wallet-cards",
+    label: "Wallet Cards",
+    eyebrow: "Payment card wallet",
+    singular: "wallet card",
+    description: "Keep a visual, masked reference to your cards in any currency. Only the brand and last four digits are saved—never a full card number or security code.",
+    icon: WalletCards,
+    color: "blue",
+    titleLabel: "Card nickname",
+    previewKeys: ["network", "issuer", "currency"],
+    fields: [
+      { key: "title", label: "Card nickname", kind: "text", placeholder: "e.g. Everyday debit card", required: true },
+      { key: "network", label: "Card network", kind: "select", options: ["Visa", "Mastercard", "American Express", "UnionPay", "Discover", "Other"], required: true },
+      { key: "cardType", label: "Card type", kind: "select", options: ["Debit", "Credit", "Prepaid", "Travel", "Other"] },
+      { key: "issuer", label: "Bank / issuer", kind: "text", placeholder: "e.g. City Bank" },
+      { key: "cardholder", label: "Cardholder name", kind: "text" },
+      { key: "lastFour", label: "Last four digits only", kind: "text", placeholder: "1234" },
+      { key: "expiryMonth", label: "Expiry month", kind: "select", options: ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"] },
+      { key: "expiryYear", label: "Expiry year", kind: "text", placeholder: "YYYY" },
+      { key: "currency", label: "Currency", kind: "select", options: ["BDT", "USD", "EUR", "GBP", "INR", "AED", "SGD", "CAD", "AUD", "JPY", "CNY", "SAR", "Other"] },
+      { key: "notes", label: "Private notes", kind: "textarea", wide: true },
     ],
   },
   {
@@ -306,7 +330,9 @@ export const INITIAL_ITEMS: VaultItem[] = [
   item("acct-bank", "accounts", "City Bank Online", { accountType: "Banking / payments", username: "amina.r•••", email: "amina.rahman@email.com", website: "https://citytouch.com.bd", registered: "2020-07-13", status: "Active", notes: "Never store your password here." }),
   item("mem-library", "memberships", "British Council Library", { type: "Library", organization: "British Council Bangladesh", memberId: "BC-2409-6811", startDate: "2024-07-01", expiryDate: "2026-12-31", level: "Digital member", website: "https://www.britishcouncil.org.bd", notes: "Renew online." }),
   item("mem-gym", "memberships", "Gulshan Club Fitness", { type: "Gym", organization: "Gulshan Club", memberId: "GC-882014", startDate: "2025-04-01", expiryDate: "2026-09-30", level: "Gold", website: "", notes: "Monthly renewal." }),
-  item("study-color", "study", "Color systems & accessibility", { course: "Product Design Foundations", subject: "Visual design", chapter: "Week 04", materialType: "Lecture slides", semester: "Spring 2026", tags: "design, accessibility", notes: "Review WCAG contrast examples." }, { name: "color-systems.pdf", size: 3280000, type: "application/pdf", localOnly: true }),
+  item("wallet-visa-demo", "wallet-cards", "Daily debit", { network: "Visa", cardType: "Debit", issuer: "City Bank", cardholder: "Amina Rahman", lastFour: "4821", expiryMonth: "09", expiryYear: "2028", currency: "BDT" }),
+  item("wallet-mastercard-demo", "wallet-cards", "Travel card", { network: "Mastercard", cardType: "Credit", issuer: "Eastern Bank", cardholder: "Amina Rahman", lastFour: "0634", expiryMonth: "05", expiryYear: "2029", currency: "USD" }),
+  item("study-color",  "study", "Color systems & accessibility", { course: "Product Design Foundations", subject: "Visual design", chapter: "Week 04", materialType: "Lecture slides", semester: "Spring 2026", tags: "design, accessibility", notes: "Review WCAG contrast examples." }, { name: "color-systems.pdf", size: 3280000, type: "application/pdf", localOnly: true }),
   item("study-research", "study", "Usability testing checklist", { course: "Independent learning", subject: "Research", chapter: "Field guide", materialType: "Notes", semester: "2026", tags: "research, ux", notes: "Use for next discovery sprint." }),
   item("study-data", "study", "SQL for product analytics", { course: "Data for designers", subject: "Analytics", chapter: "Joins & funnels", materialType: "Link", semester: "2026", tags: "sql, analytics", notes: "Continue from lesson 7." }),
   item("business-card-main", "business-card", "Amina Rahman", { jobTitle: "Product Designer", company: "Northstar Studio", bio: "Designing calm, useful digital products for people and teams.", phone: "+880 1712 450 188", email: "amina.rahman@email.com", website: "https://amina.design", linkedin: "https://linkedin.com/in/amina-rahman-design", instagram: "", location: "Dhaka, Bangladesh" }),
@@ -318,7 +344,7 @@ export const INITIAL_ITEMS: VaultItem[] = [
 
 export const NAV_GROUPS: { label: string; ids: SectionId[] }[] = [
   { label: "Personal life", ids: ["documents", "academics", "family"] },
-  { label: "Everyday", ids: ["subscriptions", "purchases", "accounts", "memberships"] },
+  { label: "Everyday", ids: ["subscriptions", "purchases", "accounts", "memberships", "wallet-cards"] },
   { label: "Knowledge & identity", ids: ["study", "notes", "business-card", "urls"] },
 ];
 

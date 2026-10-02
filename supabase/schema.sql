@@ -54,7 +54,7 @@ create table if not exists public.vault_items (
   user_id uuid not null references public.profiles(id) on delete cascade,
   section text not null check (section in (
     'documents', 'academics', 'subscriptions', 'family', 'purchases',
-    'accounts', 'memberships', 'study', 'business-card', 'urls', 'notes'
+    'accounts', 'memberships', 'wallet-cards', 'study', 'business-card', 'urls', 'notes'
   )),
   title text not null check (char_length(title) between 1 and 240),
   subtitle text,
@@ -330,7 +330,7 @@ create index if not exists admin_audit_events_created_at_idx on public.admin_aud
 alter table public.vault_items drop constraint if exists vault_items_section_check;
 alter table public.vault_items add constraint vault_items_section_check check (section in (
   'documents', 'academics', 'subscriptions', 'family', 'purchases',
-  'accounts', 'memberships', 'study', 'business-card', 'urls', 'notes'
+  'accounts', 'memberships', 'wallet-cards', 'study', 'business-card', 'urls', 'notes'
 ));
 
 create index if not exists vault_shares_owner_created_idx on public.vault_shares(owner_id, created_at desc);

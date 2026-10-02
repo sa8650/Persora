@@ -107,3 +107,5 @@ export function makeVCard(item: VaultItem): string {
   lines.push("END:VCARD");
   return lines.join("\r\n");
 }
+
+export { cn } from "cn";

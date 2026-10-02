@@ -11,7 +11,7 @@ export default function QRPreview({ value, size = 112 }: { value: string; size?:
     if (!value.trim()) return () => { active = false; };
     const generate = async () => {
       const { default: QRCode } = await import("qrcode");
-      const data = await QRCode.toDataURL(value, { width: size * 2, margin: 1, errorCorrectionLevel: "M", color: { dark: "#29483a", light: "#ffffff" } });
+      const data = await QRCode.toDataURL(value, { width: size * 2, margin: 1, errorCorrectionLevel: "M", color: { dark: "#174ea6", light: "#ffffff" } });
       if (active) setImage(data);
     };
     void generate().catch(() => { if (active) setFailed(true); });

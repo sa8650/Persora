@@ -17,7 +17,7 @@ interface ItemEditorDialogProps {
   onSave: (value: Omit<VaultItem, "id" | "createdAt" | "updatedAt"> & { id?: string; fileUpload?: File | null }, onProgress?: (progress: TransferProgress) => void) => Promise<void>;
 }
 
-const detailColors: Record<SectionId, string> = { notes: "tag-yellow", documents: "tag-blue", academics: "tag-violet", subscriptions: "tag-orange", family: "tag-rose", purchases: "tag-teal", accounts: "tag-indigo", memberships: "tag-green", study: "tag-sky", "business-card": "tag-slate", urls: "tag-cyan" };
+const detailColors: Record<SectionId, string> = { notes: "tag-yellow", documents: "tag-blue", academics: "tag-violet", subscriptions: "tag-orange", family: "tag-rose", purchases: "tag-blue", accounts: "tag-indigo", memberships: "tag-blue", "wallet-cards": "tag-blue", study: "tag-sky", "business-card": "tag-slate", urls: "tag-cyan" };
 
 export function ItemEditorDialog({ sectionId, item, documentTypes = [], maxUploadMb = 25, onClose, onSave }: ItemEditorDialogProps) {
   const section = SECTION_BY_ID[sectionId];
@@ -33,6 +33,7 @@ export function ItemEditorDialog({ sectionId, item, documentTypes = [], maxUploa
   useEffect(() => {
     const initial: Record<string, string> = {};
     section.fields.forEach((field) => { initial[field.key] = field.key === "title" ? item?.title || "" : item?.metadata[field.key] || ""; });
+    if (section.id === "wallet-cards" && !item) { initial.network = "Visa"; initial.cardType = "Debit"; initial.currency = "BDT"; }
     setValues(initial);
   }, [item, section]);
 
@@ -49,6 +50,7 @@ export function ItemEditorDialog({ sectionId, item, documentTypes = [], maxUploa
   };
 
   const selectedType = (values.type || "").trim().toLowerCase();
+  const isWalletCard = sectionId === "wallet-cards";
   const isCv = sectionId === "documents" && /^(cv|resume)/.test(selectedType);
   const isAdmission = sectionId === "academics" && /admission/.test(selectedType);
   const isPaymentSlip = selectedType.includes("payment slip");
@@ -69,6 +71,8 @@ export function ItemEditorDialog({ sectionId, item, documentTypes = [], maxUploa
     event.preventDefault();
     const title = values.title?.trim();
     if (!title) { setError(`${section.titleLabel} is required.`); return; }
+    if (isWalletCard && values.lastFour?.trim() && !/^\d{4}$/.test(values.lastFour.trim())) { setError("Enter only the card's four ending digits. Full card numbers and security codes are not stored."); return; }
+    if (isWalletCard && values.expiryYear?.trim() && !/^(20\d{2}|2100)$/.test(values.expiryYear.trim())) { setError("Enter a four-digit expiry year between 2000 and 2100."); return; }
     setSaving(true);
     setError("");
     setUploadProgress(selectedFile ? { loaded: 0, total: selectedFile.size, percent: 0, remainingSeconds: null } : null);
@@ -104,6 +108,8 @@ export function ItemEditorDialog({ sectionId, item, documentTypes = [], maxUploa
       return <select {...common}><option value="">Choose one…</option>{options.map((option) => <option key={option} value={option}>{option}</option>)}</select>;
     }
     if (sectionId === "notes" && field.key === "content") return <RichNoteEditor key={`${item?.id || "new"}-${sectionId}`} id={common.id} value={value} onChange={(next) => setValue(field.key, next)} />;
+    if (isWalletCard && field.key === "lastFour") return <input {...common} type="text" inputMode="numeric" maxLength={4} autoComplete="off" onChange={(event) => setValue(field.key, event.target.value.replace(/\D/g, "").slice(0, 4))} />;
+    if (isWalletCard && field.key === "expiryYear") return <input {...common} type="text" inputMode="numeric" maxLength={4} placeholder="YYYY" onChange={(event) => setValue(field.key, event.target.value.replace(/\D/g, "").slice(0, 4))} />;
     if (field.kind === "textarea") return <textarea {...common} rows={3} placeholder={field.placeholder || "Add a few helpful details…"} />;
     const type = field.kind === "number" ? "number" : field.kind;
     return <input {...common} type={type} placeholder={field.placeholder || ""} />;
@@ -112,14 +118,15 @@ export function ItemEditorDialog({ sectionId, item, documentTypes = [], maxUploa
   return <div className={`modal-backdrop ${section.id === "notes" ? "notes-editor-backdrop" : ""}`} role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !saving && onClose()}>
     <section className={`editor-dialog ${section.id === "notes" ? "notes-editor-drawer" : ""}`} role="dialog" aria-modal="true" aria-labelledby="editor-title">
       <div className="editor-dialog-head"><div className={`editor-icon ${section.id}`}><section.icon size={19} /></div><div><span className="section-eyebrow">{isCv ? "Career profile" : isAdmission ? "Education record" : item ? "Edit your record" : `Add to ${section.label.toLowerCase()}`}</span><h2 id="editor-title">{isCv ? item ? "Update your CV / Resume." : "Add a CV / Resume." : isAdmission ? item ? "Update admission details." : "Add an admission record." : item ? "Make a quick update." : `Add a ${section.singular}.`}</h2></div><button className="icon-button" onClick={onClose} aria-label="Close" disabled={saving}><X size={18} /></button></div>
-      <p className="editor-intro">{isCv ? "Add your career details and attach a current CV. Identity numbers and expiry dates aren't needed here." : isAdmission ? "Keep the admission, application and payment details together. Grade and passing-year fields are hidden for this record type." : "A few details now make it easier to find later. Everything you add is just for you."}</p>
+      <p className="editor-intro">{isWalletCard ? "Save a masked reference only. Do not enter a full card number or CVV; Persora stores the network and last four digits, never payment credentials." : isCv ? "Add your career details and attach a current CV. Identity numbers and expiry dates aren't needed here." : isAdmission ? "Keep the admission, application and payment details together. Grade and passing-year fields are hidden for this record type." : "A few details now make it easier to find later. Everything you add is just for you."}</p>
       <form className="editor-form" onSubmit={submit}>
         <div className="editor-fields-grid">{fields.map((field) => <label key={field.key} className={`field-label ${field.wide || field.kind === "textarea" ? "field-wide" : ""}`} htmlFor={`field-${field.key}`}>{isCv && field.key === "title" ? "CV / Resume title" : field.label}{field.required && <span className="required-star">*</span>}{renderInput(field)}</label>)}</div>
-        <div className="upload-field-block"><div className="upload-field-title"><span>Attach a file <small>Optional · PDF, photo or document</small></span><span className="upload-lock"><LockKeyhole size={12} /> Private</span></div>
+        {!isWalletCard && <div className="upload-field-block"><div className="upload-field-title"><span>Attach a file <small>Optional · PDF, photo or document</small></span><span className="upload-lock"><LockKeyhole size={12} /> Private</span></div>
           {selectedFile ? <div className="upload-preview-row">{previewUrl ? <img src={previewUrl} alt="Selected file preview" className="upload-image-preview" /> : <span className="upload-file-icon"><FileText size={20} /></span>}<span className="upload-preview-name"><b>{selectedFile.name}</b><small>{humanSize(selectedFile.size)} · Ready to upload</small></span><button type="button" className="plain-icon upload-remove" onClick={() => setSelectedFile(null)} aria-label="Remove selected file"><X size={16} /></button></div> : item?.file && !removeFile ? <div className="upload-preview-row existing-file-row"><span className="upload-file-icon">{item.file.type?.startsWith("image/") ? <FileImage size={19} /> : <FileText size={19} />}</span><span className="upload-preview-name"><b>{item.file.name}</b><small>{humanSize(item.file.size)} · Saved in your vault</small></span><button type="button" className="upload-replace" onClick={() => document.getElementById("vault-file-input")?.click()}>Replace</button><button type="button" className="plain-icon upload-remove" onClick={() => setRemoveFile(true)} aria-label="Remove attachment"><X size={16} /></button></div> : <label htmlFor="vault-file-input" className={`file-dropzone ${dragging ? "file-dropzone-active" : ""}`} onDragOver={(event) => { event.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={(event) => { event.preventDefault(); setDragging(false); acceptFile(event.dataTransfer.files[0]); }}>
             <span className="upload-circle"><UploadCloud size={19} /></span><span className="dropzone-copy"><b>Choose a file or drop it here</b><small>PDF, PNG, JPG or document · up to {maxUploadMb} MB</small></span><span className="browse-button">Browse files</span></label>}
           <input className="hidden-file-input" id="vault-file-input" type="file" onChange={(event) => { acceptFile(event.target.files?.[0]); event.currentTarget.value = ""; }} accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.txt" />
-        </div>
+        </div>}
+        {isWalletCard && <div className="wallet-card-privacy-note"><ShieldCheck size={14}/><span>Masked card details only. Never enter a full card number or security code.</span></div>}
         {uploadProgress && <TransferProgressIndicator progress={uploadProgress} label="Uploading file" detail={`${humanSize(uploadProgress.loaded)} of ${humanSize(uploadProgress.total)}`}/>}
         {error && <div className="form-alert error-alert editor-error" role="alert">{error}</div>}
         <div className="editor-form-footer"><div className="editor-footnote"><ShieldCheck size={14} /><span>Private to your Persora account</span></div><div className="editor-actions"><button type="button" className="quiet-button" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="editor-submit" disabled={saving}>{saving ? <><span className="spinner" /> Saving…</> : <>{item ? "Save changes" : "Save to vault"}<Check size={15} /></>}</button></div></div>
