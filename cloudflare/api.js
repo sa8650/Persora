@@ -1,4 +1,5 @@
 import { handleTimeline, loadTimelineExport, readTimelineExportAttachment } from "./timeline.js";
+import { SmartScanError, MAX_SMART_SCAN_FILE_BYTES, extractDocumentFields, runGoogleVisionOcr, smartScanMimeType } from "./smart-scan.js";
 
 const DEFAULT_SETTINGS = {
   billing: { currency: "BDT", manualInstructions: "Follow the account details shown for your selected payment method.", billingEnabled: false, minTermMonths: 1, maxTermMonths: 12 },
@@ -10,6 +11,16 @@ const DEFAULT_SETTINGS = {
 const MAX_CONFIGURABLE_UPLOAD_MB = 150;
 const MAX_ALARM_RINGTONE_BYTES = 10 * 1024 * 1024;
 const MAX_ALARM_RINGTONE_COUNT = 50;
+const PROFILE_DICEBEAR_AVATARS = new Set([
+  "https://api.dicebear.com/7.x/adventurer/svg?seed=Felix",
+  "https://api.dicebear.com/7.x/adventurer/svg?seed=Aneka",
+  "https://api.dicebear.com/7.x/adventurer/svg?seed=Oliver",
+  "https://api.dicebear.com/7.x/adventurer/svg?seed=Zoe",
+  "https://api.dicebear.com/7.x/adventurer/svg?seed=Leo",
+  "https://api.dicebear.com/7.x/adventurer/svg?seed=Mia",
+  "https://api.dicebear.com/7.x/adventurer/svg?seed=Noah",
+  "https://api.dicebear.com/7.x/adventurer/svg?seed=Ava",
+]);
 const ALARM_RINGTONE_FORMATS = {
   mp3: { contentType: "audio/mpeg", accepted: ["audio/mpeg", "audio/mp3", "application/octet-stream"] },
   wav: { contentType: "audio/wav", accepted: ["audio/wav", "audio/x-wav", "application/octet-stream"] },
@@ -210,6 +221,71 @@ export default {
         if (!result.ok) return upstreamError(result, origin);
         return json({ ok: true }, 200, origin);
       }
+      if (url.pathname === "/smart-scan" && request.method === "POST") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in to scan a private document." }, 401, origin);
+        const contentLength = Number(request.headers.get("content-length") || 0);
+        if (contentLength > MAX_SMART_SCAN_FILE_BYTES + 512 * 1024) return json({ error: "Smart Scan supports files up to 7 MB." }, 413, origin);
+        let form;
+        try { form = await request.formData(); }
+        catch { return json({ error: "The scan upload could not be read. Please select the file again." }, 400, origin); }
+        const file = form.get("file");
+        if (!file || typeof file.arrayBuffer !== "function") return json({ error: "Choose an image or PDF to scan." }, 400, origin);
+        if (!file.size || file.size > MAX_SMART_SCAN_FILE_BYTES) return json({ error: "Smart Scan supports files up to 7 MB." }, 413, origin);
+        const mimeType = smartScanMimeType(file.type, file.name);
+        if (!mimeType) return json({ error: "Smart Scan supports PDF, JPEG, PNG, WebP, GIF, TIFF, and BMP files." }, 415, origin);
+        const section = typeof form.get("section") === "string" ? String(form.get("section")) : "";
+        if ((!VALID_SECTIONS.has(section) && section !== "medical-records") || section === "wallet-cards") return json({ error: "Choose a supported record space for Smart Scan." }, 400, origin);
+        const fieldsText = typeof form.get("fields") === "string" ? String(form.get("fields")) : "[]";
+        if (fieldsText.length > 24000) return json({ error: "The scan form has too many field definitions." }, 400, origin);
+        let fields;
+        try { fields = JSON.parse(fieldsText); } catch { fields = null; }
+        if (!Array.isArray(fields) || fields.length < 1 || fields.length > 40) return json({ error: "The scan form fields could not be read." }, 400, origin);
+        const retry = form.get("retry") === "true";
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const contentHash = bytesToHex(await crypto.subtle.digest("SHA-256", bytes));
+        const fieldSignature = await sha256Hex(JSON.stringify({ section, fields }));
+        let cachedPayload = null;
+        let cacheWarning = "";
+        try { cachedPayload = await loadSmartScanCache(identity.id, contentHash, env); }
+        catch { cacheWarning = "Scan caching is unavailable until the Smart Scan database migration is applied."; }
+        const cachedResult = cachedPayload?.extractions?.[fieldSignature];
+        if (!retry && cachedResult && typeof cachedResult === "object") {
+          return json({ ...cachedResult, cached: true, ocrCached: true, ...(cacheWarning ? { cacheWarning } : {}) }, 200, origin);
+        }
+
+        let ocrText = typeof cachedPayload?.ocrText === "string" ? cachedPayload.ocrText : "";
+        let pagesProcessed = Number.isFinite(Number(cachedPayload?.pagesProcessed)) ? Number(cachedPayload.pagesProcessed) : undefined;
+        let warnings = Array.isArray(cachedPayload?.warnings) ? cachedPayload.warnings.filter((entry) => typeof entry === "string").slice(0, 10) : [];
+        const ocrCached = Boolean(ocrText);
+        if (!ocrCached) {
+          try {
+            const ocr = await runGoogleVisionOcr(bytes, mimeType, env);
+            ocrText = ocr.text;
+            pagesProcessed = ocr.pagesProcessed;
+            warnings = ocr.warnings;
+            cachedPayload = { version: 1, ocrText, pagesProcessed, warnings, extractions: cachedPayload?.extractions && typeof cachedPayload.extractions === "object" ? cachedPayload.extractions : {} };
+            try { await storeSmartScanCache(identity.id, contentHash, cachedPayload, env); }
+            catch { cacheWarning = "Scan caching is unavailable until the Smart Scan database migration is applied."; }
+          } catch (error) {
+            if (error instanceof SmartScanError) return json({ error: error.message, retryable: error.retryable, phase: error.phase }, error.status, origin);
+            throw error;
+          }
+        }
+        let extracted;
+        try { extracted = await extractDocumentFields(env, section, fields, ocrText, warnings); }
+        catch (error) {
+          if (error instanceof SmartScanError) return json({ error: error.message, retryable: error.retryable, phase: error.phase, ocrCached, ...(cacheWarning ? { cacheWarning } : {}) }, error.status, origin);
+          throw error;
+        }
+        const result = { ...extracted, cached: false, ocrCached, ...(pagesProcessed !== undefined ? { pagesProcessed } : {}), ...(cacheWarning ? { cacheWarning } : {}) };
+        const extractions = { ...(cachedPayload?.extractions && typeof cachedPayload.extractions === "object" ? cachedPayload.extractions : {}), [fieldSignature]: extracted };
+        const extractionKeys = Object.keys(extractions);
+        if (extractionKeys.length > 8) delete extractions[extractionKeys[0]];
+        try { await storeSmartScanCache(identity.id, contentHash, { version: 1, ocrText, pagesProcessed, warnings, extractions }, env); }
+        catch { result.cacheWarning = "Scan caching is unavailable until the Smart Scan database migration is applied."; }
+        return json(result, 200, origin);
+      }
       if (url.pathname === "/profile" && request.method === "PATCH") {
         const identity = await authorize(request, env);
         if (!identity) return json({ error: "Sign in is required." }, 401, origin);
@@ -218,9 +294,18 @@ export default {
         const timezone = typeof body.timezone === "string" ? body.timezone.trim() : "";
         if (fullName.length < 1 || fullName.length > 100) return json({ error: "Enter a name between 1 and 100 characters." }, 400, origin);
         if (!/^[A-Za-z_+-]+(?:\/[A-Za-z0-9_+-]+)*$/.test(timezone) || timezone.length > 80) return json({ error: "Choose a valid timezone." }, 400, origin);
+        const updates = { full_name: fullName, timezone };
+        if (Object.prototype.hasOwnProperty.call(body, "avatarUrl")) {
+          const avatarUrl = typeof body.avatarUrl === "string" ? body.avatarUrl.trim() : body.avatarUrl === null ? "" : undefined;
+          const isPhoto = typeof avatarUrl === "string" && avatarUrl.length <= 80000 && /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/i.test(avatarUrl);
+          const isEmoji = typeof avatarUrl === "string" && avatarUrl.length <= 80 && /^emoji:[^\u0000-\u001f<>]{1,24}$/u.test(avatarUrl);
+          const isDiceBearAdventurer = typeof avatarUrl === "string" && PROFILE_DICEBEAR_AVATARS.has(avatarUrl);
+          if (avatarUrl === undefined || (avatarUrl && !isPhoto && !isEmoji && !isDiceBearAdventurer)) return json({ error: "Choose a supported profile photo, emoji, or DiceBear Adventurer avatar." }, 400, origin);
+          updates.avatar_url = avatarUrl || null;
+        }
         const result = await supabaseAdminFetch(`/rest/v1/profiles?id=eq.${encodeURIComponent(identity.id)}`, env, {
           method: "PATCH", headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
-          body: JSON.stringify({ full_name: fullName, timezone }),
+          body: JSON.stringify(updates),
         });
         if (!result.ok) return upstreamError(result, origin);
         return json({ ok: true }, 200, origin);
@@ -733,7 +818,7 @@ function randomLoginId() {
 }
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
 const DUMMY_PASSWORD = "persora-login-timing-padding-never-use";
-const VALID_SECTIONS = new Set(["documents", "academics", "subscriptions", "family", "purchases", "accounts", "memberships", "wallet-cards", "study", "business-card", "urls", "notes"]);
+const VALID_SECTIONS = new Set(["documents", "academics", "subscriptions", "family", "purchases", "accounts", "memberships", "wallet-cards", "study", "business-card", "urls", "notes", "personal-finance"]);
 const VALID_FOLDER_SCOPES = new Set([...VALID_SECTIONS, "contacts", "business-cards", "medical-records"]);
 const VALID_FOLDER_COLORS = new Set(["blue", "sky", "teal", "violet", "amber", "rose", "slate", "mint"]);
 function validPasswordLength(password) { return typeof password === "string" && password.length >= 12 && new TextEncoder().encode(password).length <= 72; }
@@ -776,6 +861,7 @@ function publicUser(profile) {
     fullName: String(profile.full_name || "Persora member"),
     role: profile.role === "admin" ? "admin" : "user",
     timezone: String(profile.timezone || "Asia/Dhaka"),
+    avatarUrl: String(profile.avatar_url || ""),
     demo: false,
   };
 }
@@ -800,6 +886,22 @@ async function restRows(path, env) {
   const response = await fetch(`${base}/rest/v1/${path}`, { headers: serviceHeaders(env) });
   if (!response.ok) throw new Error(`Database request failed (${response.status}).`);
   return response.json();
+}
+const SMART_SCAN_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+async function loadSmartScanCache(ownerId, contentHash, env) {
+  const now = encodeURIComponent(new Date().toISOString());
+  const rows = await restRows(`smart_scan_cache?owner_id=eq.${encodeURIComponent(ownerId)}&content_sha256=eq.${contentHash}&expires_at=gt.${now}&select=payload&limit=1`, env);
+  return rows[0]?.payload && typeof rows[0].payload === "object" ? rows[0].payload : null;
+}
+async function storeSmartScanCache(ownerId, contentHash, payload, env) {
+  const now = new Date().toISOString();
+  await supabaseAdminFetch(`/rest/v1/smart_scan_cache?expires_at=lt.${encodeURIComponent(now)}`, env, { method: "DELETE", headers: { Prefer: "return=minimal" } }).catch(() => {});
+  const response = await supabaseAdminFetch("/rest/v1/smart_scan_cache?on_conflict=owner_id%2Ccontent_sha256", env, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" },
+    body: JSON.stringify({ owner_id: ownerId, content_sha256: contentHash, payload, created_at: now, expires_at: new Date(Date.now() + SMART_SCAN_CACHE_TTL_MS).toISOString() }),
+  });
+  if (!response.ok) throw new Error(`Smart Scan cache write failed (${response.status}).`);
 }
 async function restRowsPaged(path, env, pageSize = 1000) {
   const result = [];
@@ -854,7 +956,7 @@ async function authorize(request, env) {
   const tokenHash = await sha256Hex(token);
   const sessions = await restRows(`user_sessions?token_hash=eq.${tokenHash}&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&select=id,user_id`, env);
   if (!Array.isArray(sessions) || !sessions[0]) return null;
-  const profiles = await restRows(`profiles?id=eq.${encodeURIComponent(sessions[0].user_id)}&select=id,login_id,email,full_name,role,account_status,timezone`, env);
+  const profiles = await restRows(`profiles?id=eq.${encodeURIComponent(sessions[0].user_id)}&select=id,login_id,email,full_name,role,account_status,timezone,avatar_url`, env);
   const profile = profiles?.[0];
   if (!profile || profile.account_status !== "active") return null;
   return { ...profile, session_id: sessions[0].id };
@@ -932,7 +1034,7 @@ async function loginAccount(body, request, env) {
   const validEmail = identifier.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
   if ((!isLoginId && !validEmail) || !password || new TextEncoder().encode(password).length > 72) throw new HttpError("Enter a valid email address or seven-digit Persora ID and password.");
   const lookup = isLoginId ? `login_id=eq.${identifier}` : `email=eq.${encodeURIComponent(identifier)}`;
-  const rows = await restRows(`profiles?${lookup}&select=id,login_id,email,full_name,role,account_status,timezone,password_hash`, env);
+  const rows = await restRows(`profiles?${lookup}&select=id,login_id,email,full_name,role,account_status,timezone,avatar_url,password_hash`, env);
   const profile = rows[0];
   // Use the canonical Persora ID so attempting the same account via email and ID
   // consumes one shared account limit; unknown identifiers get their own bucket.
@@ -1842,7 +1944,7 @@ async function loadBilling(identity, env) {
   const [settings, plans, subscriptionRows, paymentRows, usage] = await Promise.all([
     loadSettings(env), listPlans(env, true),
     restRows(`user_subscriptions?user_id=eq.${encodeURIComponent(identity.id)}&select=plan_id,status,storage_limit_gb,current_period_end`, env),
-    restRows(`payment_records?user_id=eq.${encodeURIComponent(identity.id)}&select=id,user_id,plan_id,amount,currency,method,reference,status,submitted_at,reviewed_at,reviewed_by,admin_note&order=submitted_at.desc&limit=100`, env),
+    restRows(`payment_records?user_id=eq.${encodeURIComponent(identity.id)}&select=id,user_id,plan_id,amount,currency,method,reference,billing_period,duration_count,term_months,status,submitted_at,reviewed_at,reviewed_by,admin_note&order=submitted_at.desc&limit=100`, env),
     userStorageUsage(identity.id, env.VAULT_FILES, env),
   ]);
   const subscription = subscriptionRows[0];
@@ -1891,7 +1993,11 @@ async function createPaymentRequest(identity, body, env) {
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new Error(body.message || "Payment request could not be submitted.");
+    const message = String(body.message || body.error || "");
+    if (/billing_period|duration_count|term_months/i.test(message) && /column|schema/i.test(message)) {
+      throw new HttpError("The billing-term database migration is still pending. Apply supabase/migrations/202610030002_payment_record_billing_terms.sql, then retry.", 503);
+    }
+    throw new Error(message || "Payment request could not be submitted.");
   }
   const created = (await response.json())[0];
   return { ...created, email: identity.email || "", plan_name: plan.name, storage_gb: Number(plan.storage_gb) };
@@ -1992,7 +2098,7 @@ async function reviewPayment(body, identity, env) {
   const decision = body.decision === "approve" ? "approved" : body.decision === "reject" ? "rejected" : "";
   const note = typeof body.note === "string" ? body.note.trim().slice(0, 1000) : "";
   if (!isUuid(paymentId) || !decision) throw new HttpError("Choose a payment and approval decision.", 400);
-  const paymentRows = await restRows(`payment_records?id=eq.${encodeURIComponent(paymentId)}&select=id,user_id,plan_id,amount,currency,method,reference,status`, env);
+  const paymentRows = await restRows(`payment_records?id=eq.${encodeURIComponent(paymentId)}&select=id,user_id,plan_id,amount,currency,method,reference,billing_period,duration_count,term_months,status`, env);
   const payment = paymentRows[0];
   if (!payment) throw new HttpError("Payment record was not found.", 404);
   const response = await supabaseAdminFetch("/rest/v1/rpc/persora_review_payment", env, {
@@ -2127,7 +2233,7 @@ async function loadAdminConsole(env) {
     restRows("admin_audit_events?select=id,actor_email,event_type,target_user_id,target_email,created_at,details&order=created_at.desc&limit=30", env),
     listPlans(env, false),
     restRows("document_types?select=id,name,active,sort_order&order=sort_order.asc,name.asc", env),
-    restRows("payment_records?select=id,user_id,plan_id,amount,currency,method,reference,status,submitted_at,reviewed_at,reviewed_by,admin_note&order=submitted_at.desc&limit=500", env),
+    restRows("payment_records?select=id,user_id,plan_id,amount,currency,method,reference,billing_period,duration_count,term_months,status,submitted_at,reviewed_at,reviewed_by,admin_note&order=submitted_at.desc&limit=500", env),
     countRows("profiles", "id", env),
     countRows("profiles?account_status=eq.active", "id", env),
     countRows("vault_items", "id", env),

@@ -275,6 +275,9 @@ create table if not exists public.payment_records (
   currency text not null default 'BDT' check (char_length(currency) = 3),
   method text not null check (char_length(method) between 2 and 40),
   reference text not null check (char_length(reference) between 1 and 180),
+  billing_period text not null default 'monthly' check (billing_period in ('monthly', 'yearly')),
+  duration_count integer not null default 1 check (duration_count between 1 and 120),
+  term_months integer not null default 1 check (term_months between 1 and 120),
   status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
   submitted_at timestamptz not null default now(),
   reviewed_at timestamptz,
@@ -330,7 +333,7 @@ create index if not exists admin_audit_events_created_at_idx on public.admin_aud
 alter table public.vault_items drop constraint if exists vault_items_section_check;
 alter table public.vault_items add constraint vault_items_section_check check (section in (
   'documents', 'academics', 'subscriptions', 'family', 'purchases',
-  'accounts', 'memberships', 'wallet-cards', 'study', 'business-card', 'urls', 'notes'
+  'accounts', 'memberships', 'wallet-cards', 'study', 'business-card', 'urls', 'notes', 'personal-finance'
 ));
 
 create index if not exists vault_shares_owner_created_idx on public.vault_shares(owner_id, created_at desc);
@@ -415,13 +418,14 @@ begin
     select * into v_plan from public.subscription_plans where id = v_payment.plan_id and active = true;
     if not found then return false; end if;
     insert into public.user_subscriptions as existing_subscription (user_id, plan_id, status, storage_limit_gb, current_period_end)
-    values (v_payment.user_id, v_plan.id, 'active', v_plan.storage_gb, now() + interval '1 month')
+    values (v_payment.user_id, v_plan.id, 'active', v_plan.storage_gb, now() + make_interval(months => greatest(coalesce(v_payment.term_months, 1), 1)))
     on conflict (user_id) do update set
       plan_id = excluded.plan_id,
       status = 'active',
       storage_limit_gb = excluded.storage_limit_gb,
       current_period_end = case when existing_subscription.current_period_end > now()
-        then existing_subscription.current_period_end + interval '1 month' else now() + interval '1 month' end;
+        then existing_subscription.current_period_end + make_interval(months => greatest(coalesce(v_payment.term_months, 1), 1))
+        else now() + make_interval(months => greatest(coalesce(v_payment.term_months, 1), 1)) end;
   end if;
   update public.payment_records set status = decision, reviewed_at = now(), reviewed_by = reviewer_id, admin_note = coalesce(review_note, '') where id = payment_id;
   return true;
@@ -478,6 +482,21 @@ create table if not exists public.medical_records (
 );
 create index if not exists medical_records_owner_date_idx on public.medical_records(user_id, record_date desc, updated_at desc);
 create index if not exists medical_records_owner_type_idx on public.medical_records(user_id, record_type, record_date desc);
+
+-- Short-lived, account-scoped OCR/extraction cache. The original upload is never copied here.
+create table if not exists public.smart_scan_cache (
+  owner_id uuid not null references public.profiles(id) on delete cascade,
+  content_sha256 text not null check (content_sha256 ~ '^[0-9a-f]{64}$'),
+  payload jsonb not null,
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  primary key (owner_id, content_sha256)
+);
+create index if not exists smart_scan_cache_expiry_idx on public.smart_scan_cache(expires_at);
+alter table public.smart_scan_cache enable row level security;
+revoke all on public.smart_scan_cache from anon, authenticated;
+grant all on public.smart_scan_cache to service_role;
+
 create table if not exists public.medical_record_links (
   medical_record_id uuid not null,
   owner_id uuid not null references public.profiles(id) on delete cascade,

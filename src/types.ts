@@ -12,7 +12,8 @@ export type SectionId =
   | "study"
   | "business-card"
   | "urls"
-  | "notes";
+  | "notes"
+  | "personal-finance";
 
 export type ViewId = "dashboard" | SectionId | "contacts" | "settings" | "billing" | "shared" | "timeline" | "medical-records";
 export type NotesRecordKind = "todo" | "reminder" | "alarm";
@@ -102,6 +103,33 @@ export interface ShareComment {
   authorName: string;
   body: string;
   createdAt: string;
+}
+
+export type SmartScanConfidence = "high" | "medium" | "low";
+
+export interface SmartScanFieldDefinition {
+  key: string;
+  label: string;
+  kind?: string;
+  options?: string[];
+}
+
+export interface SmartScanFieldResult {
+  value: string;
+  confidence: SmartScanConfidence;
+  evidence?: string;
+  reason?: string;
+}
+
+export interface SmartScanResult {
+  documentType: string;
+  documentTypeConfidence: SmartScanConfidence;
+  fields: Record<string, SmartScanFieldResult>;
+  warnings: string[];
+  cached: boolean;
+  ocrCached?: boolean;
+  pagesProcessed?: number;
+  cacheWarning?: string;
 }
 
 export interface VaultFile {
@@ -247,6 +275,7 @@ export interface AppUser {
   fullName: string;
   role: AccountRole;
   timezone?: string;
+  avatarUrl?: string;
   demo?: boolean;
 }
 

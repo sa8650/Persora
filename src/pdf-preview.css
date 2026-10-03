@@ -1,0 +1,26 @@
+.pdf-preview-viewer { display:flex; width:100%; height:min(68vh,620px); min-height:300px; flex-direction:column; overflow:hidden; border:1px solid #d8e1ef; border-radius:11px; background:#fff; }
+.pdf-preview-toolbar { display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:45px; flex:0 0 auto; border-bottom:1px solid #e8eaed; padding:6px 9px; background:#fff; }
+.pdf-preview-file { display:flex; align-items:center; gap:8px; min-width:0; }
+.pdf-preview-file-icon { display:grid; width:30px; height:30px; flex:0 0 auto; place-items:center; border:1px solid #f2d7d5; border-radius:8px; color:#b3261e; background:#fff4f3; }
+.pdf-preview-file-icon span { font-size:7px; font-weight:800; letter-spacing:.04em; }
+.pdf-preview-file-copy { display:flex; min-width:0; flex-direction:column; gap:2px; }
+.pdf-preview-file-copy b { max-width:min(34vw,260px); overflow:hidden; color:#3c4043; font-size:9px; font-weight:650; text-overflow:ellipsis; white-space:nowrap; }
+.pdf-preview-file-copy small { color:#80868b; font-size:8px; }
+.pdf-preview-controls { display:flex; align-items:center; gap:2px; flex:0 0 auto; }
+.pdf-preview-controls button,.pdf-preview-controls a { display:grid; min-width:29px; height:29px; place-items:center; border:0; border-radius:7px; padding:0 5px; color:#5f6368; background:transparent; cursor:pointer; }
+.pdf-preview-controls button:hover:not(:disabled),.pdf-preview-controls a:hover { color:#174ea6; background:#e8f0fe; }
+.pdf-preview-controls button:disabled { opacity:.42; cursor:not-allowed; }
+.pdf-preview-controls i { width:1px; height:18px; margin:0 3px; background:#e8eaed; }
+.pdf-preview-controls .pdf-preview-fit { min-width:35px; font-size:8px; font-weight:680; }
+.pdf-preview-zoom { min-width:37px; color:#5f6368; font-size:8px; font-variant-numeric:tabular-nums; text-align:center; }
+.pdf-preview-frame { display:block; width:100%; min-height:0; flex:1 1 auto; border:0; background:#eef3fb; }
+@media (max-width:560px) {
+  .pdf-preview-viewer { height:56vh; min-height:240px; }
+  .pdf-preview-toolbar { gap:5px; padding-inline:6px; }
+  .pdf-preview-file { gap:6px; }
+  .pdf-preview-file-icon { width:27px; height:27px; }
+  .pdf-preview-file-copy b { max-width:24vw; }
+  .pdf-preview-controls { gap:0; }
+  .pdf-preview-controls button,.pdf-preview-controls a { min-width:25px; height:27px; }
+  .pdf-preview-controls i { margin-inline:2px; }
+}

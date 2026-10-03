@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ArrowDownToLine, ArrowUpRight, CalendarDays, Check, Clock3, ExternalLink, FileText, LockKeyhole, Pencil, Plus, Search, ShieldCheck, Trash2, X } from "lucide-react";
+import { ArrowDownToLine, ArrowUpRight, CalendarDays, Check, Clock3, ExternalLink, FileText, LockKeyhole, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import type { TimelineDraft, TimelineEvent, VaultItem } from "../types";
 import { SECTION_BY_ID } from "../data";
 
@@ -47,7 +47,6 @@ export default function TimelineView({ events, items, online, canPost, saving, o
   const selectableRecords = items.filter((item) => !recordSearch || `${item.title} ${SECTION_BY_ID[item.section]?.label || ""}`.toLowerCase().includes(recordSearch.trim().toLowerCase()));
 
   return <div className="timeline-page">
-    <section className={`timeline-security-banner ${canPost ? "" : "timeline-demo-banner"}`}><span className="timeline-security-icon"><ShieldCheck size={19}/></span><div>{canPost ? <><b><LockKeyhole size={14}/> Sherlock Security System · AES-256-GCM</b><p>Event text, links, and attachment files are encrypted by Persora on the server before storage. Dates and record references remain separately available for timeline sorting and navigation. This is encrypted at rest, not end-to-end encryption.</p></> : <><b>Private timeline preview</b><p>Automatic date events are shown locally in this preview. Encrypted posting and cloud synchronization require a connected Persora account.</p></>}</div></section>
     {canPost && !online && <div className="timeline-offline-note"><Clock3 size={15}/> Offline: date-based automatic events are shown locally and will sync when Persora reconnects and is open.</div>}
 
     <div className="timeline-toolbar"><div className="timeline-intro"><span>YOUR PRIVATE HISTORY</span><h2>Life Timeline</h2><p>A chronological view of events from your Persora records and the moments you add.</p></div>{canPost && <button className="timeline-primary" onClick={startNew}><Plus size={17}/> Post Event</button>}</div>

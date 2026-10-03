@@ -60,7 +60,7 @@ import {
 } from "./lib/backend";
 import { loadAdminBootstrapStatus, loadDocumentTypes, loadPublicPlans, loadPublicSiteContent } from "./lib/cloud";
 import { signIn, signOut, signUp, getCurrentUser } from "./lib/auth";
-import { getLocalBusinessCards, getLocalContacts, getLocalItems, getLocalProfile, putLocalBusinessCards, putLocalContacts, putLocalItems, putLocalProfile } from "./lib/local-store";
+import { getLocalAvatar, getLocalBusinessCards, getLocalContacts, getLocalItems, getLocalProfile, putLocalAvatar, putLocalBusinessCards, putLocalContacts, putLocalItems, putLocalProfile } from "./lib/local-store";
 
 interface ToastState { message: string; kind: "success" | "error"; id: number }
 type EditorDraft = Omit<VaultItem, "id" | "createdAt" | "updatedAt"> & { id?: string; fileUpload?: File | null };
@@ -118,7 +118,7 @@ export default function App() {
   const [authOpen, setAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<AuthMode>("signup");
   const [authBusy, setAuthBusy] = useState(false);
-  const [editor, setEditor] = useState<{ section: SectionId; item?: VaultItem } | null>(null);
+  const [editor, setEditor] = useState<{ section: SectionId; item?: VaultItem; initialMetadata?: Record<string, string> } | null>(null);
   const [todoEditor, setTodoEditor] = useState<VaultItem | null | false>(false);
   const [todoEditorType, setTodoEditorType] = useState<NotesRecordKind>("todo");
   const [focusedItem, setFocusedItem] = useState<VaultItem | null>(null);
@@ -220,9 +220,9 @@ export default function App() {
       if (remembered.startsWith("demo:")) {
         const [, email, fullName] = remembered.split(":");
         ownerId = `demo-${email}`;
-        setUser({ ...DEMO_USER, id: ownerId, email, fullName: fullName || DEMO_USER.fullName, role: "user" });
+        setUser({ ...DEMO_USER, id: ownerId, email, fullName: fullName || DEMO_USER.fullName, role: "user", avatarUrl: getLocalAvatar(ownerId) });
       } else if (remembered === DEMO_USER.email) {
-        setUser(DEMO_USER);
+        setUser({ ...DEMO_USER, avatarUrl: getLocalAvatar(DEMO_USER.id) });
       }
       setItems(getLocalItems());
       commitContacts(getLocalContacts(ownerId));
@@ -316,7 +316,7 @@ export default function App() {
   }, [adminRoute]);
 
   const completeDemo = () => {
-    setUser(DEMO_USER);
+    setUser({ ...DEMO_USER, avatarUrl: getLocalAvatar(DEMO_USER.id) || getLocalAvatar(`demo-${DEMO_USER.email}`) });
     setItems(getLocalItems());
 commitContacts(getLocalContacts(DEMO_USER.id));
     commitBusinessCards(getLocalBusinessCards(DEMO_USER.id));
@@ -997,11 +997,15 @@ commitContacts(getLocalContacts(DEMO_USER.id));
     catch (error) { notify(error instanceof Error ? error.message : "Couldn't download this file.", "error"); }
   };
 
-  const handleProfileSave = async (values: { fullName: string; timezone: string }) => {
+  const handleProfileSave = async (values: { fullName: string; timezone: string; avatarUrl: string }) => {
     if (!user) return;
     if (!user.demo) await updateProfile(values);
-    setUser((current) => current ? { ...current, fullName: values.fullName.trim(), timezone: values.timezone } : current);
-    if (user.demo) putLocalProfile(`demo:${user.email}:${values.fullName.trim()}`);
+    setUser((current) => current ? { ...current, fullName: values.fullName.trim(), timezone: values.timezone, avatarUrl: values.avatarUrl } : current);
+    if (user.demo) {
+      putLocalProfile(`demo:${user.email}:${values.fullName.trim()}`);
+      putLocalAvatar(user.id, values.avatarUrl || null);
+      putLocalAvatar(`demo-${user.email}`, values.avatarUrl || null);
+    }
   };
 
   const handlePasswordChange = async (currentPassword: string, newPassword: string) => {
@@ -1047,7 +1051,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
   const handleDeleteAccount = async () => {
     if (!user) return;
     if (user.demo) {
-      putLocalProfile(null); putLocalItems([]); putLocalBusinessCards(user.id, []); setItems([]); setUser(null); commitBusinessCards([]); commitMedicalRecords([]); demoMedicalFiles.current.clear(); setSharedByMe([]); setSharedWithMe([]); setRecordSharesByMe([]); setRecordSharesWithMe([]); setShareNotifications([]); setView("dashboard");
+      putLocalProfile(null); putLocalAvatar(user.id, null); putLocalAvatar(`demo-${user.email}`, null); putLocalItems([]); putLocalBusinessCards(user.id, []); setItems([]); setUser(null); commitBusinessCards([]); commitMedicalRecords([]); demoMedicalFiles.current.clear(); setSharedByMe([]); setSharedWithMe([]); setRecordSharesByMe([]); setRecordSharesWithMe([]); setShareNotifications([]); setView("dashboard");
       notify("Your demo account has been cleared from this browser."); return;
     }
     if (!isPagesApiConfigured) throw new Error("The private Pages API is not enabled. Ask an administrator to finish setup.");
@@ -1061,6 +1065,10 @@ commitContacts(getLocalContacts(DEMO_USER.id));
     openAuth("signup");
   };
   const navigateWorkspace = (next: ViewId) => {
+    if (next !== "documents") {
+      setEditor((current) => current?.section === "documents" ? null : current);
+      setFocusedItem((current) => current?.section === "documents" ? null : current);
+    }
     setView(next);
     if (next === "shared") void refreshSharing().catch((error) => notify(error instanceof Error ? error.message : "Couldn't refresh shared documents.", "error"));
     if (next === "contacts") void handleRefreshContacts().catch((error) => notify(error instanceof Error ? error.message : "Couldn't sync contacts.", "error"));
@@ -1129,14 +1137,24 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       pendingPlanId={pendingPlanId}
       onSearch={setSearch}
       onNavigate={navigateWorkspace}
-      onAdd={(section) => { setEditor({ section }); setFocusedItem(null); }}
+      documentEditor={editor?.section === "documents" ? editor : null}
+      documentFocusedItem={focusedItem?.section === "documents" ? focusedItem : null}
+      documentFilePreview={filePreview}
+      documentTypes={documentTypes}
+      documentComments={shareComments}
+      onCloseDocumentPanel={() => { setEditor((current) => current?.section === "documents" ? null : current); setFocusedItem((current) => current?.section === "documents" ? null : current); }}
+      onManageDocumentSharing={(item) => setShareTarget(item)}
+      onAddDocumentComment={handleAddShareComment}
+      onDownloadDocumentFile={(item) => void handleDownloadFile(item)}
+      onAdd={(section, initialMetadata) => { if (section === "documents" && view !== "documents") { navigateWorkspace("documents"); setSearch(""); } setEditor({ section, initialMetadata }); setFocusedItem(null); }}
+      onSaveItem={handleSaveItem}
       onAddTodo={(kind = "todo") => { setTodoEditorType(kind); setTodoEditor(null); setFocusedItem(null); }}
       onEditTodoItem={(item) => { const type = item.metadata.recordType; setTodoEditorType(type === "reminder" || type === "alarm" ? type : "todo"); setTodoEditor(item); setFocusedItem(null); }}
       onToggleTodo={handleToggleTodo}
       onToggleSchedule={handleToggleSchedule}
       onDismissSchedule={handleDismissSchedule}
       onSnoozeSchedule={handleSnoozeSchedule}
-      onOpenItem={(item) => setFocusedItem(item)}
+      onOpenItem={(item) => { if (item.section === "documents") setEditor(null); setFocusedItem(item); }}
       onEditItem={(item) => { setFocusedItem(null); const kind = item.metadata.recordType; if (item.section === "notes" && ["todo", "reminder", "alarm"].includes(kind || "")) { setTodoEditorType(kind === "reminder" || kind === "alarm" ? kind : "todo"); setTodoEditor(item); } else setEditor({ section: item.section, item }); }}
       onDeleteItem={(item) => setDeleteTarget(item)}
       onShareItem={handleShareItem}
@@ -1176,9 +1194,9 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       onClose={() => setAuthOpen(false)}
       onSubmit={handleAuthSubmit}
     />}
-    {editor && user && <ItemEditorDialog sectionId={editor.section} item={editor.item} documentTypes={documentTypes} maxUploadMb={maxUploadMb} onClose={() => setEditor(null)} onSave={handleSaveItem} />}
+    {editor && user && !(view === "documents" && editor.section === "documents") && <ItemEditorDialog sectionId={editor.section} item={editor.item} initialMetadata={editor.initialMetadata} documentTypes={documentTypes} maxUploadMb={maxUploadMb} onClose={() => setEditor(null)} onSave={handleSaveItem} />}
     {todoEditor !== false && user && <TodoEditorDialog key={`${todoEditorType}:${todoEditor?.id || "new"}`} kind={todoEditorType} item={todoEditor || undefined} onClose={() => setTodoEditor(false)} onSave={async (draft) => { await handleSaveItem(draft); setTodoEditor(false); }} />}
-    {focusedItem && <ItemDetailDialog
+    {focusedItem && !(view === "documents" && focusedItem.section === "documents") && <ItemDetailDialog
       item={focusedItem}
       filePreview={filePreview}
       shareAccess={focusedItem.sharedAccess}

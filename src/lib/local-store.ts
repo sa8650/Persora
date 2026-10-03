@@ -5,6 +5,7 @@ const ITEMS_KEY = "persora-demo-items-v1";
 const CONTACTS_KEY = "persora-local-contacts-v1";
 const BUSINESS_CARDS_KEY = "persora-local-business-cards-v1";
 const PROFILE_KEY = "persora-demo-profile-v1";
+const PROFILE_AVATAR_KEY = "persora-profile-avatar-v1";
 
 export function getLocalItems(): VaultItem[] {
   try {
@@ -67,5 +68,20 @@ export function putLocalProfile(email: string | null): void {
     else localStorage.removeItem(PROFILE_KEY);
   } catch {
     // Ignore unavailable browser storage.
+  }
+}
+
+export function getLocalAvatar(ownerId: string): string {
+  try { return localStorage.getItem(`${PROFILE_AVATAR_KEY}:${ownerId}`) || ""; }
+  catch { return ""; }
+}
+
+export function putLocalAvatar(ownerId: string, avatarUrl: string | null): void {
+  try {
+    const key = `${PROFILE_AVATAR_KEY}:${ownerId}`;
+    if (avatarUrl) localStorage.setItem(key, avatarUrl);
+    else localStorage.removeItem(key);
+  } catch {
+    // Demo profile photos are best-effort and remain local to this browser.
   }
 }

@@ -1,4 +1,4 @@
-import type { AdminConsoleSnapshot, AdminMetrics, AlarmRingtone, BillingSnapshot, BusinessCardDraft, BusinessSocialLink, DigitalBusinessCard, DocumentTypeOption, MedicalRecord, MedicalRecordDraft, MedicalRecordFile, MedicalRecordLink, PersoraContact, PaymentRecord, PublicDigitalBusinessCard, ShareComment, ShareNotification, SharePermission, SharedDirection, SharedVaultEntry, RecordShareEntry, SiteContent, SubscriptionPlan, TimelineAttachment, TimelineDraft, TimelineEvent, TransferProgress, VaultFile, VaultFolder, VaultFolderDraft, VaultFolderScope, VaultItem } from "../types";
+import type { AdminConsoleSnapshot, AdminMetrics, AlarmRingtone, BillingSnapshot, BusinessCardDraft, BusinessSocialLink, DigitalBusinessCard, DocumentTypeOption, MedicalRecord, MedicalRecordDraft, MedicalRecordFile, MedicalRecordLink, PersoraContact, PaymentRecord, PublicDigitalBusinessCard, ShareComment, ShareNotification, SharePermission, SharedDirection, SharedVaultEntry, RecordShareEntry, SiteContent, SmartScanFieldDefinition, SmartScanResult, SubscriptionPlan, TimelineAttachment, TimelineDraft, TimelineEvent, TransferProgress, VaultFile, VaultFolder, VaultFolderDraft, VaultFolderScope, VaultItem } from "../types";
 import { DEFAULT_SITE_CONTENT } from "../data/siteContent";
 
 const pagesFunctionsEnabled = import.meta.env.VITE_USE_PAGES_FUNCTIONS === "true";
@@ -441,7 +441,7 @@ export async function removeVaultItem(id: string): Promise<void> {
   await pagesApiRequest(`/vault/items?id=${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
-export async function updateProfile(values: { fullName: string; timezone: string }): Promise<void> {
+export async function updateProfile(values: { fullName: string; timezone: string; avatarUrl?: string }): Promise<void> {
   await pagesApiJson("/profile", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(values) });
 }
 
@@ -450,6 +450,15 @@ export async function uploadVaultFile(file: File, onProgress?: (progress: Transf
   form.append("file", file, file.name);
   const result = await uploadMultipart<{ key: string; name: string; size: number; type: string }>("/upload", form, onProgress);
   return { key: result.key, name: result.name, size: result.size, type: result.type };
+}
+
+export async function smartScanDocument(file: File, section: string, fields: SmartScanFieldDefinition[], retry = false): Promise<SmartScanResult> {
+  const form = new FormData();
+  form.append("file", file, file.name);
+  form.append("section", section);
+  form.append("fields", JSON.stringify(fields));
+  form.append("retry", retry ? "true" : "false");
+  return uploadMultipart<SmartScanResult>("/smart-scan", form);
 }
 
 export async function deleteVaultFile(key: string): Promise<void> {

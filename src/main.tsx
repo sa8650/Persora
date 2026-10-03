@@ -8,6 +8,7 @@ import "./billing.css";
 import "./public-pages.css";
 import "./admin-portal.css";
 import "./persora-theme.css";
+import "./document-panels.css";
 import App from "./App";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
