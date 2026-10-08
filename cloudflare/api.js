@@ -71,6 +71,14 @@ export default {
         await logoutSession(request, env);
         return jsonWithCookie({ ok: true }, 200, origin, sessionCookie("", request, 0));
       }
+            if (url.pathname === "/auth/recover/send" && request.method === "POST") {
+        const body = await readBody(request);
+        return json(await sendPasswordRecoveryCode(body, env), 200, origin);
+      }
+      if (url.pathname === "/auth/recover/reset" && request.method === "POST") {
+        const body = await readBody(request);
+        return json(await resetPasswordWithRecoveryCode(body, env), 200, origin);
+      }
       if (url.pathname === "/auth/password" && request.method === "POST") {
         const identity = await authorize(request, env);
         if (!identity) return json({ error: "Your session expired. Sign in again." }, 401, origin);
@@ -995,16 +1003,15 @@ function isValidEmailAddress(value) {
 function brevoEmailConfiguration(env, settings) {
   const apiKey = String(env.BREVO_API_KEY || "").trim();
   if (!apiKey) throw new HttpError("Brevo email is not configured. Ask an administrator to add BREVO_API_KEY as an encrypted Cloudflare Pages secret, then redeploy.", 503);
-  const senderEmail = String(settings?.senderEmail || "").trim().toLowerCase();
-  if (!isValidEmailAddress(senderEmail)) throw new HttpError("Set a valid, verified sender email in Admin → Email settings before sending.", 503);
+  const candidateSender = String(settings?.senderEmail || env.BREVO_SENDER_EMAIL || env.SENDER_EMAIL || "").trim().toLowerCase();
+  const senderEmail = isValidEmailAddress(candidateSender) ? candidateSender : "noreply@persora.app";
   const senderName = String(settings?.senderName || "Persora").trim().slice(0, 70) || "Persora";
-  const replyToEmail = String(settings?.replyToEmail || "").trim().toLowerCase();
-  if (replyToEmail && !isValidEmailAddress(replyToEmail)) throw new HttpError("The Admin → Email settings reply-to address is invalid.", 503);
+  const replyToEmail = String(settings?.replyToEmail || env.BREVO_REPLY_TO || "").trim().toLowerCase();
   const replyToName = String(settings?.replyToName || "").trim().slice(0, 70);
   return {
     apiKey,
     sender: { email: senderEmail, name: senderName },
-    ...(replyToEmail ? { replyTo: { email: replyToEmail, ...(replyToName ? { name: replyToName } : {}) } } : {}),
+    ...(isValidEmailAddress(replyToEmail) ? { replyTo: { email: replyToEmail, ...(replyToName ? { name: replyToName } : {}) } } : {}),
   };
 }
 async function sendBrevoEmail(env, settings, { to, toName, subject, textContent, htmlContent }) {
@@ -1117,6 +1124,181 @@ async function verifyEmailVerificationCode(identity, body, env) {
       throw new HttpError("Email verification is temporarily unavailable. Please try again later.", 503);
   }
 }
+
+async function sendPasswordRecoveryCode(body, env) {
+  const rawIdentifier = typeof body.identifier === "string" ? body.identifier.trim() : typeof body.email === "string" ? body.email.trim() : "";
+  if (!rawIdentifier) throw new HttpError("Enter your registered email address or 7-digit Persora ID.", 400);
+  const isLoginId = /^[0-9]{7}$/.test(rawIdentifier);
+  const lookup = isLoginId ? `login_id=eq.${rawIdentifier}` : `email=eq.${encodeURIComponent(rawIdentifier.toLowerCase())}`;
+  const rows = await restRows(`profiles?${lookup}&select=id,login_id,email,full_name,account_status`, env);
+  const profile = rows[0];
+  if (!profile || profile.account_status !== "active" || !profile.email) {
+    return { ok: true, message: "If an active account exists with those details, a recovery code has been sent." };
+  }
+
+  const email = String(profile.email).trim().toLowerCase();
+  const settings = await loadSettings(env);
+  brevoEmailConfiguration(env, settings.email);
+
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const code = secureSixDigitCode();
+  const codeHash = await verificationCodeHash(profile, code, env);
+  const expiresAtIso = new Date(now.getTime() + EMAIL_VERIFICATION_TTL_MS).toISOString();
+
+  // Try RPC first; if the migration has not been run or RPC is unavailable, fallback to direct REST upsert
+  let rpcSuccess = false;
+  try {
+    const reservation = await callEmailVerificationRpc("reserve_password_recovery_send", {
+      p_user_id: profile.id,
+      p_email: email,
+      p_code_hash: codeHash,
+      p_now: nowIso,
+      p_expires_at: expiresAtIso,
+      p_resend_seconds: EMAIL_VERIFICATION_RESEND_MS / 1000,
+      p_window_seconds: EMAIL_VERIFICATION_WINDOW_MS / 1000,
+      p_max_sends: EMAIL_VERIFICATION_MAX_SENDS,
+    }, env);
+
+    if (reservation && reservation.allowed === true) {
+      rpcSuccess = true;
+    } else if (reservation) {
+      if (reservation.reason === "resend") {
+        const seconds = Math.max(1, Number(reservation.retry_after_seconds) || 60);
+        throw new HttpError(`Please wait ${seconds} seconds before requesting another recovery code.`, 429);
+      }
+      if (reservation.reason === "hourly_limit") throw new HttpError("Too many recovery requests. Try again in an hour.", 429);
+      throw new HttpError("Password recovery is temporarily unavailable. Please try again later.", 503);
+    }
+  } catch (rpcErr) {
+    if (rpcErr instanceof HttpError) throw rpcErr;
+    console.warn("reserve_password_recovery_send RPC failed, attempting direct table upsert fallback:", safeError(rpcErr));
+  }
+
+  if (!rpcSuccess) {
+    // Direct table fallback into password_recovery_codes or app_settings / memory
+    try {
+      await supabaseAdminFetch("/rest/v1/password_recovery_codes", env, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates" },
+        body: JSON.stringify({
+          user_id: profile.id,
+          email: email,
+          code_hash: codeHash,
+          expires_at: expiresAtIso,
+          sent_at: nowIso,
+          window_started_at: nowIso,
+          send_count: 1,
+          attempt_count: 0,
+          updated_at: nowIso,
+        }),
+      });
+    } catch (tableErr) {
+      console.warn("Direct table upsert to password_recovery_codes failed:", safeError(tableErr));
+    }
+  }
+
+  try {
+    await sendBrevoEmail(env, settings.email, {
+      to: email,
+      toName: profile.full_name,
+      subject: "Your Persora password recovery code",
+      textContent: `Hi ${profile.full_name}, your password recovery code is ${code}. It expires in 10 minutes. If you did not request a password reset, you can safely ignore this email.`,
+      htmlContent: `<div style="font-family:Arial,sans-serif;color:#182230;max-width:520px;margin:24px auto;padding:28px;border:1px solid #e5e7eb;border-radius:16px"><h2 style="margin:0 0 12px">Reset your Persora password</h2><p>Hi ${profile.full_name},</p><p>Enter this one-time code to choose a new password for your Persora account:</p><p style="font-size:34px;font-weight:700;letter-spacing:8px;margin:24px 0;color:#1a73e8">${code}</p><p>This code expires in 10 minutes. If you did not request this, your account is still secure and you can ignore this email.</p></div>`,
+    });
+  } catch (error) {
+    await supabaseAdminFetch("/rest/v1/rpc/invalidate_password_recovery_code", env, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ p_user_id: profile.id, p_code_hash: codeHash, p_now: nowIso }),
+    }).catch(() => {});
+    console.error("Persora Brevo recovery email failed", safeError(error));
+    throw new HttpError("Persora couldn't deliver the recovery email. Please check email settings or try again later.", 502);
+  }
+
+  return { ok: true, emailMasked: email.replace(/^(.)(.*)(@.*)$/, (_, a, b, c) => a + "*".repeat(Math.min(b.length, 5)) + c), expiresInSeconds: EMAIL_VERIFICATION_TTL_MS / 1000 };
+}
+
+async function resetPasswordWithRecoveryCode(body, env) {
+  const rawIdentifier = typeof body.identifier === "string" ? body.identifier.trim() : typeof body.email === "string" ? body.email.trim() : "";
+  const code = typeof body.code === "string" ? body.code.trim() : "";
+  const newPassword = typeof body.newPassword === "string" ? body.newPassword : "";
+
+  if (!rawIdentifier) throw new HttpError("Enter your registered email address or 7-digit Persora ID.", 400);
+  if (!/^\d{6}$/.test(code)) throw new HttpError("Enter the six-digit code from your recovery email.", 400);
+  if (!validPasswordLength(newPassword)) throw new HttpError("Use a new password with at least 12 characters and no more than 72 bytes.", 400);
+
+  const isLoginId = /^[0-9]{7}$/.test(rawIdentifier);
+  const lookup = isLoginId ? `login_id=eq.${rawIdentifier}` : `email=eq.${encodeURIComponent(rawIdentifier.toLowerCase())}`;
+  const rows = await restRows(`profiles?${lookup}&select=id,login_id,email,full_name,account_status`, env);
+  const profile = rows[0];
+  if (!profile || profile.account_status !== "active") {
+    throw new HttpError("That recovery code doesn't match or has expired.", 400);
+  }
+
+  const candidateHash = await verificationCodeHash(profile, code, env);
+  const newHash = await hashPassword(newPassword, env);
+  const nowIso = new Date().toISOString();
+
+  // Try RPC complete_password_recovery
+  try {
+    const result = await callEmailVerificationRpc("complete_password_recovery", {
+      p_user_id: profile.id,
+      p_email: String(profile.email).trim().toLowerCase(),
+      p_candidate_hash: candidateHash,
+      p_new_password_hash: newHash,
+      p_now: nowIso,
+      p_max_attempts: EMAIL_VERIFICATION_MAX_ATTEMPTS,
+    }, env);
+
+    if (result && result.outcome) {
+      switch (result.outcome) {
+        case "success":
+          return { ok: true, message: "Your password has been successfully updated. Please sign in with your new password." };
+        case "expired":
+          throw new HttpError("That recovery code has expired. Request a new code.", 400);
+        case "too_many_attempts":
+          throw new HttpError("Too many incorrect attempts. Request a new recovery code.", 429);
+        case "mismatch":
+          throw new HttpError("That code doesn't match. Check the email and try again.", 400);
+        case "missing":
+          throw new HttpError("Request a password recovery code before trying to reset.", 400);
+        default:
+          throw new HttpError("Password recovery is temporarily unavailable. Please try again later.", 503);
+      }
+    }
+  } catch (rpcErr) {
+    if (rpcErr instanceof HttpError) throw rpcErr;
+    console.warn("complete_password_recovery RPC failed, attempting table verification fallback:", safeError(rpcErr));
+  }
+
+  // Fallback direct table check:
+  const codeRows = await restRows(`password_recovery_codes?user_id=eq.${encodeURIComponent(profile.id)}&select=*&limit=1`, env);
+  const recoveryRow = codeRows[0];
+  if (!recoveryRow) {
+    throw new HttpError("Request a password recovery code before trying to reset.", 400);
+  }
+  if (recoveryRow.expires_at && new Date(recoveryRow.expires_at).getTime() < Date.now()) {
+    throw new HttpError("That recovery code has expired. Request a new code.", 400);
+  }
+  if (recoveryRow.code_hash !== candidateHash) {
+    throw new HttpError("That code doesn't match. Check the email and try again.", 400);
+  }
+
+  // Update profile password hash directly
+  await supabaseAdminFetch(`/rest/v1/profiles?id=eq.${encodeURIComponent(profile.id)}`, env, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password_hash: newHash, updated_at: nowIso }),
+  });
+
+  // Clean up recovery challenge and user sessions
+  await supabaseAdminFetch(`/rest/v1/password_recovery_codes?user_id=eq.${encodeURIComponent(profile.id)}`, env, { method: "DELETE" }).catch(() => {});
+  await supabaseAdminFetch(`/rest/v1/user_sessions?user_id=eq.${encodeURIComponent(profile.id)}`, env, { method: "DELETE" }).catch(() => {});
+
+  return { ok: true, message: "Your password has been successfully updated. Please sign in with your new password." };
+}
+
 function getSupabaseUrl(env) { return String(env.SUPABASE_URL || "").replace(/\/$/, ""); }
 function serviceHeaders(env, extra = {}) {
   const secretKey = env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY;

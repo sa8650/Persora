@@ -8,7 +8,8 @@ import PublicBusinessCardPage from "./components/PublicBusinessCardPage";
 const AdminConsole = lazy(() => import("./components/AdminConsole"));
 const AdminAccessPage = lazy(() => import("./components/AdminAccessPage"));
 import PublicInfoPage from "./components/PublicInfoPage";
-import { ConfirmDialog, ItemDetailDialog, ItemEditorDialog, ShareManagementDialog, TodoEditorDialog, ToastNotice } from "./components/VaultDialogs";
+import { ConfirmDialog, ItemDetailDialog, ItemEditorDialog, TodoEditorDialog, ToastNotice } from "./components/VaultDialogs";
+import ShareRecordDialog from "./components/ShareRecordDialog";
 import { ADD_DOCUMENT_DESTINATION_EVENT, ADD_DOCUMENT_HANDOFF_EVENT } from "./types";
 import type { ActiveScheduleAlert, AddDocumentFlowDraft, AppUser, BusinessCardDraft, ContactDraft, ContactImportProgress, DigitalBusinessCard, DocumentTypeOption, MedicalRecord, MedicalRecordDraft, MedicalRecordFile, NotesRecordKind, PersoraContact, SectionId, ShareComment, ShareNotification, SharePermission, SharedVaultEntry, RecordShareEntry, SiteContent, SubscriptionPlan, TimelineDraft, TimelineEvent, TransferProgress, SmartScanResult, VaultFilePreview, VaultItem, ViewId } from "./types";
 import { DEFAULT_SITE_CONTENT } from "./data/siteContent";
@@ -1182,15 +1183,8 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       pendingPlanId={pendingPlanId}
       onSearch={setSearch}
       onNavigate={navigateWorkspace}
-      documentEditor={editor?.section === "documents" ? editor : null}
-      documentFocusedItem={focusedItem?.section === "documents" ? focusedItem : null}
-      documentFilePreview={filePreview}
       documentTypes={documentTypes}
-      documentComments={shareComments}
       onCloseDocumentPanel={() => { setEditor((current) => current?.section === "documents" ? null : current); setFocusedItem((current) => current?.section === "documents" ? null : current); }}
-      onManageDocumentSharing={(item) => setShareTarget(item)}
-      onAddDocumentComment={handleAddShareComment}
-      onDownloadDocumentFile={(item) => void handleDownloadFile(item)}
       onAdd={(section, initialMetadata, initialFile, initialScanResult, initialScanComplete, initialProtectedKeys) => { if (section === "documents" && view !== "documents") { navigateWorkspace("documents"); setSearch(""); } setEditor({ section, initialMetadata, initialFile, initialScanResult, initialScanComplete, initialProtectedKeys }); setFocusedItem(null); }}
       onSaveItem={handleSaveItem}
       onAddTodo={(kind = "todo") => { setTodoEditorType(kind); setTodoEditor(null); setFocusedItem(null); }}
@@ -1241,9 +1235,9 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       onClose={() => setAuthOpen(false)}
       onSubmit={handleAuthSubmit}
     />}
-    {editor && user && !(view === "documents" && editor.section === "documents") && <ItemEditorDialog sectionId={editor.section} item={editor.item} initialMetadata={editor.initialMetadata} initialFile={editor.initialFile} initialScanResult={editor.initialScanResult} initialScanComplete={editor.initialScanComplete} initialProtectedKeys={editor.initialProtectedKeys} documentTypes={documentTypes} familyMembers={familyMembers} maxUploadMb={maxUploadMb} canUpload={!user.demo && user.uploadsEnabled === true} onUpgrade={!user.demo ? () => { setView("billing"); setEditor(null); } : undefined} onChangeAddDocumentDestination={(draft) => window.dispatchEvent(new CustomEvent<AddDocumentFlowDraft>(ADD_DOCUMENT_DESTINATION_EVENT, { detail: draft }))} onClose={() => setEditor(null)} onSave={handleSaveItem} />}
+    {editor && user && <ItemEditorDialog sectionId={editor.section} item={editor.item} initialMetadata={editor.initialMetadata} initialFile={editor.initialFile} initialScanResult={editor.initialScanResult} initialScanComplete={editor.initialScanComplete} initialProtectedKeys={editor.initialProtectedKeys} documentTypes={documentTypes} familyMembers={familyMembers} maxUploadMb={maxUploadMb} canUpload={!user.demo && user.uploadsEnabled === true} onUpgrade={!user.demo ? () => { setView("billing"); setEditor(null); } : undefined} onChangeAddDocumentDestination={(draft) => window.dispatchEvent(new CustomEvent<AddDocumentFlowDraft>(ADD_DOCUMENT_DESTINATION_EVENT, { detail: draft }))} onClose={() => setEditor(null)} onSave={handleSaveItem} />}
     {todoEditor !== false && user && <TodoEditorDialog key={`${todoEditorType}:${todoEditor?.id || "new"}`} kind={todoEditorType} item={todoEditor || undefined} canUpload={!user.demo && user.uploadsEnabled === true} maxUploadMb={maxUploadMb} onUpgrade={!user.demo ? () => { setView("billing"); setTodoEditor(false); } : undefined} onClose={() => setTodoEditor(false)} onSave={async (draft) => { await handleSaveItem(draft); setTodoEditor(false); }} />}
-    {focusedItem && !(view === "documents" && focusedItem.section === "documents") && <ItemDetailDialog
+    {focusedItem && <ItemDetailDialog
       item={focusedItem}
       familyMembers={familyMembers}
       filePreview={filePreview}
@@ -1255,13 +1249,15 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       onEdit={() => { const selected = focusedItem; setFocusedItem(null); const kind = selected.metadata.recordType; if (selected.section === "notes" && ["todo", "reminder", "alarm"].includes(kind || "")) { setTodoEditorType(kind === "reminder" || kind === "alarm" ? kind : "todo"); setTodoEditor(selected); } else setEditor({ section: selected.section, item: selected }); }}
       onDownloadFile={() => void handleDownloadFile(focusedItem)}
     />}
-    {shareTarget && <ShareManagementDialog
-      item={shareTarget}
-      shares={sharedByMe.filter((entry) => entry.item.id === shareTarget.id)}
-      available={!user?.demo && isPagesApiConfigured}
-      onShare={handleCreateShare}
+    {shareTarget && <ShareRecordDialog
+      title={shareTarget.title}
+      kind="document"
+      allowPermissionChoice={true}
+      existingShares={sharedByMe.filter((entry) => entry.item.id === shareTarget.id)}
+      recentEntries={sharedByMe}
+      onShare={(recipient, permission) => handleCreateShare(recipient, permission || "view")}
       onPermissionChange={handleChangeSharePermission}
-      onRevoke={handleRevokeShare}
+      onRevokeShare={handleRevokeShare}
       onClose={() => setShareTarget(null)}
     />}
     {deleteTarget && <ConfirmDialog title="Remove this from your vault?" confirmLabel="Delete record" onCancel={() => setDeleteTarget(null)} onConfirm={() => void handleDeleteItem()}>

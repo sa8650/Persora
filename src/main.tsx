@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import "./index.css";
+import "./shadcn-theme.css";
 import "./landing.css";
 import "./workspace.css";
 import "./overlays.css";

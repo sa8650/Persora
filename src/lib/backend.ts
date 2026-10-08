@@ -51,4 +51,6 @@ export {
   deleteUnattachedMedicalRecordFile,
   fetchMedicalRecordFile,
   downloadMedicalRecordFile,
+  sendPasswordRecoveryCode,
+  resetPasswordWithRecoveryCode,
 } from "./cloud";

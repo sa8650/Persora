@@ -659,3 +659,11 @@ export async function updatePassword(currentPassword: string, newPassword: strin
 export async function healthCheck(): Promise<{ ok: boolean; service?: string }> {
   return pagesApiJson("/health");
 }
+
+export async function sendPasswordRecoveryCode(identifier: string): Promise<{ ok: boolean; emailMasked?: string; message?: string }> {
+  return postJson("/auth/recover/send", { identifier });
+}
+
+export async function resetPasswordWithRecoveryCode(identifier: string, code: string, newPassword: string): Promise<{ ok: boolean; message?: string }> {
+  return postJson("/auth/recover/reset", { identifier, code, newPassword });
+}

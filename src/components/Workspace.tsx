@@ -1,4 +1,5 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import StripedPattern from "./StripedPattern";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import {
   Activity, AlarmClock, ArrowRight, ArrowUpRight, AtSign, Bell, BellRing, BookOpen, BriefcaseBusiness, Building2, CalendarClock, Check, ChevronRight, Cloud, Code2, ContactRound, FileImage, Film, Folder, Gamepad2, Globe2, HeartPulse,
   CircleHelp, Clock3, CreditCard, FileText, Fingerprint, Heart, Home, LayoutGrid, Link2, List, Music2, Pin, Play, Search, ShoppingBag, Share2,
@@ -7,7 +8,7 @@ import {
 } from "lucide-react";
 import { NAV_GROUPS, SECTION_BY_ID, SECTION_DEFINITIONS } from "../data";
 import { ADD_DOCUMENT_DESTINATION_EVENT, ADD_DOCUMENT_HANDOFF_EVENT, CONTACT_CATEGORIES, MEDICAL_RECORD_TYPES } from "../types";
-import type { ActiveScheduleAlert, AddDocumentFlowDraft, AppUser, BusinessCardDraft, BusinessSocialPlatform, ContactCategory, ContactDraft, ContactImportProgress, DigitalBusinessCard, MedicalRecord, MedicalRecordDraft, MedicalRecordType, NotesRecordKind, PersoraContact, SectionDefinition, SectionId, ShareComment, ShareNotification, SharePermission, SharedVaultEntry, RecordShareEntry, TimelineDraft, TimelineEvent, TransferProgress, SmartScanFieldDefinition, SmartScanResult, VaultFilePreview, VaultFolder, VaultItem, ViewId } from "../types";
+import type { ActiveScheduleAlert, AddDocumentFlowDraft, AppUser, BusinessCardDraft, BusinessSocialPlatform, ContactCategory, ContactDraft, ContactImportProgress, DigitalBusinessCard, MedicalRecord, MedicalRecordDraft, MedicalRecordType, NotesRecordKind, PersoraContact, SectionDefinition, SectionId, ShareNotification, SharePermission, SharedVaultEntry, RecordShareEntry, TimelineDraft, TimelineEvent, TransferProgress, SmartScanFieldDefinition, SmartScanResult, VaultFolder, VaultItem, ViewId } from "../types";
 import { daysUntil, formatDate, humanSize, initials, notePlainText } from "../lib/utils";
 import { BlurFade, MagicCard } from "./magic-ui";
 import ModalPortal from "./ModalPortal";
@@ -26,8 +27,6 @@ import ImagePreview from "./ImagePreview";
 import PdfPreview from "./PdfPreview";
 import { BUILTIN_RINGTONES, startBuiltinRingtone } from "../lib/ringtone";
 import PersonalFinanceView from "./PersonalFinanceView";
-import { ItemDetailDialog, ItemEditorDialog } from "./VaultDialogs";
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "./ui/resizable";
 
 const MedicalRecordsView = lazy(() => import("./MedicalRecordsView"));
 
@@ -59,15 +58,15 @@ interface WorkspaceProps {
   view: ViewId;
   search: string;
   pendingPlanId?: string;
-  documentEditor: { section: SectionId; item?: VaultItem; initialMetadata?: Record<string, string>; initialFile?: File | null; initialScanResult?: SmartScanResult | null; initialScanComplete?: boolean; initialProtectedKeys?: string[] } | null;
-  documentFocusedItem: VaultItem | null;
-  documentFilePreview: VaultFilePreview | null;
+  documentEditor?: any;
+  documentFocusedItem?: any;
+  documentFilePreview?: any;
   documentTypes: string[];
-  documentComments: ShareComment[];
-  onCloseDocumentPanel: () => void;
-  onManageDocumentSharing: (item: VaultItem) => void;
-  onAddDocumentComment: (body: string) => Promise<void>;
-  onDownloadDocumentFile: (item: VaultItem) => void;
+  documentComments?: any;
+  onCloseDocumentPanel?: () => void;
+  onManageDocumentSharing?: (item: VaultItem) => void;
+  onAddDocumentComment?: (body: string) => Promise<void>;
+  onDownloadDocumentFile?: (item: VaultItem) => void;
   onSearch: (value: string) => void;
   onNavigate: (view: ViewId) => void;
   onAdd: (section: SectionId, initialMetadata?: Record<string, string>, initialFile?: File | null, initialScanResult?: SmartScanResult | null, initialScanComplete?: boolean, initialProtectedKeys?: string[]) => void;
@@ -314,7 +313,7 @@ async function encodeProfilePhoto(file: File): Promise<string> {
   }
 }
 
-export default function Workspace({ user, items, sharedByMe, sharedWithMe, recordSharesByMe, recordSharesWithMe, contacts, businessCards, notifications, ringingSchedules, sharingAvailable, timelineEvents, timelineOnline, timelineSaving, onSaveTimelineEvent, onDeleteTimelineEvent, onOpenTimelineAttachment, medicalRecords, maxUploadMb, onSaveMedicalRecord, onDeleteMedicalRecord, onOpenMedicalRecordFile, onPreviewMedicalRecordFile, onRefreshMedicalRecords, view, search, pendingPlanId, documentEditor, documentFocusedItem, documentFilePreview, documentTypes, documentComments, onCloseDocumentPanel, onManageDocumentSharing, onAddDocumentComment, onDownloadDocumentFile, onSearch, onNavigate, onAdd, onSaveItem, onAddTodo, onEditTodoItem, onToggleTodo, onToggleSchedule, onDismissSchedule, onSnoozeSchedule, onOpenItem, onEditItem, onDeleteItem, onShareItem, onOpenSharedEntry, onChangeSharePermission, onRevokeShare, onShareRecord, onRevokeRecordShare, onMarkNotificationsRead, onToggleFavorite, onTogglePin, onMoveVaultItem, onSaveContact, onDeleteContact, onMergeContacts, onImportContacts, onRefreshContacts, onSaveBusinessCard, onDeleteBusinessCard, onRefreshBusinessCards, onSignOut, onOpenAdmin, onOpenPublicPage, onOpenContact, onProfileSave, onSendVerificationCode, onVerifyEmailCode, onPasswordChange, onExport, onImport, onDeleteAccount, notify }: WorkspaceProps) {
+export default function Workspace({ user, items, sharedByMe, sharedWithMe, recordSharesByMe, recordSharesWithMe, contacts, businessCards, notifications, ringingSchedules, sharingAvailable, timelineEvents, timelineOnline, timelineSaving, onSaveTimelineEvent, onDeleteTimelineEvent, onOpenTimelineAttachment, medicalRecords, maxUploadMb, onSaveMedicalRecord, onDeleteMedicalRecord, onOpenMedicalRecordFile, onPreviewMedicalRecordFile, onRefreshMedicalRecords, view, search, pendingPlanId, documentTypes, onSearch, onNavigate, onAdd, onSaveItem, onAddTodo, onEditTodoItem, onToggleTodo, onToggleSchedule, onDismissSchedule, onSnoozeSchedule, onOpenItem, onEditItem, onDeleteItem, onShareItem, onOpenSharedEntry, onChangeSharePermission, onRevokeShare, onShareRecord, onRevokeRecordShare, onMarkNotificationsRead, onToggleFavorite, onTogglePin, onMoveVaultItem, onSaveContact, onDeleteContact, onMergeContacts, onImportContacts, onRefreshContacts, onSaveBusinessCard, onDeleteBusinessCard, onRefreshBusinessCards, onSignOut, onOpenAdmin, onOpenPublicPage, onOpenContact, onProfileSave, onSendVerificationCode, onVerifyEmailCode, onPasswordChange, onExport, onImport, onDeleteAccount, notify }: WorkspaceProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileMenu, setProfileMenu] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
@@ -332,22 +331,11 @@ export default function Workspace({ user, items, sharedByMe, sharedWithMe, recor
   const [pendingMedicalValues, setPendingMedicalValues] = useState<Record<string, string> | null>(null);
   const [pendingMedicalProtectedKeys, setPendingMedicalProtectedKeys] = useState<string[]>([]);
   const [pendingBusinessCardCreate, setPendingBusinessCardCreate] = useState(0);
-  const [compactDocumentPanels, setCompactDocumentPanels] = useState(() => typeof window !== "undefined" && window.matchMedia("(max-width: 900px)").matches);
   const section = getSection(view);
-  const activeDocumentEditor = view === "documents" && documentEditor?.section === "documents" ? documentEditor : null;
-  const activeDocumentItem = view === "documents" && documentFocusedItem?.section === "documents" ? documentFocusedItem : null;
-  const familyMembers = useMemo(() => items.filter((item) => item.section === "family"), [items]);
+      const familyMembers = useMemo(() => items.filter((item) => item.section === "family"), [items]);
   const canUpload = !user.demo && user.uploadsEnabled === true;
-  const hasDocumentPanel = Boolean(activeDocumentEditor || activeDocumentItem);
   const titleInfo = section ? { title: section.label, eyebrow: section.eyebrow, icon: section.icon } : viewInfo[view] || viewInfo.dashboard;
-  useEffect(() => {
-    const query = window.matchMedia("(max-width: 900px)");
-    const update = () => setCompactDocumentPanels(query.matches);
-    update();
-    query.addEventListener("change", update);
-    return () => query.removeEventListener("change", update);
-  }, []);
-  useEffect(() => {
+    useEffect(() => {
     if (!sidebarOpen) return;
     const onEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setSidebarOpen(false); };
     window.addEventListener("keydown", onEscape);
@@ -445,15 +433,7 @@ export default function Workspace({ user, items, sharedByMe, sharedWithMe, recor
   });
   const sidebarLink = (id: ViewId, label: string, Icon: LucideIcon, count?: number) => <button key={id} className={`sidebar-link ${view === id ? "active" : ""}`} onClick={() => updateView(id)} aria-current={view === id ? "page" : undefined}><Icon size={17}/><span>{label}</span>{count !== undefined && <span className="nav-count">{count}</span>}</button>;
   const sectionView = section && section.id !== "personal-finance" ? <SectionView userId={user.id} demoMode={user.demo || false} section={section} items={items.filter((item) => item.section === section.id)} query={search} onAdd={onAdd} onAddTodo={onAddTodo} onEditTodoItem={onEditTodoItem} onToggleTodo={onToggleTodo} onToggleSchedule={onToggleSchedule} onOpenItem={onOpenItem} onEditItem={onEditItem} onDeleteItem={onDeleteItem} onShareItem={onShareItem} onToggleFavorite={onToggleFavorite} onTogglePin={onTogglePin} onMoveItem={onMoveVaultItem} notify={notify}/> : null;
-  const documentPanelContent = activeDocumentEditor ? <ItemEditorDialog key={`document-editor-${activeDocumentEditor.item?.id || "new"}`} sectionId="documents" item={activeDocumentEditor.item} initialMetadata={activeDocumentEditor.initialMetadata} initialFile={activeDocumentEditor.initialFile} initialScanResult={activeDocumentEditor.initialScanResult} initialScanComplete={activeDocumentEditor.initialScanComplete} initialProtectedKeys={activeDocumentEditor.initialProtectedKeys} documentTypes={documentTypes} familyMembers={familyMembers} maxUploadMb={maxUploadMb} canUpload={canUpload} presentation="panel" onChangeAddDocumentDestination={(draft) => window.dispatchEvent(new CustomEvent(ADD_DOCUMENT_DESTINATION_EVENT, { detail: draft }))} onClose={onCloseDocumentPanel} onSave={onSaveItem}/> : activeDocumentItem ? <ItemDetailDialog key={`document-view-${activeDocumentItem.id}`} item={activeDocumentItem} filePreview={documentFilePreview} shareAccess={activeDocumentItem.sharedAccess} comments={documentComments} presentation="panel" onClose={onCloseDocumentPanel} onEdit={() => onEditItem(activeDocumentItem)} onDownloadFile={() => onDownloadDocumentFile(activeDocumentItem)} onManageSharing={() => onManageDocumentSharing(activeDocumentItem)} onAddComment={onAddDocumentComment}/> : null;
-  const documentWorkspace = section?.id === "documents" && sectionView ? <ResizablePanelGroup id="documents-panel-group" orientation="horizontal" className={`documents-resizable-group ${hasDocumentPanel ? "documents-panels-active" : ""}`} style={hasDocumentPanel ? { height: "100%", minHeight: 0, maxHeight: "none", overflow: "hidden" } : { height: "auto", minHeight: 0, maxHeight: "none", overflow: "visible" }}>
-    <ResizablePanel id="documents-list-panel" className={`documents-list-panel ${hasDocumentPanel ? "documents-list-panel-active" : ""}`} defaultSize={hasDocumentPanel ? (compactDocumentPanels ? "28%" : "64%") : "100%"} minSize={hasDocumentPanel ? (compactDocumentPanels ? "12%" : "40%") : "100%"} maxSize={hasDocumentPanel ? (compactDocumentPanels ? "62%" : "72%") : "100%"}>
-      {sectionView}
-    </ResizablePanel>
-    {hasDocumentPanel && <><ResizableHandle withHandle aria-label="Resize the document list and details"/><ResizablePanel id="document-side-panel" className="document-side-panel" defaultSize={compactDocumentPanels ? "72%" : "36%"} minSize={compactDocumentPanels ? "38%" : "320px"} maxSize={compactDocumentPanels ? "90%" : "720px"}>
-      <div className="documents-panel-content">{documentPanelContent}</div>
-    </ResizablePanel></>}
-  </ResizablePanelGroup> : sectionView;
+  const documentWorkspace = sectionView;
 
   return <div className="workspace-shell">
     {sidebarOpen && <button className="mobile-sidebar-scrim" aria-label="Close menu" onClick={() => setSidebarOpen(false)} />}
@@ -468,8 +448,8 @@ export default function Workspace({ user, items, sharedByMe, sharedWithMe, recor
       </nav>
       <div className="sidebar-bottom"><div className="sidebar-secure-card"><span className="secure-card-icon"><ShieldCheck size={16}/></span><div><b>Your vault is private</b><small>Only you have access</small></div><span className="secure-mini-check"><Check size={11}/></span></div><div className="sidebar-profile-wrap">{profileMenu && <div className="user-popover"><div className="user-popover-header"><span className="avatar avatar-small"><AccountAvatarContent user={user}/></span><div><strong>{user.fullName}</strong><small>{user.email}</small></div></div>{user.role === "admin" && <button onClick={onOpenAdmin}><ShieldCheck size={15}/> Administrator console</button>}<button onClick={() => updateView("billing")}><CreditCard size={15}/> Plans &amp; billing</button><button onClick={() => updateView("settings")}><Settings size={15}/> Account settings</button><button className="popover-logout" onClick={onSignOut}><LogOut size={15}/> Sign out</button></div>}<button className="sidebar-profile" onClick={() => setProfileMenu((open) => !open)}><span className="avatar"><AccountAvatarContent user={user}/></span><span className="profile-copy"><b>{user.fullName}</b><small>{user.role === "admin" ? "Administrator" : "Personal account"}</small></span><MoreHorizontal size={19}/></button></div></div>
     </aside>
-    <div className="workspace-main"><header className="workspace-topbar"><button className="mobile-menu-button" onClick={() => setSidebarOpen(true)} aria-label="Open workspace sections" aria-expanded={sidebarOpen}>Sections</button><div className={`breadcrumb-area ${section ? "breadcrumb-section-hidden" : ""}`}><span className="breadcrumb-overline">{titleInfo.eyebrow}</span><div className="breadcrumb-title"><h1>{titleInfo.title}</h1>{view === "dashboard" && <span className="live-pill"><span/>Private workspace</span>}</div></div><div className="topbar-actions"><button type="button" className="workspace-add-document" onClick={() => openAddDocument()} aria-haspopup="dialog" aria-expanded={addDocumentOpen} aria-controls="add-document-drawer"><Plus size={15}/><span>Add document</span></button><button type="button" className="global-search-trigger" onClick={() => setSearchModalOpen(true)} aria-label="Search your vault" aria-haspopup="dialog" aria-expanded={searchModalOpen}><Search size={16}/><span>Search your vault…</span><kbd>Ctrl/⌘ K</kbd></button><div className="notification-wrap"><button className={`notification-button icon-button ${notificationOpen ? "button-pressed" : ""}`} onClick={() => { const opening = !notificationOpen; setNotificationOpen(opening); if (opening) onMarkNotificationsRead(); }} aria-label={`Notifications${notifications.some((notification) => !notification.readAt) ? ", unread updates" : ""}`} aria-expanded={notificationOpen}><Bell size={17}/>{notifications.some((notification) => !notification.readAt) && <span className="notification-dot"/>}</button>{notificationOpen && <div className="notification-popover"><div className="notification-head"><div><b>Notifications</b><span>Reminders, alarms, and sharing activity</span></div><div className="notification-head-actions">{notificationPermission === "default" && <button className="notification-enable" onClick={async () => { try { const permission = await Notification.requestPermission(); setNotificationPermission(permission); if (permission === "granted") notify("Desktop notifications are enabled."); } catch { notify("Browser notifications are unavailable here.", "error"); } }}>Enable alerts</button>}<button className="plain-icon" onClick={() => setNotificationOpen(false)} aria-label="Close notifications">×</button></div></div>{notifications.length ? notifications.slice(0, 12).map((notification) => <button className="notification-row" key={notification.id} onClick={() => { const scheduleItem = notification.kind === "reminder" || notification.kind === "alarm" ? items.find((item) => notification.id.startsWith(`schedule:${item.id}:`)) : undefined; if (scheduleItem) onOpenItem(scheduleItem); else if (notification.kind === "reminder" || notification.kind === "alarm") updateView("notes"); else updateView("shared"); setNotificationOpen(false); }}><span className={`notification-icon ${notification.kind === "reminder" ? "tag-orange" : notification.kind === "alarm" ? "tag-violet" : "tag-blue"}`}>{notification.kind === "reminder" ? <BellRing size={14}/> : notification.kind === "alarm" ? <AlarmClock size={14}/> : <Share2 size={14}/>}</span><span><b>{notification.actorName}</b><small>{notification.message}</small></span><span className="notification-time">{new Date(notification.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span></button>) : <div className="notification-empty">You're all caught up.</div>}{(notificationPermission === "unsupported" || notificationPermission === "denied") && <div className="notification-footnote">{notificationPermission === "denied" ? "Desktop alerts are blocked by your browser settings. In-app reminders still work while Persora is open." : "Desktop alerts aren’t supported in this browser. In-app reminders still work while Persora is open."}</div>}</div>}</div><button className="topbar-avatar avatar" onClick={() => updateView("settings")} aria-label="Open account settings"><AccountAvatarContent user={user}/></button></div></header>
-      <main className={`workspace-content ${view === "documents" && hasDocumentPanel ? "workspace-content-document-split" : ""}`}>{view === "dashboard" && <DashboardView user={user} items={items} onNavigate={updateView} onOpenItem={onOpenItem} onAdd={onAdd} onAddDocument={() => openAddDocument()} onToggleFavorite={onToggleFavorite}/>} {view === "timeline" && <TimelineView events={timelineEvents} items={items} online={timelineOnline} canPost={!user.demo && sharingAvailable} canUpload={canUpload} onUpgrade={!user.demo ? () => updateView("billing") : undefined} saving={timelineSaving} onSave={onSaveTimelineEvent} onDelete={onDeleteTimelineEvent} onOpenItem={onOpenItem} onOpenAttachment={onOpenTimelineAttachment} notify={notify}/>} {view === "medical-records" && <Suspense fallback={<div className="medical-loading">Loading your private health archive…</div>}><MedicalRecordsView userId={user.id} records={medicalRecords} contacts={contacts} items={items} demoMode={user.demo || false} connected={sharingAvailable} maxUploadMb={maxUploadMb} canUpload={canUpload} onUpgrade={!user.demo ? () => updateView("billing") : undefined} initialAddType={pendingMedicalAdd} initialAddFile={pendingMedicalFile} initialAddTitle={pendingMedicalTitle} initialAddAdditionalData={pendingMedicalAdditionalData} initialAddScanResult={pendingMedicalScanResult} initialAddScanComplete={pendingMedicalScanComplete} initialAddValues={pendingMedicalValues} initialAddProtectedKeys={pendingMedicalProtectedKeys} onAddRequestHandled={() => { setPendingMedicalAdd(null); setPendingMedicalFile(null); setPendingMedicalTitle(""); setPendingMedicalAdditionalData(""); setPendingMedicalScanResult(null); setPendingMedicalScanComplete(false); setPendingMedicalValues(null); setPendingMedicalProtectedKeys([]); }} onChangeAddDocumentDestination={(draft) => window.dispatchEvent(new CustomEvent(ADD_DOCUMENT_DESTINATION_EVENT, { detail: draft }))} onRefresh={onRefreshMedicalRecords} onSave={onSaveMedicalRecord} onDelete={onDeleteMedicalRecord} onOpenFile={onOpenMedicalRecordFile} onPreviewFile={onPreviewMedicalRecordFile} notify={notify}/></Suspense>} {view === "personal-finance" && <PersonalFinanceView items={items} contacts={contacts} onSave={onSaveItem} onOpenItem={onOpenItem} onDeleteItem={onDeleteItem} onNavigate={updateView}/>} {documentWorkspace} {view === "shared" && <SharedDocumentsView userId={user.id} outgoing={sharedByMe} incoming={sharedWithMe} recordOutgoing={recordSharesByMe} recordIncoming={recordSharesWithMe} publicCards={businessCards.filter((card) => card.isPublic)} available={sharingAvailable} onOpen={onOpenSharedEntry} onPermissionChange={onChangeSharePermission} onRevoke={onRevokeShare} onRevokeRecord={onRevokeRecordShare}/>} {view === "contacts" && <ContactsView userId={user.id} contacts={contacts} demoMode={user.demo || false} connected={sharingAvailable} canUpload={canUpload} onUpgrade={!user.demo ? () => updateView("billing") : undefined} initialAddCategory={pendingContactAdd} onAddRequestHandled={() => setPendingContactAdd(null)} onSave={onSaveContact} onDelete={onDeleteContact} onShare={(contact, recipient) => onShareRecord("contact", contact.id, recipient)} onMerge={onMergeContacts} onImport={onImportContacts} onRefresh={onRefreshContacts} notify={notify}/>} {view === "business-card" && <BusinessCardsView userId={user.id} cards={businessCards} demoMode={user.demo || false} connected={sharingAvailable} canUpload={canUpload} onUpgrade={!user.demo ? () => updateView("billing") : undefined} initialCreateRequestId={pendingBusinessCardCreate} onAddRequestHandled={() => setPendingBusinessCardCreate(0)} onSave={onSaveBusinessCard} onDelete={onDeleteBusinessCard} onShare={(card, recipient) => onShareRecord("business_card", card.id, recipient)} onRefresh={onRefreshBusinessCards} notify={notify}/>} {view === "billing" && <BillingView initialPlanId={pendingPlanId} notify={notify}/>} {view === "settings" && <SettingsView user={user} items={items} onProfileSave={onProfileSave} onSendVerificationCode={onSendVerificationCode} onVerifyEmailCode={onVerifyEmailCode} onPasswordChange={onPasswordChange} onExport={onExport} onImport={onImport} onDeleteAccount={onDeleteAccount} onOpenContact={onOpenContact} notify={notify}/>}</main>
+    <div className="workspace-main relative"><StripedPattern className="workspace-striped-pattern pointer-events-none" /><header className="workspace-topbar"><button className="mobile-menu-button" onClick={() => setSidebarOpen(true)} aria-label="Open workspace sections" aria-expanded={sidebarOpen}>Sections</button><div className={`breadcrumb-area ${section ? "breadcrumb-section-hidden" : ""}`}><span className="breadcrumb-overline">{titleInfo.eyebrow}</span><div className="breadcrumb-title"><h1>{titleInfo.title}</h1>{view === "dashboard" && <span className="live-pill"><span/>Private workspace</span>}</div></div><div className="topbar-actions"><button type="button" className="workspace-add-document" onClick={() => openAddDocument()} aria-haspopup="dialog" aria-expanded={addDocumentOpen} aria-controls="add-document-drawer"><Plus size={15}/><span>Add document</span></button><button type="button" className="global-search-trigger" onClick={() => setSearchModalOpen(true)} aria-label="Search your vault" aria-haspopup="dialog" aria-expanded={searchModalOpen}><Search size={16}/><span>Search your vault…</span><kbd>Ctrl/⌘ K</kbd></button><div className="notification-wrap"><button className={`notification-button icon-button ${notificationOpen ? "button-pressed" : ""}`} onClick={() => { const opening = !notificationOpen; setNotificationOpen(opening); if (opening) onMarkNotificationsRead(); }} aria-label={`Notifications${notifications.some((notification) => !notification.readAt) ? ", unread updates" : ""}`} aria-expanded={notificationOpen}><Bell size={17}/>{notifications.some((notification) => !notification.readAt) && <span className="notification-dot"/>}</button>{notificationOpen && <div className="notification-popover"><div className="notification-head"><div><b>Notifications</b><span>Reminders, alarms, and sharing activity</span></div><div className="notification-head-actions">{notificationPermission === "default" && <button className="notification-enable" onClick={async () => { try { const permission = await Notification.requestPermission(); setNotificationPermission(permission); if (permission === "granted") notify("Desktop notifications are enabled."); } catch { notify("Browser notifications are unavailable here.", "error"); } }}>Enable alerts</button>}<button className="plain-icon" onClick={() => setNotificationOpen(false)} aria-label="Close notifications">×</button></div></div>{notifications.length ? notifications.slice(0, 12).map((notification) => <button className="notification-row" key={notification.id} onClick={() => { const scheduleItem = notification.kind === "reminder" || notification.kind === "alarm" ? items.find((item) => notification.id.startsWith(`schedule:${item.id}:`)) : undefined; if (scheduleItem) onOpenItem(scheduleItem); else if (notification.kind === "reminder" || notification.kind === "alarm") updateView("notes"); else updateView("shared"); setNotificationOpen(false); }}><span className={`notification-icon ${notification.kind === "reminder" ? "tag-orange" : notification.kind === "alarm" ? "tag-violet" : "tag-blue"}`}>{notification.kind === "reminder" ? <BellRing size={14}/> : notification.kind === "alarm" ? <AlarmClock size={14}/> : <Share2 size={14}/>}</span><span><b>{notification.actorName}</b><small>{notification.message}</small></span><span className="notification-time">{new Date(notification.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span></button>) : <div className="notification-empty">You're all caught up.</div>}{(notificationPermission === "unsupported" || notificationPermission === "denied") && <div className="notification-footnote">{notificationPermission === "denied" ? "Desktop alerts are blocked by your browser settings. In-app reminders still work while Persora is open." : "Desktop alerts aren’t supported in this browser. In-app reminders still work while Persora is open."}</div>}</div>}</div><button className="topbar-avatar avatar" onClick={() => updateView("settings")} aria-label="Open account settings"><AccountAvatarContent user={user}/></button></div></header>
+      <main className={`workspace-content `}>{view === "dashboard" && <DashboardView user={user} items={items} onNavigate={updateView} onOpenItem={onOpenItem} onAdd={onAdd} onAddDocument={() => openAddDocument()} onToggleFavorite={onToggleFavorite}/>} {view === "timeline" && <TimelineView events={timelineEvents} items={items} online={timelineOnline} canPost={!user.demo && sharingAvailable} canUpload={canUpload} onUpgrade={!user.demo ? () => updateView("billing") : undefined} saving={timelineSaving} onSave={onSaveTimelineEvent} onDelete={onDeleteTimelineEvent} onOpenItem={onOpenItem} onOpenAttachment={onOpenTimelineAttachment} notify={notify}/>} {view === "medical-records" && <Suspense fallback={<div className="medical-loading">Loading your private health archive…</div>}><MedicalRecordsView userId={user.id} records={medicalRecords} contacts={contacts} items={items} demoMode={user.demo || false} connected={sharingAvailable} maxUploadMb={maxUploadMb} canUpload={canUpload} onUpgrade={!user.demo ? () => updateView("billing") : undefined} initialAddType={pendingMedicalAdd} initialAddFile={pendingMedicalFile} initialAddTitle={pendingMedicalTitle} initialAddAdditionalData={pendingMedicalAdditionalData} initialAddScanResult={pendingMedicalScanResult} initialAddScanComplete={pendingMedicalScanComplete} initialAddValues={pendingMedicalValues} initialAddProtectedKeys={pendingMedicalProtectedKeys} onAddRequestHandled={() => { setPendingMedicalAdd(null); setPendingMedicalFile(null); setPendingMedicalTitle(""); setPendingMedicalAdditionalData(""); setPendingMedicalScanResult(null); setPendingMedicalScanComplete(false); setPendingMedicalValues(null); setPendingMedicalProtectedKeys([]); }} onChangeAddDocumentDestination={(draft) => window.dispatchEvent(new CustomEvent(ADD_DOCUMENT_DESTINATION_EVENT, { detail: draft }))} onRefresh={onRefreshMedicalRecords} onSave={onSaveMedicalRecord} onDelete={onDeleteMedicalRecord} onOpenFile={onOpenMedicalRecordFile} onPreviewFile={onPreviewMedicalRecordFile} notify={notify}/></Suspense>} {view === "personal-finance" && <PersonalFinanceView items={items} contacts={contacts} onSave={onSaveItem} onOpenItem={onOpenItem} onDeleteItem={onDeleteItem} onNavigate={updateView}/>} {documentWorkspace} {view === "shared" && <SharedDocumentsView userId={user.id} outgoing={sharedByMe} incoming={sharedWithMe} recordOutgoing={recordSharesByMe} recordIncoming={recordSharesWithMe} publicCards={businessCards.filter((card) => card.isPublic)} available={sharingAvailable} onOpen={onOpenSharedEntry} onPermissionChange={onChangeSharePermission} onRevoke={onRevokeShare} onRevokeRecord={onRevokeRecordShare}/>} {view === "contacts" && <ContactsView userId={user.id} contacts={contacts} demoMode={user.demo || false} connected={sharingAvailable} canUpload={canUpload} onUpgrade={!user.demo ? () => updateView("billing") : undefined} initialAddCategory={pendingContactAdd} onAddRequestHandled={() => setPendingContactAdd(null)} onSave={onSaveContact} onDelete={onDeleteContact} onShare={(contact, recipient) => onShareRecord("contact", contact.id, recipient)} onMerge={onMergeContacts} onImport={onImportContacts} onRefresh={onRefreshContacts} notify={notify}/>} {view === "business-card" && <BusinessCardsView userId={user.id} cards={businessCards} demoMode={user.demo || false} connected={sharingAvailable} canUpload={canUpload} onUpgrade={!user.demo ? () => updateView("billing") : undefined} initialCreateRequestId={pendingBusinessCardCreate} onAddRequestHandled={() => setPendingBusinessCardCreate(0)} onSave={onSaveBusinessCard} onDelete={onDeleteBusinessCard} onShare={(card, recipient) => onShareRecord("business_card", card.id, recipient)} onRefresh={onRefreshBusinessCards} notify={notify}/>} {view === "billing" && <BillingView initialPlanId={pendingPlanId} notify={notify}/>} {view === "settings" && <SettingsView user={user} items={items} onProfileSave={onProfileSave} onSendVerificationCode={onSendVerificationCode} onVerifyEmailCode={onVerifyEmailCode} onPasswordChange={onPasswordChange} onExport={onExport} onImport={onImport} onDeleteAccount={onDeleteAccount} onOpenContact={onOpenContact} notify={notify}/>}</main>
       <footer className="workspace-footer"><span className="workspace-footer-brand">Persora</span><span>Powered by Dexter Studio</span><span className="workspace-footer-security"><ShieldCheck size={13}/> Sherlock Security System</span><nav aria-label="Legal and contact"><button onClick={() => onOpenPublicPage("/privacy")}>Privacy</button><button onClick={() => onOpenPublicPage("/terms")}>Terms</button><button onClick={onOpenContact}>Contact</button></nav></footer>
     </div>
     <ModalPortal><SearchModal modal open={searchModalOpen} onOpenChange={(open) => { setSearchModalOpen(open); if (!open) onSearch(""); }} hotkey="k" placeholder="Search records, people, files…" tags={searchTags} results={searchResults} quickActions={searchQuickActions} files={searchFiles} defaultQuery={search} onQueryChange={onSearch} onSelectResult={(result) => searchEntries.find((entry) => entry.result.href === result.href)?.select()} overlayClassName="z-[100]"/></ModalPortal>
@@ -911,37 +891,146 @@ function SharedDocumentsView({ userId, outgoing, incoming, recordOutgoing, recor
     {!available && <div className="share-backend-notice"><ShieldCheck size={16}/><span>Persora member sharing is available for signed-in accounts when the cloud API is enabled. Demo public cards are local-only.</span></div>}
     {error && <div className="form-alert error-alert share-page-error" role="alert">{error}</div>}
     {tab === "public" ? (publicCards.length ? (
-      <div className={`shared-record-list ${viewMode === "cards" ? "shared-card-layout" : "shared-list-layout"}`}>
-        {publicCards.map((card) => <MagicCard className="shared-record-shell" key={card.id}>
-          <article className="shared-record shared-record-public">
-            <span className="shared-record-icon tag-blue"><BriefcaseBusiness size={18}/></span>
-            <span className="shared-record-copy"><b>{card.fullName}</b><small>{[card.jobTitle, card.company].filter(Boolean).join(" · ") || "Public digital business card"}</small><small className="shared-public-url">/BusinessCard/{card.cardId}</small></span>
-            {card.cardId && <a className="shared-open-button" href={`${window.location.origin}/BusinessCard/${card.cardId}`} target="_blank" rel="noreferrer">View public <ArrowUpRight size={14}/></a>}
-          </article>
-        </MagicCard>)}
+      <div className="shared-category-group">
+        <div className="shared-category-header"><span className="shared-category-title">PUBLIC DIGITAL BUSINESS CARDS</span><span className="shared-category-count">{publicCards.length}</span></div>
+        <div className={`shared-record-list ${viewMode === "cards" ? "shared-card-layout" : "shared-list-layout"}`}>
+          {publicCards.map((card) => <MagicCard className="shared-record-shell" key={card.id}>
+            <article className="shared-record shared-record-public">
+              <div className="shared-record-main">
+                <span className="shared-record-icon tag-blue"><BriefcaseBusiness size={20}/></span>
+                <div className="shared-record-copy">
+                  <div className="shared-record-title-row"><b>{card.fullName}</b><span className="shared-type-chip">Business card</span></div>
+                  <small>{[card.jobTitle, card.company].filter(Boolean).join(" · ") || "Public digital business card"}</small>
+                  <small className="shared-public-url">/BusinessCard/{card.cardId}</small>
+                </div>
+                <div className="shared-record-main-action">{card.cardId && <a className="shared-open-button" href={`${window.location.origin}/BusinessCard/${card.cardId}`} target="_blank" rel="noreferrer">View public <ArrowUpRight size={13}/></a>}</div>
+              </div>
+              <div className="shared-record-meta">
+                <div className="shared-person">
+                  <small>VISIBILITY</small>
+                  <b>Public web link</b>
+                  <span>Anyone with this link can view your business card.</span>
+                </div>
+                <span className="permission-badge permission-public">Public</span>
+              </div>
+            </article>
+          </MagicCard>)}
+        </div>
       </div>
     ) : <div className="shared-empty"><span><Globe2 size={22}/></span><h3>No business cards are public</h3><p>Turn on Make Public in a card’s editor. Any public cards you own will appear here.</p></div>) : (
       <>
-        {entries.length > 0 && <div className={`shared-record-list ${viewMode === "cards" ? "shared-card-layout" : "shared-list-layout"}`}>
-          {entries.map((entry) => <MagicCard className="shared-record-shell" key={entry.shareId}>
-            <article className="shared-record">
-              <button className="shared-record-open" onClick={() => onOpen(entry)}><span className={`shared-record-icon ${colors[entry.item.section]}`}><FileText size={18}/></span><span className="shared-record-copy"><b>{entry.item.title}</b><small>{SECTION_BY_ID[entry.item.section].label} · {entry.item.file?.name || (entry.item.metadata.type || "Persora record")}</small></span><ArrowUpRight size={16}/></button>
-              <div className="shared-record-meta"><span className="shared-person"><span>{tab === "outgoing" ? "Shared with" : "Shared by"}</span><b>{tab === "outgoing" ? entry.recipient.fullName : entry.owner.fullName}</b><small>{tab === "outgoing" ? entry.recipient.email : entry.owner.email} · ID {tab === "outgoing" ? entry.recipient.userId : entry.owner.userId}</small></span><span className={`permission-badge permission-${entry.permission}`}>{entry.permission === "edit" ? "Can edit" : entry.permission === "comment" ? "Can comment" : "Can view"}</span></div>
-              {tab === "outgoing" && <div className="shared-record-controls"><label>Access<select value={entry.permission} disabled={busyId === entry.shareId} onChange={(event) => void run(entry.shareId, () => onPermissionChange(entry.shareId, event.target.value as SharePermission))}><option value="view">View</option><option value="comment">Comment</option><option value="edit">Edit</option></select></label><button className="share-stop-button" disabled={busyId === entry.shareId} onClick={() => void run(entry.shareId, () => onRevoke(entry.shareId))}>{busyId === entry.shareId ? "Saving…" : "Stop sharing"}</button></div>}
-              {tab === "incoming" && <div className="shared-record-controls"><span className="shared-permission-note">Your access: <b>{entry.permission}</b>{entry.permission === "edit" ? " · edits stay with the original owner" : entry.permission === "comment" ? " · comments are enabled" : " · view only"}</span><button className="shared-open-button" onClick={() => onOpen(entry)}>Open document <ArrowRight size={14}/></button></div>}
-            </article>
-          </MagicCard>)}
-        </div>}
-        {recordEntries.length > 0 && <div className={`shared-record-list shared-record-list-structured ${viewMode === "cards" ? "shared-card-layout" : "shared-list-layout"}`}>
-          {recordEntries.map((entry) => <MagicCard className="shared-record-shell" key={entry.shareId}>
-            <article className="shared-record">
-              <span className={`shared-record-icon ${entry.resourceType === "contact" ? "tag-blue" : "tag-slate"}`}>{entry.resourceType === "contact" ? <ContactRound size={18}/> : <BriefcaseBusiness size={18}/>}</span>
-              <span className="shared-record-copy"><b>{recordName(entry)}</b><small>{entry.resourceType === "contact" ? "Shared contact" : "Shared business card"} · {tab === "outgoing" ? `with ${entry.recipient.fullName}` : `by ${entry.owner.fullName}`}</small><small>{recordMeta(entry)}</small></span>
-              <button className="shared-open-button" onClick={() => setSelectedRecord(entry)}>View details</button>
-              {tab === "outgoing" ? <button className="share-stop-button" disabled={busyId === entry.shareId} onClick={() => void run(entry.shareId, () => onRevokeRecord(entry.shareId))}>{busyId === entry.shareId ? "Removing…" : "Stop sharing"}</button> : <span className="permission-badge permission-view">Shared with you</span>}
-            </article>
-          </MagicCard>)}
-        </div>}
+        {entries.length > 0 && (
+          <div className="shared-category-group">
+            <div className="shared-category-header"><span className="shared-category-title">DOCUMENTS &amp; VAULT RECORDS</span><span className="shared-category-count">{entries.length}</span></div>
+            <div className={`shared-record-list ${viewMode === "cards" ? "shared-card-layout" : "shared-list-layout"}`}>
+              {entries.map((entry) => {
+                const sectionDef = SECTION_BY_ID[entry.item.section];
+                const SectionIcon = sectionDef?.icon || FileText;
+                const person = tab === "outgoing" ? entry.recipient : entry.owner;
+                return (
+                  <MagicCard className="shared-record-shell" key={entry.shareId}>
+                    <article className="shared-record">
+                      <div className="shared-record-main">
+                        <span className={`shared-record-icon ${colors[entry.item.section] || "tag-blue"}`}><SectionIcon size={20}/></span>
+                        <div className="shared-record-copy">
+                          <div className="shared-record-title-row">
+                            <b onClick={() => onOpen(entry)} style={{cursor:"pointer"}}>{entry.item.title}</b>
+                            <span className="shared-type-chip">{sectionDef?.label || "Document"}</span>
+                          </div>
+                          <small>{entry.item.file?.name || entry.item.metadata.type || `${sectionDef?.label} record`}</small>
+                          {entry.item.file?.size && <small className="shared-record-detail">{humanSize(entry.item.file.size)} · Vault file</small>}
+                        </div>
+                        <div className="shared-record-main-action">
+                          <button type="button" className="shared-open-button" onClick={() => onOpen(entry)}>Open <ArrowUpRight size={13}/></button>
+                        </div>
+                      </div>
+                      <div className="shared-record-meta">
+                        <div className="shared-person">
+                          <small>{tab === "outgoing" ? "SHARED WITH" : "SHARED BY"}</small>
+                          <b>{person.fullName}</b>
+                          <span>{person.email} · ID {person.userId}</span>
+                        </div>
+                        <span className={`permission-badge permission-${entry.permission}`}>{entry.permission === "edit" ? "Can edit" : entry.permission === "comment" ? "Can comment" : "Can view"}</span>
+                      </div>
+                      <div className="shared-record-controls">
+                        {tab === "outgoing" ? (
+                          <>
+                            <label className="shared-access-control">Permission:
+                              <select value={entry.permission} disabled={busyId === entry.shareId} onChange={(event) => void run(entry.shareId, () => onPermissionChange(entry.shareId, event.target.value as SharePermission))}>
+                                <option value="view">View</option>
+                                <option value="comment">Comment</option>
+                                <option value="edit">Edit</option>
+                              </select>
+                            </label>
+                            <button type="button" className="share-stop-button" disabled={busyId === entry.shareId} onClick={() => void run(entry.shareId, () => onRevoke(entry.shareId))}>{busyId === entry.shareId ? "Saving…" : "Revoke access"}</button>
+                          </>
+                        ) : (
+                          <>
+                            <span className="shared-permission-note">Access: <b>Can {entry.permission}</b></span>
+                            <button type="button" className="shared-open-button" onClick={() => onOpen(entry)}>View record <ArrowRight size={13}/></button>
+                          </>
+                        )}
+                      </div>
+                    </article>
+                  </MagicCard>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {recordEntries.length > 0 && (
+          <div className="shared-category-group" style={{marginTop:"18px"}}>
+            <div className="shared-category-header"><span className="shared-category-title">CONTACTS &amp; CARDS</span><span className="shared-category-count">{recordEntries.length}</span></div>
+            <div className={`shared-record-list shared-record-list-structured ${viewMode === "cards" ? "shared-card-layout" : "shared-list-layout"}`}>
+              {recordEntries.map((entry) => {
+                const isContact = entry.resourceType === "contact";
+                const person = tab === "outgoing" ? entry.recipient : entry.owner;
+                return (
+                  <MagicCard className="shared-record-shell" key={entry.shareId}>
+                    <article className="shared-record">
+                      <div className="shared-record-main">
+                        <span className={`shared-record-icon ${isContact ? "tag-blue" : "tag-slate"}`}>{isContact ? <ContactRound size={20}/> : <BriefcaseBusiness size={20}/>}</span>
+                        <div className="shared-record-copy">
+                          <div className="shared-record-title-row">
+                            <b onClick={() => setSelectedRecord(entry)} style={{cursor:"pointer"}}>{recordName(entry)}</b>
+                            <span className="shared-type-chip">{isContact ? "Contact" : "Business card"}</span>
+                          </div>
+                          <small>{recordMeta(entry)}</small>
+                        </div>
+                        <div className="shared-record-main-action">
+                          <button type="button" className="shared-open-button" onClick={() => setSelectedRecord(entry)}>Details <ArrowUpRight size={13}/></button>
+                        </div>
+                      </div>
+                      <div className="shared-record-meta">
+                        <div className="shared-person">
+                          <small>{tab === "outgoing" ? "SHARED WITH" : "SHARED BY"}</small>
+                          <b>{person.fullName}</b>
+                          <span>{person.email} · ID {person.userId}</span>
+                        </div>
+                        <span className="permission-badge permission-view">Can view</span>
+                      </div>
+                      <div className="shared-record-controls">
+                        {tab === "outgoing" ? (
+                          <>
+                            <span className="shared-permission-note">Selective detail share</span>
+                            <button type="button" className="share-stop-button" disabled={busyId === entry.shareId} onClick={() => void run(entry.shareId, () => onRevokeRecord(entry.shareId))}>{busyId === entry.shareId ? "Removing…" : "Revoke share"}</button>
+                          </>
+                        ) : (
+                          <>
+                            <span className="shared-permission-note">Shared privately with your account</span>
+                            <button type="button" className="shared-open-button" onClick={() => setSelectedRecord(entry)}>View details <ArrowRight size={13}/></button>
+                          </>
+                        )}
+                      </div>
+                    </article>
+                  </MagicCard>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {!entries.length && !recordEntries.length && <div className="shared-empty"><span><Share2 size={22}/></span><h3>{tab === "outgoing" ? "Nothing shared yet" : "No one has shared with you yet"}</h3><p>{tab === "outgoing" ? "Use Share on a document, contact, or business card to give another Persora member access." : "Documents, contacts, and business cards shared with your account will appear here."}</p></div>}
       </>
     )}
@@ -978,6 +1067,7 @@ function SharedRecordDetailsDialog({ entry, onClose }: { entry: RecordShareEntry
 }
 
 function SettingsView({ user, items, onProfileSave, onSendVerificationCode, onVerifyEmailCode, onPasswordChange, onExport, onImport, onDeleteAccount, onOpenContact, notify }: { user: AppUser; items: VaultItem[]; onProfileSave: (values: { fullName: string; timezone: string; avatarUrl: string }) => Promise<void>; onSendVerificationCode: () => Promise<{ ok: boolean; alreadyVerified?: boolean; expiresInSeconds?: number }>; onVerifyEmailCode: (code: string) => Promise<void>; onPasswordChange: (currentPassword: string, newPassword: string) => Promise<void>; onExport: () => void; onImport: (file: File) => Promise<void>; onDeleteAccount: () => Promise<void>; onOpenContact: () => void; notify: (message: string, kind?: "success" | "error") => void }) {
+  const [editingProfile, setEditingProfile] = useState(false);
   const [fullName, setFullName] = useState(user.fullName);
   const [timezone, setTimezone] = useState(user.timezone || "Asia/Dhaka");
   const [avatarUrl, setAvatarUrl] = useState(user.avatarUrl || "");
@@ -990,9 +1080,30 @@ function SettingsView({ user, items, onProfileSave, onSendVerificationCode, onVe
   const [verificationCode, setVerificationCode] = useState("");
   const [verificationRequested, setVerificationRequested] = useState(false);
   const [verificationBusy, setVerificationBusy] = useState(false);
-  const [passwordSaving, setPasswordSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const save = async () => { setSaving(true); try { await onProfileSave({ fullName, timezone, avatarUrl }); notify("Your profile has been updated."); } catch (error) { notify(error instanceof Error ? error.message : "Couldn't save profile.", "error"); } finally { setSaving(false); } };
+  const save = async () => {
+    setSaving(true);
+    try {
+      if (fullName.trim() !== user.fullName || timezone !== user.timezone || avatarUrl !== user.avatarUrl) {
+        await onProfileSave({ fullName: fullName.trim(), timezone, avatarUrl });
+      }
+      if (newPassword) {
+        if (!currentPassword) throw new Error("Enter your current password to change password.");
+        if (newPassword.length < 12) throw new Error("New password must be at least 12 characters.");
+        if (newPassword !== confirmPassword) throw new Error("New passwords do not match.");
+        await onPasswordChange(currentPassword, newPassword);
+        setCurrentPassword("");
+        setNewPassword("");
+        setConfirmPassword("");
+      }
+      setEditingProfile(false);
+      notify("Your profile has been updated.");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Couldn't save profile.", "error");
+    } finally {
+      setSaving(false);
+    }
+  };
   const chooseAvatarPhoto = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0];
     event.currentTarget.value = "";
@@ -1019,18 +1130,36 @@ function SettingsView({ user, items, onProfileSave, onSendVerificationCode, onVe
     catch (error) { notify(error instanceof Error ? error.message : "Couldn't verify that code.", "error"); }
     finally { setVerificationBusy(false); }
   };
-  const changePassword = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (newPassword !== confirmPassword) { notify("The new passwords don't match.", "error"); return; }
-    setPasswordSaving(true);
-    try {
-      await onPasswordChange(currentPassword, newPassword);
-      setCurrentPassword(""); setNewPassword(""); setConfirmPassword("");
-      notify("Password updated. Other sessions have been signed out.");
-    } catch (error) { notify(error instanceof Error ? error.message : "Couldn't update your password.", "error"); }
-    finally { setPasswordSaving(false); }
-  };
   const importFile = async (event: ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; if (!file) return; try { await onImport(file); notify("Your data import is ready."); } catch (error) { notify(error instanceof Error ? error.message : "Import failed.", "error"); } finally { event.currentTarget.value = ""; } };
   const deleteAccount = async () => { try { await onDeleteAccount(); } catch (error) { notify(error instanceof Error ? error.message : "Couldn't delete this account.", "error"); } };
-  return <div className="settings-view"><div className="settings-intro settings-profile-hero"><div className="profile-hero-identity"><span className="profile-avatar-large account-avatar-large"><AccountAvatarContent user={avatarPreviewUser}/></span><div><span className="profile-hero-eyebrow">PERSONAL PROFILE</span><h2>{fullName || user.fullName}</h2><p>{user.email}</p><span className={`profile-account-badge ${user.demo ? "is-demo" : ""}`}><i/>{user.demo ? "Demo workspace" : "Active Persora account"}</span></div></div><div className="profile-hero-summary"><span className="profile-summary-label">ACCOUNT TIME ZONE</span><b>{timezone.replace(/_/g, " ")}</b><small>Changes to your profile are private.</small></div></div><div className="settings-layout"><div className="settings-main-column"><section className="settings-card"><div className="settings-card-header"><div><span className="settings-card-icon icon-soft-blue"><UserRound size={17}/></span><div><h3>Profile information</h3><p>Manage the identity and locale linked to your account.</p></div></div><span className="settings-card-status"><span/>PRIVATE PROFILE</span></div><div className="settings-profile-photo"><div className="settings-avatar-main"><span className="avatar settings-avatar-preview"><AccountAvatarContent user={avatarPreviewUser}/></span><span><b>Profile photo or emoji</b><small>Shown in your workspace navigation and saved with your profile.</small></span></div><div className="settings-avatar-actions"><label className="settings-avatar-upload"><UploadCloud size={14}/>{avatarProcessing ? "Preparing…" : "Upload photo"}<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void chooseAvatarPhoto(event)} disabled={avatarProcessing || saving}/></label><button type="button" className="settings-avatar-initials" onClick={() => { setAvatarUrl(""); setAvatarError(""); }}>Use initials</button></div><div className="settings-avatar-emoji-options" role="group" aria-label="Choose a profile emoji">{PROFILE_AVATAR_EMOJI.map((emoji) => <button type="button" key={emoji} className={avatarUrl === `emoji:${emoji}` ? "is-selected" : ""} onClick={() => { setAvatarUrl(`emoji:${emoji}`); setAvatarError(""); }} aria-label={`Choose profile emoji ${emoji}`} aria-pressed={avatarUrl === `emoji:${emoji}`}>{emoji}</button>)}</div><div className="settings-avatar-dicebear"><span className="settings-avatar-dicebear-label">DiceBear Adventurer</span><div className="settings-avatar-dicebear-options" role="group" aria-label="Choose a DiceBear Adventurer avatar">{PROFILE_AVATAR_DICEBEAR.map((avatar) => <button type="button" key={avatar.id} className={avatarUrl === avatar.image ? "is-selected" : ""} onClick={() => { setAvatarUrl(avatar.image); setAvatarError(""); }} aria-label={`Choose ${avatar.name} DiceBear Adventurer avatar`} aria-pressed={avatarUrl === avatar.image} title={avatar.name}><img src={avatar.image} alt="" referrerPolicy="no-referrer"/></button>)}</div></div>{avatarProcessing && <span className="settings-avatar-message" role="status">Preparing a small square profile photo…</span>}{avatarError && <span className="settings-avatar-error" role="alert">{avatarError}</span>}</div><div className="settings-form-grid profile-form-grid"><label className="field-label">Full name<input value={fullName} maxLength={100} onChange={(event) => setFullName(event.target.value)} /></label><label className="field-label">Email address<div className="settings-readonly">{user.email}<LockKeyhole size={13}/></div>{!user.demo && (user.emailVerified ? <span className="settings-email-verified">Verified</span> : <div className="settings-email-verification">{verificationRequested && <div className="settings-verification-code"><input aria-label="Email verification code" inputMode="numeric" maxLength={8} value={verificationCode} onChange={(event) => setVerificationCode(event.target.value.replace(/\D/g, "").slice(0, 8))} placeholder="Verification code"/><button type="button" className="settings-id-copy" onClick={() => void verifyEmail()} disabled={verificationBusy || verificationCode.length < 6}>Verify</button></div>}<button type="button" className="settings-id-copy" onClick={() => void requestEmailVerification()} disabled={verificationBusy}>{verificationBusy ? "Sending…" : verificationRequested ? "Resend code" : "Verify email"}</button></div>)}</label><label className="field-label">Persora ID<div className="settings-readonly settings-id-value"><strong>{user.userId || "Demo workspace"}</strong>{user.userId && <button type="button" className="settings-id-copy" onClick={() => void copyUserId()}>Copy</button>}</div></label><label className="field-label settings-timezone">Time zone<select value={timezone} onChange={(event) => setTimezone(event.target.value)}><option value="Asia/Dhaka">Asia/Dhaka · Bangladesh</option><option value="Asia/Kolkata">Asia/Kolkata · India</option><option value="Asia/Singapore">Asia/Singapore</option><option value="Europe/London">Europe/London</option><option value="UTC">UTC</option></select></label></div><div className="settings-card-footer"><span>Changes are private to your account.</span><button className="settings-save-button" onClick={() => void save()} disabled={saving || avatarProcessing}>{saving ? "Saving…" : <>Save changes <ArrowRight size={14}/></>}</button></div></section><section className="settings-card"><div className="settings-card-header"><div><span className="settings-card-icon icon-soft-blue"><ShieldCheck size={17}/></span><div><h3>Your account &amp; privacy</h3><p>How Persora keeps your space safe.</p></div></div></div><div className="security-rows"><div className="security-row"><span className="security-row-icon"><LockKeyhole size={15}/></span><div><b>Sign-in security</b><small>{user.demo ? "Local sample session" : "7-digit Persora ID · protected server session"}</small></div><span className="security-row-tag"><span/>ACTIVE</span></div><div className="security-row"><span className="security-row-icon"><Fingerprint size={15}/></span><div><b>Personal vault</b><small>{items.length} items across {new Set(items.map((item) => item.section)).size} spaces</small></div><span className="security-row-tag tag-blue-text"><span/>PRIVATE</span></div><div className="security-row"><span className="security-row-icon"><Activity size={15}/></span><div><b>Data access</b><small>Vault access is restricted to your signed-in account.</small></div><span className="security-row-tag">OWNER ONLY</span></div></div>{!user.demo && <form className="settings-password-form" onSubmit={(event) => void changePassword(event)}><h4>Change password</h4><div className="settings-password-grid"><label className="field-label">Current password<input type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} autoComplete="current-password" maxLength={72} required /></label><label className="field-label">New password<input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} autoComplete="new-password" minLength={12} maxLength={72} required /></label><label className="field-label">Confirm new password<input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" minLength={12} maxLength={72} required /></label></div><button className="settings-save-button" disabled={passwordSaving}>{passwordSaving ? "Updating…" : <>Update password <ArrowRight size={14}/></>}</button></form>}<div className="account-security-note"><ShieldCheck size={14}/><span>Persora never asks for or stores your other online account passwords.</span></div></section><section className="settings-card data-card"><div className="settings-card-header"><div><span className="settings-card-icon icon-soft-peach"><FileText size={17}/></span><div><h3>Your data, your call</h3><p>Export or restore your vault data.</p></div></div></div><div className="data-action-row"><div><b>Download a backup</b><small>Export all records; cloud backups also include attached files.</small></div><button className="outline-action-button" onClick={onExport}>Export data</button></div><label className="data-action-row import-row"><div><b>Import a backup</b><small>Restore a Persora JSON export in this account.</small></div><span className="outline-action-button">Choose file<input type="file" accept=".json,application/json" onChange={(event) => void importFile(event)}/></span></label></section><section className="settings-card danger-zone-card"><div className="settings-card-header"><div><span className="settings-card-icon icon-soft-red"><Trash2 size={17}/></span><div><h3>Delete your account</h3><p>Permanently remove this account and its personal data.</p></div></div></div>{!confirmDelete ? <div className="danger-action-row"><span>This can't be undone. Export a backup first.</span><button className="danger-outline-button" onClick={() => setConfirmDelete(true)}>Delete account</button></div> : <div className="delete-confirm-inline"><b>Are you sure? This permanently deletes your vault and files.</b><button className="danger-outline-button" onClick={() => void deleteAccount()}>Yes, delete account</button><button className="quiet-button" onClick={() => setConfirmDelete(false)}>Cancel</button></div>}</section></div><aside className="settings-side-column"><div className="settings-side-card plan-side-card"><div className="plan-sparkle"><Sparkles size={16}/></div><span className="plan-label">YOUR PERSONAL SPACE</span><h3>Calm looks good on you.</h3><p>Everything here is yours to organize, in your own time.</p><div className="plan-side-divider"/><div className="plan-stats"><span>Available spaces</span><b>{Object.keys(SECTION_BY_ID).length}</b></div><div className="plan-stats"><span>Items saved</span><b>{items.length}</b></div><div className="plan-side-foot"><LockKeyhole size={12}/> Private by default</div></div><div className="settings-side-card timezone-card"><div className="timezone-card-icon"><Clock3 size={16}/></div><span className="plan-label">LOCAL TIME</span><h3>{new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit", timeZone: timezone }).format(new Date())}</h3><p>{timezone.replace("_", " ")}</p></div><div className="settings-help-card"><span><CircleHelp size={15}/></span><div><b>Need a hand?</b><small>Your privacy and data belong to you.</small><button onClick={onOpenContact}>Get in touch <ArrowRight size={13}/></button></div></div></aside></div></div>;
+  return <div className="settings-view"><div className="settings-intro settings-profile-hero"><div className="profile-hero-identity"><span className="profile-avatar-large account-avatar-large"><AccountAvatarContent user={avatarPreviewUser}/></span><div><span className="profile-hero-eyebrow">PERSONAL PROFILE</span><h2>{fullName || user.fullName}</h2><p>{user.email}</p><span className={`profile-account-badge ${user.demo ? "is-demo" : ""}`}><i/>{user.demo ? "Demo workspace" : "Active Persora account"}</span></div></div><div className="profile-hero-summary"><span className="profile-summary-label">ACCOUNT TIME ZONE</span><b>{timezone.replace(/_/g, " ")}</b><small>Changes to your profile are private.</small><button type="button" className="settings-edit-profile-btn" onClick={() => setEditingProfile((cur) => !cur)}>{editingProfile ? "Done editing" : "Edit profile"}</button></div></div><div className="settings-layout"><div className="settings-main-column"><section className="settings-card"><div className="settings-card-header"><div><span className="settings-card-icon icon-soft-blue"><UserRound size={17}/></span><div><h3>Profile information</h3><p>Manage the identity and locale linked to your account.</p></div></div><div style={{display:"flex",alignItems:"center",gap:"8px"}}><button type="button" className="settings-edit-profile-btn" onClick={() => setEditingProfile((cur) => !cur)}>{editingProfile ? "Cancel edit" : "Edit"}</button><span className="settings-card-status"><span/>PRIVATE PROFILE</span></div></div>{!editingProfile ? (
+  <div className="settings-readonly-profile">
+    <div className="settings-profile-photo" style={{marginBottom:"12px"}}><div className="settings-avatar-main"><span className="avatar settings-avatar-preview"><AccountAvatarContent user={avatarPreviewUser}/></span><div><b>{fullName || user.fullName}</b><small>{user.email} · Persora ID {user.userId || "Demo"}</small></div></div></div>
+    <div className="settings-form-grid profile-form-grid">
+      <div className="field-label">Full name<div className="settings-readonly">{fullName || user.fullName}</div></div>
+      <div className="field-label">Email address<div className="settings-readonly">{user.email}<LockKeyhole size={13}/></div>{!user.demo && (user.emailVerified ? <span className="settings-email-verified">Verified</span> : <div className="settings-email-verification">{verificationRequested && <div className="settings-verification-code"><input aria-label="Email verification code" inputMode="numeric" maxLength={8} value={verificationCode} onChange={(event) => setVerificationCode(event.target.value.replace(/\D/g, "").slice(0, 8))} placeholder="Verification code"/><button type="button" className="settings-id-copy" onClick={() => void verifyEmail()} disabled={verificationBusy || verificationCode.length < 6}>Verify</button></div>}<button type="button" className="settings-id-copy" onClick={() => void requestEmailVerification()} disabled={verificationBusy}>{verificationBusy ? "Sending…" : verificationRequested ? "Resend code" : "Verify email"}</button></div>)}</div>
+      <div className="field-label">Persora ID<div className="settings-readonly settings-id-value"><strong>{user.userId || "Demo workspace"}</strong>{user.userId && <button type="button" className="settings-id-copy" onClick={() => void copyUserId()}>Copy</button>}</div></div>
+      <div className="field-label">Time zone<div className="settings-readonly">{timezone.replace(/_/g, " ")}</div></div>
+    </div>
+  </div>
+) : (
+  <div className="settings-edit-profile-area">
+    <div className="settings-profile-photo"><div className="settings-avatar-main"><span className="avatar settings-avatar-preview"><AccountAvatarContent user={avatarPreviewUser}/></span><span><b>Profile photo or emoji</b><small>Shown in your workspace navigation and saved with your profile.</small></span></div><div className="settings-avatar-actions"><label className="settings-avatar-upload"><UploadCloud size={14}/>{avatarProcessing ? "Preparing…" : "Upload photo"}<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void chooseAvatarPhoto(event)} disabled={avatarProcessing || saving}/></label><button type="button" className="settings-avatar-initials" onClick={() => { setAvatarUrl(""); setAvatarError(""); }}>Use initials</button></div><div className="settings-avatar-emoji-options" role="group" aria-label="Choose a profile emoji">{PROFILE_AVATAR_EMOJI.map((emoji) => <button type="button" key={emoji} className={avatarUrl === `emoji:${emoji}` ? "is-selected" : ""} onClick={() => { setAvatarUrl(`emoji:${emoji}`); setAvatarError(""); }} aria-label={`Choose profile emoji ${emoji}`} aria-pressed={avatarUrl === `emoji:${emoji}`}>{emoji}</button>)}</div><div className="settings-avatar-dicebear"><span className="settings-avatar-dicebear-label">DiceBear Adventurer</span><div className="settings-avatar-dicebear-options" role="group" aria-label="Choose a DiceBear Adventurer avatar">{PROFILE_AVATAR_DICEBEAR.map((avatar) => <button type="button" key={avatar.id} className={avatarUrl === avatar.image ? "is-selected" : ""} onClick={() => { setAvatarUrl(avatar.image); setAvatarError(""); }} aria-label={`Choose ${avatar.name} DiceBear Adventurer avatar`} aria-pressed={avatarUrl === avatar.image} title={avatar.name}><img src={avatar.image} alt="" referrerPolicy="no-referrer"/></button>)}</div></div>{avatarProcessing && <span className="settings-avatar-message" role="status">Preparing a small square profile photo…</span>}{avatarError && <span className="settings-avatar-error" role="alert">{avatarError}</span>}</div>
+    <div className="settings-form-grid profile-form-grid">
+      <label className="field-label">Full name<input value={fullName} maxLength={100} onChange={(event) => setFullName(event.target.value)} /></label>
+      <label className="field-label">Email address<div className="settings-readonly">{user.email}<LockKeyhole size={13}/></div></label>
+      <label className="field-label">Persora ID<div className="settings-readonly settings-id-value"><strong>{user.userId || "Demo workspace"}</strong>{user.userId && <button type="button" className="settings-id-copy" onClick={() => void copyUserId()}>Copy</button>}</div></label>
+      <label className="field-label settings-timezone">Time zone<select value={timezone} onChange={(event) => setTimezone(event.target.value)}><option value="Asia/Dhaka">Asia/Dhaka · Bangladesh</option><option value="Asia/Kolkata">Asia/Kolkata · India</option><option value="Asia/Singapore">Asia/Singapore</option><option value="Europe/London">Europe/London</option><option value="UTC">UTC</option></select></label>
+      <div className="field-label field-wide" style={{gridColumn:"1 / -1",marginTop:"8px"}}>
+        <span style={{fontWeight:600,fontSize:"12px",color:"#202124",marginBottom:"4px",display:"block"}}>Change account password</span>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(180px, 1fr))",gap:"8px"}}>
+          <input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} placeholder="Current password" maxLength={72}/>
+          <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="New password (12+ chars)" minLength={12} maxLength={72}/>
+          <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Confirm new password" minLength={12} maxLength={72}/>
+        </div>
+      </div>
+    </div>
+    <div className="settings-card-footer"><span>Changes sync across website and mobile app.</span><button className="settings-save-button" onClick={() => void save()} disabled={saving || avatarProcessing}>{saving ? "Saving…" : <>Save changes <ArrowRight size={14}/></>}</button></div>
+  </div>
+)}</section><section className="settings-card"><div className="settings-card-header"><div><span className="settings-card-icon icon-soft-blue"><ShieldCheck size={17}/></span><div><h3>Your account &amp; privacy</h3><p>How Persora keeps your space safe.</p></div></div></div><div className="security-rows"><div className="security-row"><span className="security-row-icon"><LockKeyhole size={15}/></span><div><b>Sign-in security</b><small>{user.demo ? "Local sample session" : "7-digit Persora ID · protected server session"}</small></div><span className="security-row-tag"><span/>ACTIVE</span></div><div className="security-row"><span className="security-row-icon"><Fingerprint size={15}/></span><div><b>Personal vault</b><small>{items.length} items across {new Set(items.map((item) => item.section)).size} spaces</small></div><span className="security-row-tag tag-blue-text"><span/>PRIVATE</span></div><div className="security-row"><span className="security-row-icon"><Activity size={15}/></span><div><b>Data access</b><small>Vault access is restricted to your signed-in account.</small></div><span className="security-row-tag">OWNER ONLY</span></div></div><div className="account-security-note"><ShieldCheck size={14}/><span>Persora never asks for or stores your other online account passwords.</span></div></section><section className="settings-card data-card"><div className="settings-card-header"><div><span className="settings-card-icon icon-soft-peach"><FileText size={17}/></span><div><h3>Your data, your call</h3><p>Export or restore your vault data.</p></div></div></div><div className="data-action-row"><div><b>Download a backup</b><small>Export all records; cloud backups also include attached files.</small></div><button className="outline-action-button" onClick={onExport}>Export data</button></div><label className="data-action-row import-row"><div><b>Import a backup</b><small>Restore a Persora JSON export in this account.</small></div><span className="outline-action-button">Choose file<input type="file" accept=".json,application/json" onChange={(event) => void importFile(event)}/></span></label></section><section className="settings-card danger-zone-card"><div className="settings-card-header"><div><span className="settings-card-icon icon-soft-red"><Trash2 size={17}/></span><div><h3>Delete your account</h3><p>Permanently remove this account and its personal data.</p></div></div></div>{!confirmDelete ? <div className="danger-action-row"><span>This can't be undone. Export a backup first.</span><button className="danger-outline-button" onClick={() => setConfirmDelete(true)}>Delete account</button></div> : <div className="delete-confirm-inline"><b>Are you sure? This permanently deletes your vault and files.</b><button className="danger-outline-button" onClick={() => void deleteAccount()}>Yes, delete account</button><button className="quiet-button" onClick={() => setConfirmDelete(false)}>Cancel</button></div>}</section></div><aside className="settings-side-column"><div className="settings-side-card plan-side-card"><div className="plan-sparkle"><Sparkles size={16}/></div><span className="plan-label">YOUR PERSONAL SPACE</span><h3>Calm looks good on you.</h3><p>Everything here is yours to organize, in your own time.</p><div className="plan-side-divider"/><div className="plan-stats"><span>Available spaces</span><b>{Object.keys(SECTION_BY_ID).length}</b></div><div className="plan-stats"><span>Items saved</span><b>{items.length}</b></div><div className="plan-side-foot"><LockKeyhole size={12}/> Private by default</div></div><div className="settings-side-card timezone-card"><div className="timezone-card-icon"><Clock3 size={16}/></div><span className="plan-label">LOCAL TIME</span><h3>{new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit", timeZone: timezone }).format(new Date())}</h3><p>{timezone.replace("_", " ")}</p></div><div className="settings-help-card"><span><CircleHelp size={15}/></span><div><b>Need a hand?</b><small>Your privacy and data belong to you.</small><button onClick={onOpenContact}>Get in touch <ArrowRight size={13}/></button></div></div></aside></div></div>;
 }

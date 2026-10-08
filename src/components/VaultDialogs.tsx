@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ClipboardEvent as ReactClipboardEvent, type FormEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
-import { AlarmClock, ArrowRight, ArrowUpRight, BellRing, Bold, CalendarDays, Check, Copy, Download, FileImage, FileText, Italic, List, ListOrdered, ListTodo, LockKeyhole, MessageSquare, Music2, Paperclip, Pause, Play, RemoveFormatting, Send, Share2, ShieldCheck, Strikethrough, Trash2, Underline, UploadCloud, X } from "lucide-react";
+import { AlarmClock, ArrowRight, Clock, UserCheck, ArrowUpRight, BellRing, Bold, CalendarDays, Check, Copy, Download, FileImage, FileText, Italic, List, ListOrdered, ListTodo, LockKeyhole, MessageSquare, Music2, Paperclip, Pause, Play, RemoveFormatting, Send, Share2, ShieldCheck, Strikethrough, Trash2, Underline, UploadCloud, X } from "lucide-react";
 import { SECTION_BY_ID } from "../data";
 import QRPreview from "./QRPreview";
 import ImagePreview from "./ImagePreview";
@@ -646,12 +646,30 @@ export function ItemDetailDialog({ item, familyMembers = [], filePreview, shareA
   return presentation === "panel" ? content : <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>{content}</div>;
 }
 
-export function ShareManagementDialog({ item, shares, available, onShare, onPermissionChange, onRevoke, onClose }: { item: VaultItem; shares: SharedVaultEntry[]; available: boolean; onShare: (recipient: string, permission: SharePermission) => Promise<void>; onPermissionChange: (shareId: string, permission: SharePermission) => Promise<void>; onRevoke: (shareId: string) => Promise<void>; onClose: () => void }) {
+export function ShareManagementDialog({ item, shares, allRecentShares = [], available, onShare, onPermissionChange, onRevoke, onClose }: { item: VaultItem; shares: SharedVaultEntry[]; allRecentShares?: SharedVaultEntry[]; available: boolean; onShare: (recipient: string, permission: SharePermission) => Promise<void>; onPermissionChange: (shareId: string, permission: SharePermission) => Promise<void>; onRevoke: (shareId: string) => Promise<void>; onClose: () => void }) {
   const [recipient, setRecipient] = useState("");
   const [permission, setPermission] = useState<SharePermission>("view");
   const [busy, setBusy] = useState(false);
   const [busyShare, setBusyShare] = useState("");
   const [error, setError] = useState("");
+
+  const recentRecipients = useMemo(() => {
+    const list: { userId?: string; name: string; email: string }[] = [];
+    const seen = new Set<string>();
+    const pool = [...shares, ...(allRecentShares || [])];
+    for (const entry of pool) {
+      if (entry?.recipient?.userId && !seen.has(entry.recipient.userId)) {
+        seen.add(entry.recipient.userId);
+        list.push({
+          userId: entry.recipient.userId,
+          name: entry.recipient.fullName,
+          email: entry.recipient.email,
+        });
+      }
+    }
+    return list.slice(0, 5);
+  }, [shares, allRecentShares]);
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!recipient.trim()) return;
@@ -670,7 +688,24 @@ export function ShareManagementDialog({ item, shares, available, onShare, onPerm
     <div className="share-dialog-head"><span className="share-dialog-icon"><Share2 size={19}/></span><div><span className="section-eyebrow">Document access</span><h2 id="share-dialog-title">Share “{item.title}”</h2></div><button className="icon-button" onClick={onClose} aria-label="Close share dialog"><X size={18}/></button></div>
     <p className="share-dialog-intro">Invite a registered Persora member. The original file stays in your vault, even when someone edits it.</p>
     {!available && <div className="share-backend-notice"><ShieldCheck size={16}/><span>Sharing needs a signed-in account with Persora's cloud API enabled.</span></div>}
-    <form className="share-invite-form" onSubmit={(event) => void submit(event)}><label className="field-label">Email address or seven-digit Persora ID<input value={recipient} onChange={(event) => setRecipient(event.target.value)} placeholder="name@example.com or 1234567" autoComplete="off" disabled={!available || busy}/></label><label className="field-label">Permission<select value={permission} onChange={(event) => setPermission(event.target.value as SharePermission)} disabled={!available || busy}><option value="view">View · read and download</option><option value="comment">Comment · view and leave comments</option><option value="edit">Edit · update the original document</option></select></label><button className="editor-submit" disabled={!available || busy || !recipient.trim()}>{busy ? "Sharing…" : <>Share document <ArrowRight size={14}/></>}</button></form>
+    <form className="share-invite-form" onSubmit={(event) => void submit(event)}>
+      <label className="field-label">Email address or seven-digit Persora ID<input value={recipient} onChange={(event) => setRecipient(event.target.value)} placeholder="name@example.com or 1234567" autoComplete="off" disabled={!available || busy}/></label>
+      {recentRecipients.length > 0 && (
+        <div className="record-share-recents" style={{margin: "4px 0 8px 0"}}>
+          <div className="record-share-recents-header"><Clock size={11}/><span>Recent members</span></div>
+          <div className="record-share-chips">
+            {recentRecipients.map((m, idx) => (
+              <button key={idx} type="button" className="record-share-chip" onClick={() => setRecipient(m.userId || m.email)} disabled={!available || busy} title={m.email}>
+                <UserCheck size={11}/>
+                <span>{m.name} ({m.userId})</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <label className="field-label">Permission<select value={permission} onChange={(event) => setPermission(event.target.value as SharePermission)} disabled={!available || busy}><option value="view">View · read and download</option><option value="comment">Comment · view and leave comments</option><option value="edit">Edit · update the original document</option></select></label>
+      <button className="editor-submit" disabled={!available || busy || !recipient.trim()}>{busy ? "Sharing…" : <>Share document <ArrowRight size={14}/></>}</button>
+    </form>
     {error && <div className="form-alert error-alert share-modal-error" role="alert">{error}</div>}
     <div className="share-access-list"><div className="share-access-list-heading"><b>People with access</b><span>{shares.length}</span></div>{shares.length ? shares.map((share) => <div className="share-access-row" key={share.shareId}><span className="share-person-avatar">{share.recipient.fullName.split(/\s+/).map((part) => part[0]).slice(0,2).join("").toUpperCase()}</span><span className="share-access-person"><b>{share.recipient.fullName}</b><small>{share.recipient.email} · ID {share.recipient.userId}</small></span><select aria-label={`Permission for ${share.recipient.fullName}`} value={share.permission} disabled={busyShare === share.shareId} onChange={(event) => void update(share.shareId, () => onPermissionChange(share.shareId, event.target.value as SharePermission))}><option value="view">View</option><option value="comment">Comment</option><option value="edit">Edit</option></select><button className="plain-icon share-revoke-icon" disabled={busyShare === share.shareId} onClick={() => void update(share.shareId, () => onRevoke(share.shareId))} aria-label={`Stop sharing with ${share.recipient.fullName}`} title="Stop sharing"><Trash2 size={15}/></button></div>) : <div className="share-no-access">Only you can see this document right now.</div>}</div>
     <div className="share-dialog-footer"><ShieldCheck size={14}/> Access can be changed or removed at any time.</div>
