@@ -16,7 +16,11 @@ interface ContactsViewProps {
   contacts: PersoraContact[];
   demoMode: boolean;
   connected: boolean;
+  canUpload: boolean;
+  onUpgrade?: () => void;
   onRefresh: () => Promise<void>;
+  initialAddCategory?: ContactCategory | null;
+  onAddRequestHandled?: () => void;
   onSave: (contact: ContactDraft, onProgress?: (progress: TransferProgress) => void) => Promise<PersoraContact>;
   onDelete: (contact: PersoraContact) => Promise<void>;
   onShare: (contact: PersoraContact, recipient: string) => Promise<void>;
@@ -103,7 +107,7 @@ function ContactAvatar({ contact, demoMode, large = false }: { contact: PersoraC
   </span>;
 }
 
-export default function ContactsView({ userId, contacts, demoMode, connected, onRefresh, onSave, onDelete, onShare, onMerge, onImport, notify }: ContactsViewProps) {
+export default function ContactsView({ userId, contacts, demoMode, connected, canUpload, onUpgrade, onRefresh, initialAddCategory, onAddRequestHandled, onSave, onDelete, onShare, onMerge, onImport, notify }: ContactsViewProps) {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All contacts");
   const [sortBy, setSortBy] = useState("name");
@@ -113,6 +117,7 @@ export default function ContactsView({ userId, contacts, demoMode, connected, on
   const [visibleCount, setVisibleCount] = useState(48);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editor, setEditor] = useState<PersoraContact | null | false>(false);
+  const [editorInitialCategory, setEditorInitialCategory] = useState<ContactCategory | undefined>();
   const [detail, setDetail] = useState<PersoraContact | null>(null);
   const [shareTarget, setShareTarget] = useState<PersoraContact | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<PersoraContact | null>(null);
@@ -152,6 +157,13 @@ export default function ContactsView({ userId, contacts, demoMode, connected, on
 
   useEffect(() => { setVisibleCount(48); }, [category, favoritesOnly, search, sortBy, selectedFolderId]);
   useEffect(() => { setSelected((current) => new Set([...current].filter((id) => contacts.some((contact) => contact.id === id)))); }, [contacts]);
+  useEffect(() => {
+    if (!initialAddCategory) return;
+    setDetail(null);
+    setEditorInitialCategory(initialAddCategory);
+    setEditor(null);
+    onAddRequestHandled?.();
+  }, [initialAddCategory, onAddRequestHandled]);
 
   const setLayoutMode = (mode: "cards" | "list") => {
     setLayout(mode);
@@ -159,8 +171,8 @@ export default function ContactsView({ userId, contacts, demoMode, connected, on
   };
   const refresh = async () => { setRefreshing(true); try { await onRefresh(); } catch (reason) { notify(reason instanceof Error ? reason.message : "Couldn't refresh contacts.", "error"); } finally { setRefreshing(false); } };
   const toggleSelected = (id: string) => setSelected((current) => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; });
-  const openEdit = (contact?: PersoraContact) => { setDetail(null); setEditor(contact || null); };
-  const handleSave = async (draft: ContactDraft, onProgress?: (progress: TransferProgress) => void) => { const saved = await onSave(draft, onProgress); setEditor(false); return saved; };
+  const openEdit = (contact?: PersoraContact) => { setDetail(null); setEditorInitialCategory(undefined); setEditor(contact || null); };
+  const handleSave = async (draft: ContactDraft, onProgress?: (progress: TransferProgress) => void) => { const saved = await onSave(draft, onProgress); setEditor(false); setEditorInitialCategory(undefined); return saved; };
   const moveContactFolder = async (contact: PersoraContact, folderId: string | null) => {
     try { const saved = await onSave({ ...contact, folderId: folderId || undefined }); setDetail((current) => current?.id === saved.id ? saved : current); notify(folderId ? `Moved to ${folders.find((folder) => folder.id === folderId)?.name || "folder"}.` : "Contact moved out of its folder."); }
     catch (error) { notify(error instanceof Error ? error.message : "The contact could not be moved.", "error"); }
@@ -208,13 +220,15 @@ export default function ContactsView({ userId, contacts, demoMode, connected, on
         }
         return { ...entry, contact: { ...entry.contact, phoneNumbers }, invalidPhones, duplicatePhones };
       });
-      const imported = await onImport(ready.map(({ contact }) => contact), setImportProgress);
+      const importedPhotoCount = ready.filter(({ contact }) => Boolean(contact.photoFile || contact.photoDataUrl || contact.photoKey)).length;
+      const importDrafts = ready.map(({ contact }) => canUpload ? contact : { ...contact, photoFile: undefined, photoDataUrl: undefined, photoKey: undefined });
+      const imported = await onImport(importDrafts, setImportProgress);
       const reports = ready.map((entry, index) => ({ contact: imported[index], invalidPhones: entry.invalidPhones, duplicatePhones: entry.duplicatePhones }))
         .filter((entry): entry is PhoneImportFeedback => Boolean(entry.contact) && (entry.invalidPhones.length > 0 || entry.duplicatePhones.length > 0));
       setImportPreview(null); setSelected(new Set());
       if (reports.length) setNumberFeedback(reports);
       const duplicateCount = ready.reduce((total, entry) => total + entry.duplicatePhones.length, 0);
-      notify(`${imported.length} contact${imported.length === 1 ? "" : "s"} imported${duplicateCount ? `; ${duplicateCount} duplicate number${duplicateCount === 1 ? "" : "s"} filtered` : ""}.`);
+      notify(`${imported.length} contact${imported.length === 1 ? "" : "s"} imported${duplicateCount ? `; ${duplicateCount} duplicate number${duplicateCount === 1 ? "" : "s"} filtered` : ""}${!canUpload && importedPhotoCount ? `; ${importedPhotoCount} embedded photo${importedPhotoCount === 1 ? " was" : "s were"} skipped` : ""}.`);
     } catch (reason) { setImportError(reason instanceof Error ? reason.message : "The contacts couldn't be imported."); }
     finally { setImportBusy(false); setImportProgress(null); }
   };
@@ -273,7 +287,7 @@ export default function ContactsView({ userId, contacts, demoMode, connected, on
     {visible.length < filtered.length && <div className="contacts-load-more"><button type="button" onClick={() => setVisibleCount((count) => count + 48)}>Show {Math.min(48, filtered.length - visible.length)} more <span>({filtered.length - visible.length} left)</span></button></div>}
     <div className="contacts-sync-footnote"><ShieldCheck size={14}/><span>{demoMode ? "Demo contacts stay in this browser for this session and are not uploaded." : connected ? "Your contacts sync through your authenticated Persora account." : "Contact sync is unavailable. Connect the Persora cloud API to sync across devices."}</span><button type="button" onClick={() => void refresh()}>{refreshing ? "Syncing…" : demoMode ? "Reload local" : "Sync now"}</button></div>
 
-    {editor !== false && <ModalPortal><ContactEditorDialog key={editor?.id || "new-contact"} contact={editor || undefined} demoMode={demoMode} connected={connected} onClose={() => setEditor(false)} onSave={handleSave}/></ModalPortal>}
+    {editor !== false && <ModalPortal><ContactEditorDialog key={editor?.id || `new-contact-${editorInitialCategory || "other"}`} contact={editor || undefined} initialCategory={editorInitialCategory} demoMode={demoMode} connected={connected} canUpload={canUpload} onUpgrade={onUpgrade} onClose={() => { setEditor(false); setEditorInitialCategory(undefined); }} onSave={handleSave}/></ModalPortal>}
     {detail && <ModalPortal><ContactDetailDialog contact={detail} demoMode={demoMode} canShare={connected} onClose={() => setDetail(null)} onShare={() => { setShareTarget(detail); setDetail(null); }} onEdit={() => openEdit(detail)} onFavorite={() => void toggleFavorite(detail)} onDelete={() => setDeleteTarget(detail)}/></ModalPortal>}
     {shareTarget && <ModalPortal><ShareRecordDialog kind="contact" title={shareTarget.name} onClose={() => setShareTarget(null)} onShare={(recipient) => onShare(shareTarget, recipient)}/></ModalPortal>}
     {deleteTarget && <ModalPortal><div className="modal-backdrop contacts-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setDeleteTarget(null)}><section className="contacts-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="contact-delete-title"><span className="contacts-confirm-icon"><Trash2 size={20}/></span><h2 id="contact-delete-title">Delete this contact?</h2><p><b>{deleteTarget.name}</b> will be removed from your Persora contacts. This can't be undone.</p><div><button type="button" className="quiet-button" onClick={() => setDeleteTarget(null)}>Cancel</button><button type="button" className="contacts-danger-button" onClick={() => void confirmDelete()}>Delete contact</button></div></section></div></ModalPortal>}
@@ -287,7 +301,7 @@ type ImportEntry = { contact: ContactDraft; sourcePhoneNumbers: ContactPhone[]; 
 type PhoneImportFeedback = { contact: PersoraContact; invalidPhones: string[]; duplicatePhones: string[] };
 function slug(value: string) { return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "other"); }
 
-function ContactEditorDialog({ contact, demoMode, connected, onClose, onSave }: { contact?: PersoraContact; demoMode: boolean; connected: boolean; onClose: () => void; onSave: (contact: ContactDraft, onProgress?: (progress: TransferProgress) => void) => Promise<PersoraContact> }) {
+function ContactEditorDialog({ contact, initialCategory, demoMode, connected, canUpload, onUpgrade, onClose, onSave }: { contact?: PersoraContact; initialCategory?: ContactCategory; demoMode: boolean; connected: boolean; canUpload: boolean; onUpgrade?: () => void; onClose: () => void; onSave: (contact: ContactDraft, onProgress?: (progress: TransferProgress) => void) => Promise<PersoraContact> }) {
   const [name, setName] = useState(contact?.name || "");
   const [phones, setPhones] = useState<ContactPhone[]>(contact?.phoneNumbers.length ? contact.phoneNumbers : [{ label: "Mobile", number: "" }]);
   const [email, setEmail] = useState(contact?.email || "");
@@ -296,7 +310,7 @@ function ContactEditorDialog({ contact, demoMode, connected, onClose, onSave }: 
   const [address, setAddress] = useState(contact?.address || "");
   const [birthday, setBirthday] = useState(contact?.birthday || "");
   const [notes, setNotes] = useState(contact?.notes || "");
-  const [category, setCategory] = useState<ContactCategory>(contact?.category || "Other");
+  const [category, setCategory] = useState<ContactCategory>(contact?.category || initialCategory || "Other");
   const [favorite, setFavorite] = useState(contact?.favorite || false);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [clearPhoto, setClearPhoto] = useState(false);
@@ -334,7 +348,7 @@ function ContactEditorDialog({ contact, demoMode, connected, onClose, onSave }: 
   return <div className="modal-backdrop contacts-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !saving && onClose()}><section className="contact-editor-dialog" role="dialog" aria-modal="true" aria-labelledby="contact-editor-title">
     <div className="contact-modal-head"><span className="contact-modal-icon"><UserPlus size={19}/></span><div><span className="section-eyebrow">Persora contacts</span><h2 id="contact-editor-title">{contact ? "Update a contact." : "Add someone important."}</h2></div><button type="button" className="icon-button" onClick={onClose} aria-label="Close" disabled={saving}><X size={18}/></button></div>
     <form className="contact-editor-form" onSubmit={(event) => void submit(event)}>
-      <div className="contact-photo-field"><ContactAvatar contact={{ ...(contact || makeEmptyDraft()), id: contact?.id || "draft", name: name || "New contact", photoDataUrl: photoPreview || (clearPhoto ? undefined : contact?.photoDataUrl), photoKey: clearPhoto || photoFile ? undefined : contact?.photoKey } as PersoraContact} demoMode={demoMode} large/><div><b>Profile photo</b><small>Optional · JPG, PNG, WEBP, GIF · up to 5 MB</small><label className="contact-photo-pick">{photoFile || clearPhoto ? "Choose another photo" : "Add a photo"}<input type="file" accept="image/*" onChange={choosePhoto}/></label></div>{(photoFile || contact?.photoKey || contact?.photoDataUrl) && <button type="button" className="contact-photo-remove" disabled={clearPhoto} onClick={() => { setPhotoFile(null); setClearPhoto(true); }}>{clearPhoto ? "Photo will be removed" : "Remove"}</button>}</div>
+      <div className="contact-photo-field"><ContactAvatar contact={{ ...(contact || makeEmptyDraft()), id: contact?.id || "draft", name: name || "New contact", photoDataUrl: photoPreview || (clearPhoto ? undefined : contact?.photoDataUrl), photoKey: clearPhoto || photoFile ? undefined : contact?.photoKey } as PersoraContact} demoMode={demoMode} large/><div><b>Profile photo</b><small>Optional · JPG, PNG, WEBP, GIF · up to 5 MB</small><label className={`contact-photo-pick ${!canUpload ? "is-disabled" : ""}`}>{canUpload ? photoFile || clearPhoto ? "Choose another photo" : "Add a photo" : "Photo upload unavailable"}<input type="file" accept="image/*" disabled={!canUpload} onChange={choosePhoto}/></label>{!canUpload && <small className="file-entitlement-inline">Paid plan required for new photos.{onUpgrade && <button type="button" onClick={onUpgrade}>View plans</button>}</small>}</div>{(photoFile || contact?.photoKey || contact?.photoDataUrl) && <button type="button" className="contact-photo-remove" disabled={clearPhoto} onClick={() => { setPhotoFile(null); setClearPhoto(true); }}>{clearPhoto ? "Photo will be removed" : "Remove"}</button>}</div>
       <div className="contact-form-grid"><label className="contacts-field contacts-field-wide">Name <span>*</span><input value={name} onChange={(event) => setName(event.target.value)} autoFocus required maxLength={160} placeholder="Full name"/></label>
         <div className="contacts-phone-field contacts-field-wide"><div className="contacts-phone-heading"><b>Phone numbers</b><button type="button" onClick={() => setPhones((current) => [...current, { label: "Mobile", number: "" }])}><Plus size={14}/> Add number</button></div>{phones.map((phone, index) => <div className="contacts-phone-row" key={index}><select aria-label={`Phone label ${index + 1}`} value={phone.label} onChange={(event) => updatePhone(index, "label", event.target.value)}>{PHONE_LABELS.map((label) => <option key={label}>{label}</option>)}</select><select aria-label={`Country calling code ${index + 1}`} value={COUNTRY_CODES.includes(countryCode) ? countryCode : "+880"} onChange={(event) => setCountryCode(event.target.value)}>{COUNTRY_CODES.map((code) => <option key={code} value={code}>{code}</option>)}</select><input aria-label={`Phone number ${index + 1}`} type="tel" value={phone.number} onChange={(event) => updatePhone(index, "number", event.target.value)} onBlur={(event) => updatePhone(index, "number", normalizePhone(event.target.value, countryCode))} placeholder="01XXX XXX XXX"/><button type="button" className="remove-phone-button" onClick={() => setPhones((current) => current.filter((_, i) => i !== index))} aria-label="Remove phone number"><X size={15}/></button></div>)}</div>
         <label className="contacts-field">Email<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} maxLength={254} placeholder="name@example.com"/></label><label className="contacts-field">Category<select value={category} onChange={(event) => setCategory(event.target.value as ContactCategory)}>{CONTACT_CATEGORIES.map((entry) => <option key={entry}>{entry}</option>)}</select></label>
@@ -354,16 +368,33 @@ function ContactEditorDialog({ contact, demoMode, connected, onClose, onSave }: 
 function ContactDetailDialog({ contact, demoMode, canShare, onClose, onShare, onEdit, onFavorite, onDelete }: { contact: PersoraContact; demoMode: boolean; canShare: boolean; onClose: () => void; onShare: () => void; onEdit: () => void; onFavorite: () => void; onDelete: () => void }) {
   const primaryPhone = contact.phoneNumbers[0]?.number || "";
   const digits = cleanDigits(primaryPhone);
+  const emailHref = contact.email ? `mailto:${encodeURIComponent(contact.email).replace(/%40/gi, "@")}` : "";
   return <div className="modal-backdrop contacts-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="contact-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="contact-detail-title">
     <button type="button" className="icon-button contact-detail-close" onClick={onClose} aria-label="Close contact details"><X size={18}/></button>
-    <div className="contact-detail-hero"><ContactAvatar contact={contact} demoMode={demoMode} large/><span className={`contact-category category-${slug(contact.category)}`}>{contact.category}</span><h2 id="contact-detail-title">{contact.name}</h2><p>{[contact.jobTitle, contact.company].filter(Boolean).join(" · ") || "Personal contact"}</p><div className="contact-detail-actions">{primaryPhone && <><a href={phoneUri(primaryPhone)}><Phone size={15}/> Call</a><a href={smsUri(primaryPhone)}><MessageCircle size={15}/> SMS</a><a href={`https://wa.me/${digits}`} target="_blank" rel="noreferrer"><Smartphone size={15}/> WhatsApp</a></>}{contact.email && <a href={`mailto:${encodeURIComponent(contact.email).replace(/%40/gi, "@")}`}><Mail size={15}/> Email</a>}</div></div>
-    <div className="contact-detail-body"><div className="contact-detail-section"><b>Phone numbers</b>{contact.phoneNumbers.length ? contact.phoneNumbers.map((phone, index) => <div className="contact-detail-row" key={`${phone.number}-${index}`}><span className="contact-detail-row-icon"><Phone size={15}/></span><span><small>{phone.label}</small><b>{phone.number}</b></span><a href={phoneUri(phone.number)} aria-label={`Call ${phone.number}`}><Phone size={14}/></a></div>) : <p>No phone numbers saved.</p>}</div>
-      {contact.email && <div className="contact-detail-row"><span className="contact-detail-row-icon"><Mail size={15}/></span><span><small>Email</small><b>{contact.email}</b></span><a href={`mailto:${encodeURIComponent(contact.email).replace(/%40/gi, "@")}`} aria-label="Send email"><ArrowRight size={14}/></a></div>}
-      {(contact.company || contact.jobTitle) && <div className="contact-detail-row"><span className="contact-detail-row-icon"><UsersRound size={15}/></span><span><small>Work</small><b>{[contact.jobTitle, contact.company].filter(Boolean).join(" · ")}</b></span></div>}
-      {contact.address && <div className="contact-detail-row"><span className="contact-detail-row-icon"><MapPin size={15}/></span><span><small>Address</small><b>{contact.address}</b></span></div>}
-      {contact.birthday && <div className="contact-detail-row"><span className="contact-detail-row-icon"><Cake size={15}/></span><span><small>Birthday</small><b>{formatDate(contact.birthday)}</b></span></div>}
+    <header className="contact-detail-hero">
+      <ContactAvatar contact={contact} demoMode={demoMode} large/>
+      <span className={`contact-category category-${slug(contact.category)}`}>{contact.category}</span>
+      <h2 id="contact-detail-title">{contact.name}</h2>
+      <p>{[contact.jobTitle, contact.company].filter(Boolean).join(" · ") || "Personal contact"}</p>
+      {(primaryPhone || contact.email) && <div className="contact-detail-actions">
+        {primaryPhone && <><a href={phoneUri(primaryPhone)}><Phone size={14}/> Call</a><a href={smsUri(primaryPhone)}><MessageCircle size={14}/> Message</a><a href={`https://wa.me/${digits}`} target="_blank" rel="noreferrer"><Smartphone size={14}/> WhatsApp</a></>}
+        {contact.email && <a href={emailHref}><Mail size={14}/> Email</a>}
+      </div>}
+    </header>
+    <div className="contact-detail-body">
+      <section className="contact-detail-section">
+        <div className="contact-detail-section-heading"><span className="contact-detail-row-icon"><Phone size={15}/></span><b>Phone numbers</b><small>{contact.phoneNumbers.length || "None saved"}</small></div>
+        {contact.phoneNumbers.length ? <div className="contact-detail-phone-list">{contact.phoneNumbers.map((phone, index) => <div className="contact-detail-row" key={`${phone.number}-${index}`}><span className="contact-detail-row-icon"><Phone size={14}/></span><span><small>{phone.label}</small><b>{phone.number}</b></span><a href={phoneUri(phone.number)} aria-label={`Call ${phone.number}`}><Phone size={14}/></a></div>)}</div> : <p className="contact-detail-empty">Add a number when you’re ready to reach this person.</p>}
+      </section>
+      {(contact.email || contact.company || contact.jobTitle || contact.address || contact.birthday) && <div className="contact-detail-info-grid">
+        {contact.email && <div className="contact-detail-row"><span className="contact-detail-row-icon"><Mail size={15}/></span><span><small>Email</small><b>{contact.email}</b></span><a href={emailHref} aria-label="Send email"><ArrowRight size={14}/></a></div>}
+        {(contact.company || contact.jobTitle) && <div className="contact-detail-row"><span className="contact-detail-row-icon"><UsersRound size={15}/></span><span><small>Work</small><b>{[contact.jobTitle, contact.company].filter(Boolean).join(" · ")}</b></span></div>}
+        {contact.address && <div className="contact-detail-row"><span className="contact-detail-row-icon"><MapPin size={15}/></span><span><small>Address</small><b>{contact.address}</b></span></div>}
+        {contact.birthday && <div className="contact-detail-row"><span className="contact-detail-row-icon"><Cake size={15}/></span><span><small>Birthday</small><b>{formatDate(contact.birthday)}</b></span></div>}
+      </div>}
       {contact.notes && <div className="contact-detail-notes"><b>Notes</b><p>{contact.notes}</p></div>}
-    </div><div className="contact-detail-footer"><button type="button" className={`contacts-favorite-filter ${contact.favorite ? "is-active" : ""}`} onClick={onFavorite}><Heart size={14} fill={contact.favorite ? "currentColor" : "none"}/> {contact.favorite ? "Favorited" : "Add favorite"}</button><div><button type="button" className="quiet-button" onClick={onShare} disabled={!canShare} title={canShare ? "Share with a Persora member" : "Sign in to share contacts"}><Share2 size={14}/> Share</button><button type="button" className="quiet-button" onClick={onDelete}><Trash2 size={14}/> Delete</button><button type="button" className="contacts-primary-button" onClick={onEdit}><Edit3 size={14}/> Edit contact</button></div></div>
+    </div>
+    <footer className="contact-detail-footer"><button type="button" className={`contacts-favorite-filter ${contact.favorite ? "is-active" : ""}`} onClick={onFavorite}><Heart size={14} fill={contact.favorite ? "currentColor" : "none"}/> {contact.favorite ? "Favorited" : "Add favorite"}</button><div><button type="button" className="quiet-button" onClick={onShare} disabled={!canShare} title={canShare ? "Share with a Persora member" : "Sign in to share contacts"}><Share2 size={14}/> Share</button><button type="button" className="quiet-button contact-detail-delete" onClick={onDelete}><Trash2 size={14}/> Delete</button><button type="button" className="contacts-primary-button" onClick={onEdit}><Edit3 size={14}/> Edit contact</button></div></footer>
   </section></div>;
 }
 

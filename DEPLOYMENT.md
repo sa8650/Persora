@@ -34,7 +34,7 @@ If Git is already set up, keep its existing history and remote. Do not commit `.
 1. Create a Supabase project and wait for it to finish provisioning.
 2. Open that project’s **SQL Editor**.
 3. Open `supabase/schema.sql`, copy the entire file into the SQL Editor, and run it. It creates Persora profiles, seven-digit login IDs, password hashes, server-side sessions, rate-limit state, vault/billing/admin tables, private medical-record tables, RLS policies, and restricted Postgres functions.
-4. For an already-running Persora database, apply `supabase/migrations/20261001_life_timeline.sql` and `supabase/migrations/202610010001_medical_records.sql` in the SQL Editor before deploying the matching features.
+4. For an already-running Persora database, apply the outstanding files under `supabase/migrations/` in date order. At minimum, existing deployments need the Life Timeline, medical records, vault folders/wallet cards, billing-term, personal-finance, Smart Scan cache, `20261006_email_verification_upload_entitlements.sql`, and `202610060001_ensure_default_free_plan.sql` migrations before deploying the matching features.
 5. In **Project Settings → API Keys** (sometimes shown as **Settings → API**), copy and keep ready:
    - The **Project URL**, e.g. `https://abcdefghijkl.supabase.co`.
    - A server-only **Secret key**, usually beginning `sb_secret_...`. If your project still uses the legacy service-role JWT, use that value in the same Pages secret described below.
@@ -73,6 +73,9 @@ In the Pages project, open **Settings → Variables and Secrets** (may appear as
 | `SUPABASE_SECRET_KEY` | Your Supabase Secret key (or legacy service-role JWT) | **Encrypted secret** | Server-only database operations and custom auth. Never prefix this with `VITE_`. |
 | `TIMELINE_ENCRYPTION_KEY` | A dedicated stable random value, e.g. output from `openssl rand -hex 32` | **Encrypted secret** | Required before posting any timeline event. AES-256-GCM key material for timeline text and files. Back it up securely; changing or removing it without re-encrypting existing data makes timeline content unreadable. |
 | `ADMIN_BOOTSTRAP_SECRET` | A newly generated random value | **Encrypted secret; temporary** | Allows the first trusted owner to claim administrator access once. Remove after step 8. |
+| `BREVO_API_KEY` | Brevo API v3 key with transactional-email access | **Encrypted secret** | Sends email-verification OTPs and admin test emails. Server-only; never use a `VITE_` prefix. |
+| `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT` | Azure Document Intelligence resource's base HTTPS endpoint | **Encrypted secret** | Server-side Smart Scan OCR endpoint; never use a `VITE_` prefix. |
+| `AZURE_DOCUMENT_INTELLIGENCE_KEY` | Azure Document Intelligence resource key | **Encrypted secret** | Authenticates server-side Smart Scan OCR requests; never use a `VITE_` prefix. |
 
 Generate the bootstrap value locally, for example:
 
@@ -82,7 +85,21 @@ openssl rand -hex 32
 
 Copy its output directly into the encrypted `ADMIN_BOOTSTRAP_SECRET` field. Do not put it in a source file, `.env`, GitHub, Pages build logs, or a `VITE_` variable. Keep it only until the first admin claim is complete.
 
-**No `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, or Supabase anon key is needed.** `SUPABASE_URL` and `SUPABASE_SECRET_KEY` are read by Pages Functions; only the Pages API switch is exposed to the Vite build. Never use a `VITE_` prefix for the secret key—Vite would publish it in the browser bundle.
+**No `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, or Supabase anon key is needed.** `SUPABASE_URL` and `SUPABASE_SECRET_KEY` are read by Pages Functions; only the Pages API switch is exposed to the Vite build. Never use a `VITE_` prefix for a secret—Vite would publish it in the browser bundle.
+
+### Email delivery and verification (Brevo)
+
+1. In Brevo, authenticate your sending domain and verify the sender address you plan to use. Create an API v3 key with transactional-email sending access.
+2. In Cloudflare Pages → **Settings → Variables and Secrets**, add `BREVO_API_KEY` under **Production** and mark it **Encrypted/Secret**. Do not add it as a Vite variable, enter it into the admin form, or store it in Supabase. The key is read only by the server-side Pages Function. Alternatively, run `npx wrangler pages secret put BREVO_API_KEY --project-name YOUR_PAGES_PROJECT_NAME` from the project root and enter the key at the prompt.
+3. Redeploy Pages after adding or rotating the secret. The Admin console’s **Email settings** tab reports whether `BREVO_API_KEY` is present.
+4. In **Admin → Email settings**, enter the verified sender email and display name, optionally set the reply-to email/name, choose whether email OTP verification is enabled, and save. Use **Send a test email** to verify the provider accepts the configuration.
+5. The OTP endpoint sends only to the email already registered on the signed-in Persora account. Codes expire after 10 minutes, and sends/attempts remain rate-limited. The test message uses the saved sender and reply-to fields but does not depend on the OTP toggle.
+
+If the Brevo secret or sender address is missing, the Admin console identifies the missing setup and the OTP endpoint explains that `BREVO_API_KEY` must be configured in Cloudflare Pages. Settings in the admin panel never expose or persist the API key.
+
+### Smart Scan OCR (Azure AI Document Intelligence)
+
+Create an Azure AI Document Intelligence resource with the `prebuilt-read` model, then copy its base HTTPS endpoint and resource key into the two encrypted Pages secrets listed above. Use **Standard (S0)** to preserve Smart Scan's 7 MB upload limit: the Azure free (F0) tier is limited to 4 MB and processes only the first two PDF/TIFF pages. Deploy Pages again after adding or rotating either secret. The server-side function calls REST API version `2024-11-30`; the key is never sent to the browser. For the Workers AI extraction binding and full OCR setup, see [`SMART_SCAN_SETUP.md`](SMART_SCAN_SETUP.md).
 
 ### Preview deployments
 
@@ -124,7 +141,9 @@ All future administrator access requires a real Persora account with the admin r
 - Create an account; confirm it receives a seven-digit Persora ID and the ID appears in Settings.
 - Sign out and sign back in using that ID and password.
 - Add a vault record, reload the page, and verify the record persists.
-- Attach a small PDF or image, open the record, and confirm the file is served only after signing in.
+- With a Free account, add/edit/delete ordinary records and confirm new file, image, PDF, document, Smart Scan, profile-photo, contact-photo and business-card image uploads are rejected. Verify contact vCard import still saves the records and skips embedded photos.
+- On an active paid plan, attach a small PDF/image, open it, then let the plan expire or set its status to past due. Confirm new uploads are rejected while the existing file can still be previewed/downloaded and record CRUD still works.
+- Configure Brevo, send and verify a six-digit email code in Settings, and check the badge is gray without an active paid plan and blue while the paid plan is active.
 - Apply the Life Timeline migration; add a dated record; check that its due-date event appears once, links to the source record, and catches up after an offline interval.
 - Post a manual timeline event with an attachment, edit it, download the file, and delete the event. Confirm timeline title/description/URL are ciphertext in `timeline_events.encrypted_payload` and the R2 object bytes are encrypted; date/type/link metadata remains queryable.
 - Keep `TIMELINE_ENCRYPTION_KEY` stable and test authenticated account export includes readable timeline data and attachments.
@@ -159,7 +178,7 @@ All future administrator access requires a real Persora account with the admin r
 
 - The seven-digit ID is a login identifier, not a password. Members must keep their password strong and save the ID.
 - Password hashes use PostgreSQL `pgcrypto` bcrypt (cost 12). Sessions are random, stored server-side as hashes, and held in an `HttpOnly`, `SameSite=Lax` cookie for seven days. Sign-out, password change, suspension, and account deletion revoke sessions.
-- Login accepts either the account email or seven-digit Persora ID and is rate-limited after repeated failures. Email is not verified by an email provider.
+- Login accepts either the account email or seven-digit Persora ID and is rate-limited after repeated failures. Optional email verification uses a six-digit, 10-minute OTP sent through the configured Brevo account; the verification badge is gray on free/expired accounts and blue during an active paid term.
 - There is no self-service password-reset email yet. Do not promise account recovery until a verified recovery flow is configured.
 
 ## Troubleshooting
@@ -167,8 +186,10 @@ All future administrator access requires a real Persora account with the admin r
 - **The site stays in demo mode or sign-in is disabled:** set `VITE_USE_PAGES_FUNCTIONS=true` under the Pages **Production** environment and redeploy.
 - **Requests to `/api` fail:** confirm `functions/api/[[path]].js` is committed at the repository root, the deployment succeeded, and the Pages API switch is enabled.
 - **Database/auth calls return a configuration error:** check `SUPABASE_URL` and the encrypted `SUPABASE_SECRET_KEY` in Pages settings, and confirm `supabase/schema.sql` completed without errors. Never put the secret in a `VITE_` variable.
+- **Signup says the Free plan is not configured:** apply `supabase/migrations/202610060001_ensure_default_free_plan.sql` or rerun `supabase/schema.sql`; verify `subscription_plans` contains an active row with slug `free`. The Pages API also creates or reactivates the default Free row during signup when the table exists.
 - **Account creation fails on password hashing:** confirm the schema created `persora_hash_password` and `persora_verify_password`, and that `pgcrypto` is enabled.
-- **Uploads fail or R2 reports unavailable:** confirm the binding is named exactly `VAULT_FILES`, points to the intended bucket, and the site was redeployed after adding it.
+- **Uploads fail or R2 reports unavailable:** confirm the binding is named exactly `VAULT_FILES`, points to the intended bucket, and the site was redeployed after adding it. New member uploads require an active paid plan; existing-file reads and record CRUD do not.
+- **Email verification cannot send:** in Admin → Email settings, confirm OTP verification is enabled and a verified Brevo sender is saved; confirm `BREVO_API_KEY` exists as an encrypted Cloudflare Pages secret and that Pages was redeployed. Also confirm the email-verification migration was applied.
 - **First-admin setup is unavailable:** confirm the encrypted `ADMIN_BOOTSTRAP_SECRET` is temporarily configured in Production, the schema ran, and the owner is signed in to the production site.
 - **An old Supabase Auth account cannot sign in:** the old Auth password cannot be converted into the custom bcrypt hash. No automated recovery is included yet; arrange a verified migration or recovery process before changing or deleting any old data.
 

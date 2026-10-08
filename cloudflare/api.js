@@ -1,11 +1,13 @@
 import { handleTimeline, loadTimelineExport, readTimelineExportAttachment } from "./timeline.js";
-import { SmartScanError, MAX_SMART_SCAN_FILE_BYTES, extractDocumentFields, runGoogleVisionOcr, smartScanMimeType } from "./smart-scan.js";
+import { SmartScanError, MAX_SMART_SCAN_FILE_BYTES, extractDocumentFields, runAzureDocumentIntelligenceOcr, smartScanMimeType } from "./smart-scan.js";
 
 const DEFAULT_SETTINGS = {
   billing: { currency: "BDT", manualInstructions: "Follow the account details shown for your selected payment method.", billingEnabled: false, minTermMonths: 1, maxTermMonths: 12 },
   storage: { defaultFreeGb: 5, maxUploadMb: 25 },
   paymentMethods: [],
   siteContent: {},
+  email: { verificationEnabled: true, senderName: "Persora", senderEmail: "", replyToEmail: "", replyToName: "Persora Support" },
+  smartScan: { enabled: true },
   alarmRingtones: [],
 };
 const MAX_CONFIGURABLE_UPLOAD_MB = 150;
@@ -53,17 +55,17 @@ export default {
       if (url.pathname === "/auth/register" && request.method === "POST") {
         const body = await readBody(request);
         const result = await registerAccount(body, request, env);
-        return jsonWithCookie({ user: publicUser(result.profile) }, 201, origin, sessionCookie(result.token, request));
+        return jsonWithCookie({ user: await publicUser(result.profile, env) }, 201, origin, sessionCookie(result.token, request));
       }
       if (url.pathname === "/auth/login" && request.method === "POST") {
         const body = await readBody(request);
         const result = await loginAccount(body, request, env);
-        return jsonWithCookie({ user: publicUser(result.profile) }, 200, origin, sessionCookie(result.token, request));
+        return jsonWithCookie({ user: await publicUser(result.profile, env) }, 200, origin, sessionCookie(result.token, request));
       }
       if (url.pathname === "/auth/me" && request.method === "GET") {
         const identity = await authorize(request, env);
         if (!identity) return json({ error: "Your session expired. Sign in again." }, 401, origin);
-        return json({ user: publicUser(identity) }, 200, origin);
+        return json({ user: await publicUser(identity, env) }, 200, origin);
       }
       if (url.pathname === "/auth/logout" && request.method === "POST") {
         await logoutSession(request, env);
@@ -74,6 +76,17 @@ export default {
         if (!identity) return json({ error: "Your session expired. Sign in again." }, 401, origin);
         const body = await readBody(request);
         return json(await changePassword(identity, body, env), 200, origin);
+      }
+      if (url.pathname === "/email-verification/send" && request.method === "POST") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in to verify your email address." }, 401, origin);
+        return json(await sendEmailVerificationCode(identity, env), 200, origin);
+      }
+      if (url.pathname === "/email-verification/verify" && request.method === "POST") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in to verify your email address." }, 401, origin);
+        const body = await readBody(request);
+        return json(await verifyEmailVerificationCode(identity, body, env), 200, origin);
       }
       if (url.pathname === "/admin/bootstrap/status" && request.method === "GET") {
         return json(await bootstrapStatus(env), 200, origin);
@@ -224,6 +237,8 @@ export default {
       if (url.pathname === "/smart-scan" && request.method === "POST") {
         const identity = await authorize(request, env);
         if (!identity) return json({ error: "Sign in to scan a private document." }, 401, origin);
+        if (!(await isSmartScanEnabled(identity.id, env))) return json({ error: "Smart Scan is currently disabled for this account by an administrator." }, 403, origin);
+        if (!(await hasActivePaidUploadPlan(identity.id, env))) throw uploadPlanRequiredError();
         const contentLength = Number(request.headers.get("content-length") || 0);
         if (contentLength > MAX_SMART_SCAN_FILE_BYTES + 512 * 1024) return json({ error: "Smart Scan supports files up to 7 MB." }, 413, origin);
         let form;
@@ -244,7 +259,8 @@ export default {
         const retry = form.get("retry") === "true";
         const bytes = new Uint8Array(await file.arrayBuffer());
         const contentHash = bytesToHex(await crypto.subtle.digest("SHA-256", bytes));
-        const fieldSignature = await sha256Hex(JSON.stringify({ section, fields }));
+        const fieldSignature = await sha256Hex(JSON.stringify({ section, fields, extractionVersion: "additional-data-v2" }));
+        await recordSmartScanUsage(identity.id, { scans: 1 }, env);
         let cachedPayload = null;
         let cacheWarning = "";
         try { cachedPayload = await loadSmartScanCache(identity.id, contentHash, env); }
@@ -260,7 +276,8 @@ export default {
         const ocrCached = Boolean(ocrText);
         if (!ocrCached) {
           try {
-            const ocr = await runGoogleVisionOcr(bytes, mimeType, env);
+            await recordSmartScanUsage(identity.id, { ocrRuns: 1 }, env);
+            const ocr = await runAzureDocumentIntelligenceOcr(bytes, mimeType, env);
             ocrText = ocr.text;
             pagesProcessed = ocr.pagesProcessed;
             warnings = ocr.warnings;
@@ -273,7 +290,10 @@ export default {
           }
         }
         let extracted;
-        try { extracted = await extractDocumentFields(env, section, fields, ocrText, warnings); }
+        try {
+          await recordSmartScanUsage(identity.id, { aiExtractions: 1 }, env);
+          extracted = await extractDocumentFields(env, section, fields, ocrText, warnings);
+        }
         catch (error) {
           if (error instanceof SmartScanError) return json({ error: error.message, retryable: error.retryable, phase: error.phase, ocrCached, ...(cacheWarning ? { cacheWarning } : {}) }, error.status, origin);
           throw error;
@@ -301,6 +321,7 @@ export default {
           const isEmoji = typeof avatarUrl === "string" && avatarUrl.length <= 80 && /^emoji:[^\u0000-\u001f<>]{1,24}$/u.test(avatarUrl);
           const isDiceBearAdventurer = typeof avatarUrl === "string" && PROFILE_DICEBEAR_AVATARS.has(avatarUrl);
           if (avatarUrl === undefined || (avatarUrl && !isPhoto && !isEmoji && !isDiceBearAdventurer)) return json({ error: "Choose a supported profile photo, emoji, or DiceBear Adventurer avatar." }, 400, origin);
+          if (isPhoto && avatarUrl !== identity.avatar_url && !(await hasActivePaidUploadPlan(identity.id, env))) throw uploadPlanRequiredError();
           updates.avatar_url = avatarUrl || null;
         }
         const result = await supabaseAdminFetch(`/rest/v1/profiles?id=eq.${encodeURIComponent(identity.id)}`, env, {
@@ -411,6 +432,7 @@ export default {
       if (url.pathname === "/shares/upload" && request.method === "POST") {
         const identity = await authorize(request, env);
         if (!identity) return json({ error: "Sign in is required to upload a shared file." }, 401, origin);
+        if (!(await hasActivePaidUploadPlan(identity.id, env))) throw uploadPlanRequiredError();
         const share = await requireEditableShare(identity, url.searchParams.get("shareId") || "", env);
         const settings = await loadSettings(env);
         const maxFileBytes = Math.max(1, Math.min(MAX_CONFIGURABLE_UPLOAD_MB, Number(settings.storage.maxUploadMb) || 25)) * 1024 * 1024;
@@ -476,6 +498,7 @@ export default {
       if (url.pathname === "/medical-records/upload" && request.method === "POST") {
         const identity = await authorize(request, env);
         if (!identity) return json({ error: "Sign in is required to upload a private medical file." }, 401, origin);
+        if (!(await hasActivePaidUploadPlan(identity.id, env))) throw uploadPlanRequiredError();
         const settings = await loadSettings(env);
         const maxFileBytes = Math.max(1, Math.min(MAX_CONFIGURABLE_UPLOAD_MB, Number(settings.storage.maxUploadMb) || 25)) * 1024 * 1024;
         const contentLength = Number(request.headers.get("content-length") || 0);
@@ -519,12 +542,14 @@ export default {
       if (url.pathname === "/timeline" || url.pathname.startsWith("/timeline/")) {
         const identity = await authorize(request, env);
         if (!identity) return json({ error: "Sign in is required to access your private timeline." }, 401, origin);
+        if (url.pathname === "/timeline/attachment" && request.method === "POST" && !(await hasActivePaidUploadPlan(identity.id, env))) throw uploadPlanRequiredError();
         const timelineSettings = url.pathname === "/timeline/attachment" && request.method === "POST" ? await loadSettings(env) : null;
         return await handleTimeline(request, identity, env, origin, userStorageUsage, timelineSettings?.storage.maxUploadMb);
       }
       if (url.pathname === "/upload" && request.method === "POST") {
         const identity = await authorize(request, env);
         if (!identity) return json({ error: "Sign in is required to upload a private file." }, 401, origin);
+        if (!(await hasActivePaidUploadPlan(identity.id, env))) throw uploadPlanRequiredError();
         const settings = await loadSettings(env);
         const maxFileBytes = Math.max(1, Math.min(MAX_CONFIGURABLE_UPLOAD_MB, Number(settings.storage.maxUploadMb) || 25)) * 1024 * 1024;
         const contentLength = Number(request.headers.get("content-length") || 0);
@@ -648,6 +673,47 @@ export default {
         if (!identity) return json({ error: "Sign in is required." }, 401, origin);
         if (!(await isAdministrator(identity.id, env))) return json({ error: "Administrator access is required." }, 403, origin);
         return json(await loadAdminConsole(env), 200, origin);
+      }
+      if (url.pathname === "/admin/smart-scan/access" && request.method === "POST") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required." }, 401, origin);
+        if (!(await isAdministrator(identity.id, env))) return json({ error: "Administrator access is required." }, 403, origin);
+        const body = await readBody(request);
+        if (typeof body.enabled !== "boolean") return json({ error: "Choose whether Smart Scan is enabled." }, 400, origin);
+        if (body.scope === "global") {
+          await savePlatformSetting("smart_scan", { enabled: body.enabled }, identity.id, env);
+          await logAdminEvent(identity, { id: identity.id, email: identity.email || "" }, "control_smart_scan", env, { scope: "global", enabled: body.enabled });
+          return json({ ok: true, scope: "global", enabled: body.enabled }, 200, origin);
+        }
+        const targetId = typeof body.userId === "string" ? body.userId : "";
+        if (body.scope !== "user" || !isUuid(targetId)) return json({ error: "Choose a valid account or the global setting." }, 400, origin);
+        const target = await getProfile(targetId, env);
+        if (!target) return json({ error: "That account could not be found." }, 404, origin);
+        const updated = await supabaseAdminFetch("/rest/v1/smart_scan_usage?on_conflict=user_id", env, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" },
+          body: JSON.stringify({ user_id: targetId, enabled: body.enabled }),
+        });
+        if (!updated.ok) throw new HttpError("Smart Scan controls are unavailable. Apply the Smart Scan admin migration, then retry.", 503);
+        await logAdminEvent(identity, target, "control_smart_scan", env, { scope: "user", enabled: body.enabled });
+        return json({ ok: true, scope: "user", userId: targetId, enabled: body.enabled }, 200, origin);
+      }
+      if (url.pathname === "/admin/email/test" && request.method === "POST") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required." }, 401, origin);
+        if (!(await isAdministrator(identity.id, env))) return json({ error: "Administrator access is required." }, 403, origin);
+        const body = await readBody(request);
+        const to = typeof body.to === "string" ? body.to.trim().toLowerCase() : "";
+        if (!isValidEmailAddress(to)) throw new HttpError("Enter a valid recipient email address.", 400);
+        const settings = await loadSettings(env);
+        const result = await sendBrevoEmail(env, settings.email, {
+          to,
+          subject: "Persora email delivery test",
+          textContent: "This is a test message from your Persora admin email settings. If you received it, Brevo delivery is working.",
+          htmlContent: "<div style=\"font-family:Arial,sans-serif;color:#182230;max-width:520px;margin:24px auto;padding:28px;border:1px solid #e5e7eb;border-radius:16px\"><h2>Persora email test</h2><p>If you received this message, Brevo transactional email delivery is working.</p></div>",
+        });
+        await logAdminEvent(identity, { id: identity.id, email: identity.email || "" }, "test_email_delivery", env, { provider: "brevo" }).catch((error) => console.error("Persora could not log email test", safeError(error)));
+        return json({ ok: true, messageId: result.messageId }, 200, origin);
       }
       if (url.pathname === "/admin/settings" && request.method === "POST") {
         const identity = await authorize(request, env);
@@ -853,7 +919,8 @@ function sessionCookie(token, request, maxAge = SESSION_TTL_SECONDS) {
   const secure = new URL(request.url).protocol === "https:" ? "; Secure" : "";
   return `persora_session=${token}; Path=/api; Max-Age=${maxAge}; HttpOnly; SameSite=Lax${secure}`;
 }
-function publicUser(profile) {
+async function publicUser(profile, env) {
+  const uploadAccess = await getUploadEntitlement(profile.id, env);
   return {
     id: String(profile.id),
     userId: String(profile.login_id || ""),
@@ -862,8 +929,193 @@ function publicUser(profile) {
     role: profile.role === "admin" ? "admin" : "user",
     timezone: String(profile.timezone || "Asia/Dhaka"),
     avatarUrl: String(profile.avatar_url || ""),
+    emailVerified: Boolean(profile.email_verified_at),
+    uploadsEnabled: uploadAccess.uploadsEnabled,
     demo: false,
   };
+}
+const EMAIL_VERIFICATION_TTL_MS = 10 * 60 * 1000;
+const EMAIL_VERIFICATION_RESEND_MS = 60 * 1000;
+const EMAIL_VERIFICATION_WINDOW_MS = 60 * 60 * 1000;
+const EMAIL_VERIFICATION_MAX_SENDS = 5;
+const EMAIL_VERIFICATION_MAX_ATTEMPTS = 5;
+async function verificationCodeHash(identity, code, env) {
+  const secret = String(env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY || "");
+  if (!secret) throw new HttpError("Email verification is not configured. Please contact Persora support.", 503);
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const email = String(identity.email || "").trim().toLowerCase();
+  const message = `persora-email-verification-v1|${identity.id}|${email}|${code}`;
+  return bytesToHex(new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message))));
+}
+function secureSixDigitCode() {
+  const range = 900_000;
+  const limit = Math.floor(0x1_0000_0000 / range) * range;
+  const sample = new Uint32Array(1);
+  do { crypto.getRandomValues(sample); } while (sample[0] >= limit);
+  return String(100_000 + (sample[0] % range));
+}
+function secureEmailVerificationError() {
+  return new HttpError("Persora couldn't send the verification email. Please try again later.", 502);
+}
+async function callEmailVerificationRpc(functionName, args, env) {
+  let response;
+  try {
+    response = await supabaseAdminFetch(`/rest/v1/rpc/${functionName}`, env, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(args),
+    });
+  } catch (error) {
+    console.error("Persora email verification database request failed", safeError(error));
+    throw new HttpError("Email verification is temporarily unavailable. Please try again later.", 503);
+  }
+  if (!response.ok) {
+    console.error("Persora email verification database function failed", functionName, response.status);
+    throw new HttpError("Email verification is temporarily unavailable. Please try again later.", 503);
+  }
+  let result;
+  try { result = await response.json(); } catch { result = null; }
+  if (!Array.isArray(result) || !result[0] || typeof result[0] !== "object") {
+    console.error("Persora email verification database function returned an invalid result", functionName);
+    throw new HttpError("Email verification is temporarily unavailable. Please try again later.", 503);
+  }
+  return result[0];
+}
+async function invalidateEmailVerificationCode(userId, codeHash, now, env) {
+  const response = await supabaseAdminFetch("/rest/v1/rpc/invalidate_email_verification_code", env, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ p_user_id: userId, p_code_hash: codeHash, p_now: now }),
+  });
+  if (!response.ok) console.error("Persora could not invalidate an undelivered email verification code", response.status);
+}
+function isValidEmailAddress(value) {
+  return typeof value === "string" && value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+function brevoEmailConfiguration(env, settings) {
+  const apiKey = String(env.BREVO_API_KEY || "").trim();
+  if (!apiKey) throw new HttpError("Brevo email is not configured. Ask an administrator to add BREVO_API_KEY as an encrypted Cloudflare Pages secret, then redeploy.", 503);
+  const senderEmail = String(settings?.senderEmail || "").trim().toLowerCase();
+  if (!isValidEmailAddress(senderEmail)) throw new HttpError("Set a valid, verified sender email in Admin → Email settings before sending.", 503);
+  const senderName = String(settings?.senderName || "Persora").trim().slice(0, 70) || "Persora";
+  const replyToEmail = String(settings?.replyToEmail || "").trim().toLowerCase();
+  if (replyToEmail && !isValidEmailAddress(replyToEmail)) throw new HttpError("The Admin → Email settings reply-to address is invalid.", 503);
+  const replyToName = String(settings?.replyToName || "").trim().slice(0, 70);
+  return {
+    apiKey,
+    sender: { email: senderEmail, name: senderName },
+    ...(replyToEmail ? { replyTo: { email: replyToEmail, ...(replyToName ? { name: replyToName } : {}) } } : {}),
+  };
+}
+async function sendBrevoEmail(env, settings, { to, toName, subject, textContent, htmlContent }) {
+  const config = brevoEmailConfiguration(env, settings);
+  if (!isValidEmailAddress(String(to || "").trim())) throw new HttpError("Enter a valid recipient email address.", 400);
+  const body = {
+    sender: config.sender,
+    to: [{ email: String(to).trim(), ...(toName ? { name: String(toName).slice(0, 100) } : {}) }],
+    subject: String(subject || "").slice(0, 200),
+    textContent: String(textContent || "").slice(0, 10000),
+    htmlContent: String(htmlContent || "").slice(0, 20000),
+    ...(config.replyTo ? { replyTo: config.replyTo } : {}),
+  };
+  let response;
+  try {
+    response = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: { "api-key": config.apiKey, accept: "application/json", "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    console.error("Persora could not reach Brevo transactional email", safeError(error));
+    throw new HttpError("Brevo email delivery could not be reached. Please try again later.", 502);
+  }
+  if (!response.ok) {
+    let providerCode = "";
+    try { const result = await response.json(); providerCode = typeof result?.code === "string" ? result.code.slice(0, 80) : ""; } catch { /* provider may return non-JSON */ }
+    console.error("Brevo rejected a transactional email", response.status, providerCode);
+    throw new HttpError(`Brevo rejected the email (HTTP ${response.status}). Verify the sender domain and transactional-email permission on the API key.`, 502);
+  }
+  let result = {};
+  try { result = await response.json(); } catch { /* Brevo may return an empty success response */ }
+  return { messageId: typeof result?.messageId === "string" ? result.messageId : "" };
+}
+async function sendEmailVerificationCode(identity, env) {
+  if (identity.email_verified_at) return { ok: true, alreadyVerified: true };
+  const email = String(identity.email || "").trim().toLowerCase();
+  if (!email) throw new HttpError("This account has no registered email address to verify.", 400);
+  const settings = await loadSettings(env);
+  if (settings.email.verificationEnabled !== true) throw new HttpError("Email verification is currently disabled by the Persora administrator.", 403);
+  // Fail before reserving an OTP so a missing Cloudflare secret or sender setting never consumes a send attempt.
+  brevoEmailConfiguration(env, settings.email);
+
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const code = secureSixDigitCode();
+  const codeHash = await verificationCodeHash(identity, code, env);
+  const reservation = await callEmailVerificationRpc("reserve_email_verification_send", {
+    p_user_id: identity.id,
+    p_email: email,
+    p_code_hash: codeHash,
+    p_now: nowIso,
+    p_expires_at: new Date(now.getTime() + EMAIL_VERIFICATION_TTL_MS).toISOString(),
+    p_resend_seconds: EMAIL_VERIFICATION_RESEND_MS / 1000,
+    p_window_seconds: EMAIL_VERIFICATION_WINDOW_MS / 1000,
+    p_max_sends: EMAIL_VERIFICATION_MAX_SENDS,
+  }, env);
+  if (reservation.allowed !== true) {
+    if (reservation.reason === "already_verified") return { ok: true, alreadyVerified: true };
+    if (reservation.reason === "email_changed") throw new HttpError("The registered email changed. Refresh your profile and request a new verification code.", 409);
+    if (reservation.reason === "resend") {
+      const seconds = Math.max(1, Number(reservation.retry_after_seconds) || 60);
+      throw new HttpError(`Please wait ${seconds} seconds before requesting another verification code.`, 429);
+    }
+    if (reservation.reason === "hourly_limit") throw new HttpError("Too many verification emails were requested. Try again in an hour.", 429);
+    throw new HttpError("Email verification is temporarily unavailable. Please try again later.", 503);
+  }
+
+  try {
+    await sendBrevoEmail(env, settings.email, {
+      to: email,
+      subject: "Your Persora email verification code",
+      textContent: `Your Persora verification code is ${code}. It expires in 10 minutes. If you did not request this code, you can ignore this email.`,
+      htmlContent: `<div style="font-family:Arial,sans-serif;color:#182230;max-width:520px;margin:24px auto;padding:28px;border:1px solid #e5e7eb;border-radius:16px"><h2 style="margin:0 0 12px">Verify your Persora email</h2><p>Enter this one-time code in Persora Settings:</p><p style="font-size:34px;font-weight:700;letter-spacing:8px;margin:24px 0;color:#1877f2">${code}</p><p>This code expires in 10 minutes. If you did not request it, you can ignore this email.</p></div>`,
+    });
+  } catch (error) {
+    await invalidateEmailVerificationCode(identity.id, codeHash, nowIso, env).catch(() => {});
+    console.error("Persora Brevo email delivery failed", safeError(error));
+    throw secureEmailVerificationError();
+  }
+  return { ok: true, expiresInSeconds: EMAIL_VERIFICATION_TTL_MS / 1000 };
+}
+async function verifyEmailVerificationCode(identity, body, env) {
+  if (identity.email_verified_at) return { ok: true, user: await publicUser(identity, env) };
+  const settings = await loadSettings(env);
+  if (settings.email.verificationEnabled !== true) throw new HttpError("Email verification is currently disabled by the Persora administrator.", 403);
+  const code = typeof body.code === "string" ? body.code.trim() : "";
+  if (!/^\d{6}$/.test(code)) throw new HttpError("Enter the six-digit code from your verification email.", 400);
+  const candidateHash = await verificationCodeHash(identity, code, env);
+  const result = await callEmailVerificationRpc("complete_email_verification", {
+    p_user_id: identity.id,
+    p_email: String(identity.email || "").trim().toLowerCase(),
+    p_candidate_hash: candidateHash,
+    p_now: new Date().toISOString(),
+    p_max_attempts: EMAIL_VERIFICATION_MAX_ATTEMPTS,
+  }, env);
+  switch (result.outcome) {
+    case "verified":
+    case "already_verified": {
+      const verifiedAt = result.verified_at || new Date().toISOString();
+      return { ok: true, user: await publicUser({ ...identity, email_verified_at: verifiedAt }, env) };
+    }
+    case "email_changed": throw new HttpError("The registered email changed. Request a new verification code.", 409);
+    case "expired": throw new HttpError("That code has expired. Request a new verification code.", 400);
+    case "too_many_attempts": throw new HttpError("Too many incorrect attempts. Request a new verification code.", 429);
+    case "mismatch": throw new HttpError("That code doesn't match. Check the email and try again.", 400);
+    case "missing": throw new HttpError("Request a new verification code before trying again.", 400);
+    default:
+      console.error("Persora email verification returned an unknown result", result.outcome);
+      throw new HttpError("Email verification is temporarily unavailable. Please try again later.", 503);
+  }
 }
 function getSupabaseUrl(env) { return String(env.SUPABASE_URL || "").replace(/\/$/, ""); }
 function serviceHeaders(env, extra = {}) {
@@ -886,6 +1138,31 @@ async function restRows(path, env) {
   const response = await fetch(`${base}/rest/v1/${path}`, { headers: serviceHeaders(env) });
   if (!response.ok) throw new Error(`Database request failed (${response.status}).`);
   return response.json();
+}
+async function isSmartScanEnabled(userId, env) {
+  try {
+    const [settings, userRows] = await Promise.all([
+      loadSettings(env),
+      restRows(`smart_scan_usage?user_id=eq.${encodeURIComponent(userId)}&select=enabled&limit=1`, env),
+    ]);
+    return settings.smartScan.enabled !== false && userRows?.[0]?.enabled !== false;
+  } catch (error) {
+    console.error("Persora could not verify Smart Scan access controls", safeError(error));
+    throw new HttpError("Smart Scan access controls are temporarily unavailable. Please try again later.", 503);
+  }
+}
+async function recordSmartScanUsage(userId, { scans = 0, ocrRuns = 0, aiExtractions = 0 } = {}, env) {
+  try {
+    const response = await supabaseAdminFetch("/rest/v1/rpc/persora_record_smart_scan_usage", env, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ p_user_id: userId, p_scans: scans, p_ocr_runs: ocrRuns, p_ai_extractions: aiExtractions }),
+    });
+    if (!response.ok) console.error("Persora could not record Smart Scan usage", response.status);
+  } catch (error) {
+    // Usage analytics must never interrupt an otherwise valid private scan.
+    console.error("Persora could not record Smart Scan usage", safeError(error));
+  }
 }
 const SMART_SCAN_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 async function loadSmartScanCache(ownerId, contentHash, env) {
@@ -956,7 +1233,7 @@ async function authorize(request, env) {
   const tokenHash = await sha256Hex(token);
   const sessions = await restRows(`user_sessions?token_hash=eq.${tokenHash}&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&select=id,user_id`, env);
   if (!Array.isArray(sessions) || !sessions[0]) return null;
-  const profiles = await restRows(`profiles?id=eq.${encodeURIComponent(sessions[0].user_id)}&select=id,login_id,email,full_name,role,account_status,timezone,avatar_url`, env);
+  const profiles = await restRows(`profiles?id=eq.${encodeURIComponent(sessions[0].user_id)}&select=id,login_id,email,full_name,role,account_status,timezone,avatar_url,email_verified_at`, env);
   const profile = profiles?.[0];
   if (!profile || profile.account_status !== "active") return null;
   return { ...profile, session_id: sessions[0].id };
@@ -980,6 +1257,48 @@ async function createSession(userId, env) {
   if (!response.ok) throw new Error(`Could not create a secure session (${response.status}).`);
   return token;
 }
+async function ensureActiveFreePlan(env) {
+  const path = "subscription_plans?slug=eq.free&select=id,slug,storage_gb,active&limit=1";
+  let rows = await restRows(path, env);
+  let plan = rows[0];
+  if (plan?.active === true) return plan;
+
+  if (plan) {
+    const response = await supabaseAdminFetch(`/rest/v1/subscription_plans?id=eq.${encodeURIComponent(plan.id)}`, env, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Prefer: "return=representation" },
+      body: JSON.stringify({ active: true }),
+    });
+    if (!response.ok) {
+      console.error("Persora could not reactivate the default Free plan", response.status);
+      throw new HttpError("The Free plan is currently unavailable. Please contact Persora support.", 503);
+    }
+    const updated = await response.json().catch(() => []);
+    plan = Array.isArray(updated) ? updated[0] : updated;
+    if (plan?.id && plan.active === true) return plan;
+  } else {
+    const response = await supabaseAdminFetch("/rest/v1/subscription_plans", env, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Prefer: "return=representation" },
+      body: JSON.stringify({ slug: "free", name: "Free", description: "A private place to get started.", storage_gb: 5, price_per_gb_monthly: 0, active: true, sort_order: 0 }),
+    });
+    if (!response.ok && response.status !== 409) {
+      console.error("Persora could not create the default Free plan", response.status);
+      throw new HttpError("The Free plan could not be initialized. Please contact Persora support.", 503);
+    }
+    if (response.ok) {
+      const created = await response.json().catch(() => []);
+      plan = Array.isArray(created) ? created[0] : created;
+      if (plan?.id && plan.active === true) return plan;
+    }
+  }
+
+  // Another signup may have initialized the row between our read and insert.
+  rows = await restRows("subscription_plans?slug=eq.free&active=eq.true&select=id,slug,storage_gb,active&limit=1", env);
+  if (rows[0]) return rows[0];
+  throw new HttpError("The Free plan is not configured. Please contact Persora support.", 503);
+}
+
 async function registerAccount(body, request, env) {
   const fullName = typeof body.fullName === "string" ? body.fullName.trim() : "";
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
@@ -989,14 +1308,13 @@ async function registerAccount(body, request, env) {
   if (!validPasswordLength(password)) throw new HttpError("Use a password with at least 12 characters and no more than 72 bytes.");
   const existing = await restRows(`profiles?email=eq.${encodeURIComponent(email)}&select=id`, env);
   if (existing.length) throw new HttpError("An account with this email already exists.", 409);
-  const plans = await restRows("subscription_plans?slug=eq.free&active=eq.true&select=id,storage_gb", env);
-  if (!plans[0]) throw new HttpError("The Free plan is not configured. Please contact the site administrator.", 503);
+  const freePlan = await ensureActiveFreePlan(env);
   const hash = await hashPassword(password, env);
   let profile = null;
   for (let attempt = 0; attempt < 8; attempt++) {
     const candidate = {
       login_id: randomLoginId(), email, full_name: fullName,
-      password_hash: hash,
+      email_verified_at: null, password_hash: hash,
       timezone: "Asia/Dhaka", role: "user", account_status: "active",
     };
     const response = await supabaseAdminFetch("/rest/v1/profiles", env, {
@@ -1016,7 +1334,7 @@ async function registerAccount(body, request, env) {
   try {
     const subscription = await supabaseAdminFetch("/rest/v1/user_subscriptions", env, {
       method: "POST", headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
-      body: JSON.stringify({ user_id: profile.id, plan_id: plans[0].id, status: "active", storage_limit_gb: Number(plans[0].storage_gb) }),
+      body: JSON.stringify({ user_id: profile.id, plan_id: freePlan.id, status: "active", storage_limit_gb: Number(freePlan.storage_gb) }),
     });
     if (!subscription.ok) throw new Error(`Could not activate the Free plan (${subscription.status}).`);
     const token = await createSession(profile.id, env);
@@ -1034,7 +1352,7 @@ async function loginAccount(body, request, env) {
   const validEmail = identifier.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
   if ((!isLoginId && !validEmail) || !password || new TextEncoder().encode(password).length > 72) throw new HttpError("Enter a valid email address or seven-digit Persora ID and password.");
   const lookup = isLoginId ? `login_id=eq.${identifier}` : `email=eq.${encodeURIComponent(identifier)}`;
-  const rows = await restRows(`profiles?${lookup}&select=id,login_id,email,full_name,role,account_status,timezone,avatar_url,password_hash`, env);
+  const rows = await restRows(`profiles?${lookup}&select=id,login_id,email,full_name,role,account_status,timezone,avatar_url,email_verified_at,password_hash`, env);
   const profile = rows[0];
   // Use the canonical Persora ID so attempting the same account via email and ID
   // consumes one shared account limit; unknown identifiers get their own bucket.
@@ -1528,6 +1846,7 @@ async function saveMedicalRecord(identity, body, env) {
   const hospital = clean(body.hospital, "Hospital or clinic", 180);
   const specialty = clean(body.specialty, "Medical specialty", 120);
   const notes = clean(body.notes, "Notes", 5000);
+  const additionalData = clean(body.additionalData, "Additional Data", 5000);
   const diagnosis = clean(body.diagnosis, "Diagnosis", 400);
   const testName = clean(body.testName, "Test name", 180);
   const testResult = clean(body.testResult, "Test result summary", 600);
@@ -1570,7 +1889,7 @@ async function saveMedicalRecord(identity, body, env) {
   }
   const folderId = await resolveVaultFolderId(identity, body.folderId, "medical-records", env);
   const row = {
-    user_id: identity.id, title, record_type: recordType, record_date: recordDate, provider, hospital, specialty, notes,
+    user_id: identity.id, title, record_type: recordType, record_date: recordDate, provider, hospital, specialty, notes, additional_data: additionalData,
     diagnosis, test_name: testName, test_result: testResult, medication_notes: medicationNotes, follow_up_date: followUpDate,
     related_reminder_id: relatedReminderId || null, file_key: file?.key || null, file_name: file?.name || null, file_size: file?.size ?? null, file_type: file?.type || null, folder_id: folderId,
     updated_at: new Date().toISOString(),
@@ -1881,6 +2200,8 @@ async function loadSettings(env) {
     storage: { ...DEFAULT_SETTINGS.storage, ...(stored.storage || {}) },
     paymentMethods: Array.isArray(stored.payment_methods) ? stored.payment_methods : DEFAULT_SETTINGS.paymentMethods,
     siteContent: stored.site_content && typeof stored.site_content === "object" && !Array.isArray(stored.site_content) ? stored.site_content : DEFAULT_SETTINGS.siteContent,
+    email: { ...DEFAULT_SETTINGS.email, ...(stored.email && typeof stored.email === "object" && !Array.isArray(stored.email) ? stored.email : {}) },
+    smartScan: { ...DEFAULT_SETTINGS.smartScan, ...(stored.smart_scan && typeof stored.smart_scan === "object" && !Array.isArray(stored.smart_scan) ? stored.smart_scan : {}) },
     alarmRingtones: Array.isArray(stored.alarm_ringtones) ? stored.alarm_ringtones : DEFAULT_SETTINGS.alarmRingtones,
   };
 }
@@ -1909,6 +2230,26 @@ async function markSubscriptionPastDue(userId, env) {
     method: "PATCH", headers: { "Content-Type": "application/json", Prefer: "return=minimal" }, body: JSON.stringify({ status: "past_due" }),
   });
   if (!response.ok) console.error("Persora could not mark an expired subscription past due", response.status);
+}
+async function getUploadEntitlement(userId, env) {
+  const subscriptions = await restRows(`user_subscriptions?user_id=eq.${encodeURIComponent(userId)}&select=plan_id,status,current_period_end`, env);
+  const subscription = subscriptions[0];
+  if (!subscription?.plan_id || subscription.status !== "active") return { uploadsEnabled: false };
+  const plans = await restRows(`subscription_plans?id=eq.${encodeURIComponent(subscription.plan_id)}&select=slug`, env);
+  const plan = plans[0];
+  if (!plan || plan.slug === "free") return { uploadsEnabled: false };
+  const expiry = subscription.current_period_end ? Date.parse(subscription.current_period_end) : NaN;
+  if (Number.isFinite(expiry) && expiry <= Date.now()) {
+    await markSubscriptionPastDue(userId, env);
+    return { uploadsEnabled: false };
+  }
+  return { uploadsEnabled: true };
+}
+async function hasActivePaidUploadPlan(userId, env) {
+  return (await getUploadEntitlement(userId, env)).uploadsEnabled;
+}
+function uploadPlanRequiredError() {
+  return new HttpError("File uploads require an active paid plan. Your existing files and all records remain available.", 403);
 }
 async function userStorageUsage(userId, bucket, env) {
   const [settings, subscriptionRows] = await Promise.all([
@@ -1941,11 +2282,12 @@ async function userStorageUsage(userId, bucket, env) {
   };
 }
 async function loadBilling(identity, env) {
-  const [settings, plans, subscriptionRows, paymentRows, usage] = await Promise.all([
+  const [settings, plans, subscriptionRows, paymentRows, usage, uploadAccess] = await Promise.all([
     loadSettings(env), listPlans(env, true),
     restRows(`user_subscriptions?user_id=eq.${encodeURIComponent(identity.id)}&select=plan_id,status,storage_limit_gb,current_period_end`, env),
     restRows(`payment_records?user_id=eq.${encodeURIComponent(identity.id)}&select=id,user_id,plan_id,amount,currency,method,reference,billing_period,duration_count,term_months,status,submitted_at,reviewed_at,reviewed_by,admin_note&order=submitted_at.desc&limit=100`, env),
     userStorageUsage(identity.id, env.VAULT_FILES, env),
+    getUploadEntitlement(identity.id, env),
   ]);
   const subscription = subscriptionRows[0];
   const plan = subscription?.plan_id ? (await restRows(`subscription_plans?id=eq.${encodeURIComponent(subscription.plan_id)}&select=name,slug,storage_gb`, env))[0] : null;
@@ -1959,6 +2301,7 @@ async function loadBilling(identity, env) {
     plans: plans.map((row) => publicPlan(row, settings.billing.currency)),
     payments,
     storage: usage,
+    uploadsEnabled: uploadAccess.uploadsEnabled,
     billingSettings: settings.billing,
     paymentMethods: settings.paymentMethods.filter((method) => method && method.active === true).sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0)),
     maxUploadMb: settings.storage.maxUploadMb,
@@ -2015,6 +2358,18 @@ async function savePlatformSetting(key, value, actorId, env) {
     const maxUploadMb = Number(value.maxUploadMb);
     if (!Number.isFinite(defaultFreeGb) || defaultFreeGb < 0.1 || defaultFreeGb > 10000 || !Number.isFinite(maxUploadMb) || maxUploadMb < 1 || maxUploadMb > MAX_CONFIGURABLE_UPLOAD_MB) throw new HttpError(`Storage quota must be 0.1–10,000 GB and upload size 1–${MAX_CONFIGURABLE_UPLOAD_MB} MB.`, 400);
     value = { defaultFreeGb, maxUploadMb };
+  } else if (key === "email") {
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new HttpError("Invalid email settings.", 400);
+    const verificationEnabled = value.verificationEnabled;
+    const senderName = typeof value.senderName === "string" ? value.senderName.trim().slice(0, 70) : "Persora";
+    const senderEmail = typeof value.senderEmail === "string" ? value.senderEmail.trim().toLowerCase() : "";
+    const replyToEmail = typeof value.replyToEmail === "string" ? value.replyToEmail.trim().toLowerCase() : "";
+    const replyToName = typeof value.replyToName === "string" ? value.replyToName.trim().slice(0, 70) : "";
+    if (typeof verificationEnabled !== "boolean") throw new HttpError("Choose whether email verification is enabled.", 400);
+    if (verificationEnabled && !isValidEmailAddress(senderEmail)) throw new HttpError("Set a valid, verified sender email before enabling email verification.", 400);
+    if (senderEmail && !isValidEmailAddress(senderEmail)) throw new HttpError("Enter a valid sender email address.", 400);
+    if (replyToEmail && !isValidEmailAddress(replyToEmail)) throw new HttpError("Enter a valid reply-to email address or leave it blank.", 400);
+    value = { verificationEnabled, senderName: senderName || "Persora", senderEmail, replyToEmail, replyToName };
   } else if (key === "payment_methods") {
     if (!Array.isArray(value) || value.length > 20) throw new HttpError("Add no more than 20 payment methods.", 400);
     const seenIds = new Set();
@@ -2031,6 +2386,9 @@ async function savePlatformSetting(key, value, actorId, env) {
       seenIds.add(id);
       return { id, name, accountName, accountIdentifier, instructions, active: entry.active, sort_order: sortOrder };
     });
+  } else if (key === "smart_scan") {
+    if (!value || typeof value !== "object" || Array.isArray(value) || typeof value.enabled !== "boolean") throw new HttpError("Choose whether Smart Scan is enabled globally.", 400);
+    value = { enabled: value.enabled };
   } else if (key === "alarm_ringtones") {
     value = cleanAlarmRingtoneSetting(value);
   } else if (key === "site_content") {
@@ -2241,6 +2599,23 @@ async function loadAdminConsole(env) {
     summarizeBucket(env.VAULT_FILES).then((data) => ({ status: "connected", ...data })).catch(() => ({ status: "unavailable", bytesUsed: 0, objectCount: 0, usersWithFiles: 0, byUser: {} })),
     summarizeDatabase(env).then((data) => ({ status: "connected", ...data })).catch(() => ({ status: "unavailable", bytesUsed: 0, recordCount: 0, byUser: {} })),
   ]);
+  const smartScanUsageRows = await restRowsPaged("smart_scan_usage?select=user_id,enabled,scan_count,ocr_run_count,ai_extraction_count,last_scanned_at&order=last_scanned_at.desc.nullslast", env).catch(() => null);
+  const smartScanByUser = {};
+  const smartScanTotals = { scans: 0, ocrRuns: 0, aiExtractions: 0 };
+  for (const row of smartScanUsageRows || []) {
+    if (!isUuid(row.user_id)) continue;
+    const usage = {
+      enabled: row.enabled !== false,
+      scans: Math.max(0, Number(row.scan_count) || 0),
+      ocrRuns: Math.max(0, Number(row.ocr_run_count) || 0),
+      aiExtractions: Math.max(0, Number(row.ai_extraction_count) || 0),
+      lastScannedAt: typeof row.last_scanned_at === "string" ? row.last_scanned_at : null,
+    };
+    smartScanByUser[row.user_id] = usage;
+    smartScanTotals.scans += usage.scans;
+    smartScanTotals.ocrRuns += usage.ocrRuns;
+    smartScanTotals.aiExtractions += usage.aiExtractions;
+  }
   const profileMap = new Map(profileRows.map((profile) => [profile.id, profile]));
   const planMap = new Map(plans.map((plan) => [plan.id, plan]));
   const payments = paymentRows.map((payment) => ({
@@ -2259,6 +2634,7 @@ async function loadAdminConsole(env) {
   const totalCombinedBytes = storageResult.bytesUsed + databaseResult.bytesUsed;
   return {
     metrics: { totalAccounts, activeAccounts, vaultEntries, pendingPayments },
+    smartScan: { enabled: settings.smartScan.enabled !== false, usageAvailable: Array.isArray(smartScanUsageRows), totals: smartScanTotals, byUser: smartScanByUser },
     profiles: profileRows.map((profile) => ({ ...profile, storage_bytes: combinedByUser[profile.id]?.totalBytes || 0, storage_file_bytes: combinedByUser[profile.id]?.bytes || 0, storage_database_bytes: combinedByUser[profile.id]?.databaseBytes || 0 })),
     events: eventRows,
     plans: plans.map((plan) => publicPlan(plan, billing.currency)),
@@ -2267,9 +2643,10 @@ async function loadAdminConsole(env) {
     billingSettings: billing,
     paymentMethods: settings.paymentMethods,
     siteContent: settings.siteContent,
+    emailSettings: settings.email,
     storageSettings: settings.storage,
     storage: { ...storageResult, databaseBytesUsed: databaseResult.bytesUsed, databaseRecordCount: databaseResult.recordCount, totalBytesUsed: totalCombinedBytes, databaseStatus: databaseResult.status, byUser: combinedByUser },
-    system: { database: databaseResult.status, storage: storageResult.status, supabaseUrlConfigured: Boolean(getSupabaseUrl(env)), secretKeyConfigured: Boolean(env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY) },
+    system: { database: databaseResult.status, storage: storageResult.status, supabaseUrlConfigured: Boolean(getSupabaseUrl(env)), secretKeyConfigured: Boolean(env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY), brevoApiKeyConfigured: Boolean(String(env.BREVO_API_KEY || "").trim()) },
   };
 }
 

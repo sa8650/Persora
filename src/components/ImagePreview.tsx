@@ -4,10 +4,11 @@ import { Maximize, RotateCcw, RotateCw, ZoomIn, ZoomOut } from "lucide-react";
 interface Props {
   src: string;
   name: string;
+  onReady?: () => void;
 }
 
 /** A private attachment viewer with fit, zoom, rotate, pan, and browser fullscreen controls. */
-export default function ImagePreview({ src, name }: Props) {
+export default function ImagePreview({ src, name, onReady }: Props) {
   const viewerRef = useRef<HTMLElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const dragStart = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
@@ -90,7 +91,8 @@ export default function ImagePreview({ src, name }: Props) {
         src={src}
         alt={name}
         draggable={false}
-        onLoad={(event) => setDimensions(`${event.currentTarget.naturalWidth} × ${event.currentTarget.naturalHeight}`)}
+        onLoad={(event) => { setDimensions(`${event.currentTarget.naturalWidth} × ${event.currentTarget.naturalHeight}`); onReady?.(); }}
+        onError={() => onReady?.()}
         style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom}) rotate(${rotation}deg)`, transition: dragging ? "none" : undefined }}
       />
     </div>

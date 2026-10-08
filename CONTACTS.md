@@ -1,10 +1,10 @@
 # Persora Contacts — API and Android sync
 
-This feature stores contacts in Persora's authenticated Pages API and a dedicated `public.contacts` table. The web UI is wired to the API. **There is no Android app source in this repository**, so the Android screen/client still needs to be connected to the contract below in the Android project.
+Contacts are stored in Persora's authenticated Pages API and the dedicated `public.contacts` table. The website and native Android app both use this API and the same account data. Android supports contact browsing/editing, duplicate review/merge, and import from the phone address book or a vCard/CSV file.
 
 ## Deploy the database change
 
-Apply `supabase/migrations/20260930_contacts.sql` to the Persora Supabase project before enabling cloud contacts. `supabase/schema.sql` also includes the complete contacts schema for new installations. RLS is enabled and browser roles have no direct table privileges; the Pages API uses its server-side service key and scopes every query to the authenticated owner. Browser/mobile clients must use the Pages API and must never receive a Supabase service-role key.
+For a fresh database, run the complete `supabase/schema.sql`. For an existing database, apply `supabase/migrations/20260930_contacts.sql` before enabling cloud contacts; apply the later `202610030001_vault_folders_wallet_cards.sql` migration for contact folders. RLS is enabled and browser roles have no direct table privileges; the Pages API uses its server-side secret and scopes every query to the authenticated owner. Browser and Android clients must use the Pages API and must never receive a Supabase secret key.
 
 ## API base and authentication
 
@@ -48,6 +48,7 @@ All routes below are relative to the `/api` prefix and return JSON unless noted.
   "category": "Work",
   "favorite": true,
   "photoKey": "owner-uuid/opaque-upload-key",
+  "folderId": "optional-owned-contacts-folder-uuid",
   "expectedUpdatedAt": "2026-09-30T08:30:00+00:00"
 }
 ```
@@ -85,6 +86,7 @@ List and save responses use database field names, for example:
   "notes": "Prefers email in the morning.",
   "category": "Work",
   "photo_key": "owner-uuid/opaque-upload-key",
+  "folder_id": "contacts-folder-uuid-or-null",
   "favorite": true,
   "created_at": "2026-09-30T08:00:00+00:00",
   "updated_at": "2026-09-30T08:30:00+00:00"
@@ -102,8 +104,12 @@ Treat `photo_key` as an opaque private-storage reference. Do not construct a pub
 5. Delete through `DELETE /contacts?id=…`; after success, remove the row from the local cache. Do not later upload an old cached copy as a create.
 6. For an image (JPG/JPEG, PNG, WEBP, or GIF; maximum 5 MB), upload the binary first, save the returned `key` in `photoKey`, and display/fetch through the private photo endpoint. Replacing/clearing a photo is done by saving the contact with the new `photoKey` or `null`/empty value.
 
-The current API returns a full contact list rather than a delta feed and has no push/WebSocket channel. Online changes become visible on the next refresh; the web client polls on a 30-second interval. The `updated_at` precondition prevents stale native updates, but clients should still refresh frequently and keep any offline edits in a pending queue until acknowledged.
+The API returns a full contact list rather than a delta feed and has no push/WebSocket channel. The web client refreshes while the Contacts page is open and on focus; Android keeps an app-private offline copy, refreshes during normal sync/resume, and writes edits when connected. The `updated_at` precondition prevents stale native updates, but clients should still refresh frequently and keep offline edits pending until acknowledged.
+
+### Android contact import
+
+From **More → Contacts → Import contacts**, a member can review contacts read from the phone address book or select a `.vcf`/CSV file. Permission to read the phone address book is requested only for phone import. New entries are compared with saved contacts and with each other before selection; duplicate people and duplicate/invalid phone numbers are flagged for review. Phone-address-book imports run through WorkManager in the background. An ongoing notification reports progress and the result; the import payload is held in an encrypted app-private file while queued. File imports use an on-screen preview before saving. Import uses the signed-in member's Persora session and the same `/api/contacts` endpoints—no Supabase key is present in the APK.
 
 ## UI behavior included on web
 
-The Contacts workspace page includes categorized add/edit forms, multiple phone numbers and country calling codes (Bangladesh `+880` by default), favorite controls, quick Call/SMS/WhatsApp/Email links, search/filter/sort, card/list layout, vCard import preview with duplicate checking, vCard export for selected/all contacts, duplicate review/merge, private profile photos, and browser-local demo contacts. During vCard import, phone numbers already saved in Persora or repeated within the selected file are removed from imported records. Malformed/out-of-range numbers are skipped while the remaining contact data imports; a post-import report identifies the contact and skipped value and offers a direct edit action so the user can enter a corrected number. Demo-mode contacts are deliberately local to that browser and do not sync to Android; cross-device sync requires the deployed API and an authenticated account.
+The web Contacts page includes categorized add/edit forms, multiple phone numbers and country calling codes (Bangladesh `+880` by default), favorites, browser links for Call/SMS/WhatsApp/Email, search/filter/sort, card/list layout, vCard import preview, vCard export, duplicate review/merge and private photos. During file import, saved/repeated phone numbers are excluded; malformed numbers are reported with a direct edit action. Android provides contact list/detail/edit, duplicate review/merge, vCard QR, phone address-book import and the same cloud data. Demo-mode website contacts stay in that browser and do not sync to Android; cross-device sync requires an authenticated account and the deployed API.

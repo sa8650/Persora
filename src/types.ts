@@ -22,7 +22,7 @@ export type MedicalRecordType = typeof MEDICAL_RECORD_TYPES[number];
 export interface MedicalRecordFile { key?: string; name: string; size: number; type: string; localOnly?: boolean }
 export interface MedicalRecordLink { recordType: "contact" | "vault_item"; recordId: string; linkKind: "related" | "reminder" }
 export interface MedicalRecord {
-  id: string; title: string; recordType: MedicalRecordType; recordDate: string; provider: string; hospital: string; specialty: string; notes: string;
+  id: string; title: string; recordType: MedicalRecordType; recordDate: string; provider: string; hospital: string; specialty: string; notes: string; additionalData: string;
   diagnosis: string; testName: string; testResult: string; medicationNotes: string; followUpDate: string; relatedReminderId?: string;
   file?: MedicalRecordFile; links: MedicalRecordLink[]; folderId?: string; createdAt: string; updatedAt: string;
 }
@@ -130,6 +130,20 @@ export interface SmartScanResult {
   ocrCached?: boolean;
   pagesProcessed?: number;
   cacheWarning?: string;
+}
+
+export const ADD_DOCUMENT_DESTINATION_EVENT = "persora:add-document-destination";
+export const ADD_DOCUMENT_HANDOFF_EVENT = "persora:add-document-handoff";
+
+export interface AddDocumentFlowDraft {
+  file: File;
+  spaceId: string;
+  typeValue: string;
+  scanResult: SmartScanResult | null;
+  scanError?: string;
+  scanAttempted: boolean;
+  values: Record<string, string>;
+  userEditedKeys?: string[];
 }
 
 export interface VaultFile {
@@ -276,6 +290,8 @@ export interface AppUser {
   role: AccountRole;
   timezone?: string;
   avatarUrl?: string;
+  emailVerified?: boolean;
+  uploadsEnabled?: boolean;
   demo?: boolean;
 }
 
@@ -333,6 +349,7 @@ export interface SiteContent {
 }
 export interface BillingSettings { currency: string; manualInstructions: string; billingEnabled: boolean; minTermMonths: number; maxTermMonths: number }
 export interface StorageSettings { defaultFreeGb: number; maxUploadMb: number }
+export interface EmailSettings { verificationEnabled: boolean; senderName: string; senderEmail: string; replyToEmail: string; replyToName: string }
 export interface PaymentRecord {
   id: string;
   user_id: string;
@@ -354,8 +371,11 @@ export interface PaymentRecord {
   admin_note?: string | null;
 }
 export interface StorageUsage { bytesUsed: number; fileBytes: number; databaseBytes: number; databaseRecordCount: number; objectCount: number; storageLimitBytes: number; storageLimitGb: number; planName: string }
+export interface SmartScanUsage { enabled: boolean; scans: number; ocrRuns: number; aiExtractions: number; lastScannedAt: string | null }
+export interface SmartScanAdminSnapshot { enabled: boolean; usageAvailable: boolean; totals: { scans: number; ocrRuns: number; aiExtractions: number }; byUser: Record<string, SmartScanUsage> }
 export interface AdminConsoleSnapshot {
   metrics: AdminMetrics;
+  smartScan: SmartScanAdminSnapshot;
   profiles: AdminProfile[];
   events: AdminAuditEvent[];
   plans: SubscriptionPlan[];
@@ -364,15 +384,17 @@ export interface AdminConsoleSnapshot {
   billingSettings: BillingSettings;
   paymentMethods: PaymentMethod[];
   siteContent: SiteContent;
+  emailSettings: EmailSettings;
   storageSettings: StorageSettings;
   storage: { status: "connected" | "unavailable"; databaseStatus: "connected" | "unavailable"; bytesUsed: number; databaseBytesUsed: number; databaseRecordCount: number; totalBytesUsed: number; objectCount: number; usersWithFiles: number; byUser: Record<string, { bytes: number; objects: number; databaseBytes: number; databaseRecords: number; totalBytes: number }> };
-  system: { database: "connected" | "unavailable"; storage: "connected" | "unavailable"; supabaseUrlConfigured: boolean; secretKeyConfigured: boolean };
+  system: { database: "connected" | "unavailable"; storage: "connected" | "unavailable"; supabaseUrlConfigured: boolean; secretKeyConfigured: boolean; brevoApiKeyConfigured: boolean };
 }
 export interface BillingSnapshot {
   subscription: { plan_id: string; plan_name: string; storage_limit_gb: number; status: string; current_period_end: string | null };
   plans: SubscriptionPlan[];
   payments: PaymentRecord[];
   storage: StorageUsage;
+  uploadsEnabled: boolean;
   billingSettings: BillingSettings;
   paymentMethods: PaymentMethod[];
   maxUploadMb: number;

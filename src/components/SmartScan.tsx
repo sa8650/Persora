@@ -54,7 +54,7 @@ export function SmartScanActionPanel({ fileName, canScan, busy, error, result, o
   </section>;
 }
 
-export function SmartScanFieldNote({ field, currentValue, onApply }: { field?: SmartScanFieldResult; currentValue: string; onApply: (value: string) => void }) {
+export function SmartScanFieldNote({ field, currentValue, onApply, allowApply = true }: { field?: SmartScanFieldResult; currentValue: string; onApply: (value: string) => void; allowApply?: boolean }) {
   if (!field) return null;
   if (!field.value) return <span className="smart-scan-field-note is-uncertain"><AlertTriangle size={11}/><span>Needs review{field.reason ? ` · ${field.reason}` : " · No verified value was filled."}</span></span>;
   const alreadyApplied = currentValue.trim() === field.value;
@@ -62,6 +62,6 @@ export function SmartScanFieldNote({ field, currentValue, onApply }: { field?: S
   const evidence = field.evidence ? ` · “${field.evidence.slice(0, 110)}${field.evidence.length > 110 ? "…" : ""}”` : "";
   return <span className={`smart-scan-field-note ${lowConfidence ? "is-uncertain" : field.confidence === "high" ? "is-confident" : "is-medium"}`}>
     {lowConfidence ? <AlertTriangle size={11}/> : <CheckCircle2 size={11}/>}<span>{lowConfidence ? `Low-confidence suggestion · “${field.value}” · verify` : `Scan suggestion · ${field.confidence}`}{evidence}</span>
-    {!alreadyApplied && <button type="button" onClick={() => onApply(field.value)}>Use suggestion</button>}
+    {allowApply && !alreadyApplied && <button type="button" onClick={() => onApply(field.value)}>Use suggestion</button>}
   </span>;
 }

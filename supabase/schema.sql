@@ -14,6 +14,7 @@ create table if not exists public.profiles (
   account_status text not null default 'active' check (account_status in ('active', 'suspended')),
   timezone text not null default 'Asia/Dhaka',
   avatar_url text,
+  email_verified_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint profiles_login_id_format check (login_id is null or login_id ~ '^[0-9]{7}$')
@@ -26,8 +27,235 @@ alter table public.profiles drop constraint if exists profiles_id_fkey;
 alter table public.profiles add column if not exists login_id text;
 alter table public.profiles add column if not exists password_hash text;
 alter table public.profiles add column if not exists account_status text not null default 'active';
+alter table public.profiles add column if not exists email_verified_at timestamptz;
 update public.profiles set email = lower(email) where email is not null and email is distinct from lower(email);
 create unique index if not exists profiles_email_ci_unique_idx on public.profiles(lower(email)) where email is not null;
+
+create table if not exists public.email_verification_codes (
+  user_id uuid primary key references public.profiles(id) on delete cascade,
+  email text not null,
+  code_hash text not null,
+  expires_at timestamptz not null,
+  sent_at timestamptz not null,
+  window_started_at timestamptz not null,
+  send_count integer not null default 0 check (send_count >= 0),
+  attempt_count integer not null default 0 check (attempt_count >= 0),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+alter table public.email_verification_codes enable row level security;
+revoke all on public.email_verification_codes from anon, authenticated;
+grant all on public.email_verification_codes to service_role;
+
+-- Serialize verification-code issuance so simultaneous requests cannot bypass resend or hourly caps.
+create or replace function public.reserve_email_verification_send(
+  p_user_id uuid,
+  p_email text,
+  p_code_hash text,
+  p_now timestamptz,
+  p_expires_at timestamptz,
+  p_resend_seconds integer,
+  p_window_seconds integer,
+  p_max_sends integer
+)
+returns table(allowed boolean, reason text, retry_after_seconds integer)
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $function$
+declare
+  challenge public.email_verification_codes%rowtype;
+  v_profile_email text;
+  v_verified_at timestamptz;
+  v_window_started_at timestamptz;
+  v_send_count integer;
+  v_retry integer;
+begin
+  insert into public.email_verification_codes (
+    user_id, email, code_hash, expires_at, sent_at, window_started_at, send_count, attempt_count
+  ) values (
+    p_user_id, p_email, p_code_hash, p_now, p_now - make_interval(secs => greatest(p_resend_seconds, 0) + 1), p_now, 0, 0
+  ) on conflict (user_id) do nothing;
+
+  select * into challenge
+  from public.email_verification_codes
+  where user_id = p_user_id
+  for update;
+
+  select p.email, p.email_verified_at into v_profile_email, v_verified_at
+  from public.profiles p
+  where p.id = p_user_id;
+  if v_verified_at is not null then
+    delete from public.email_verification_codes where user_id = p_user_id;
+    return query select false, 'already_verified'::text, null::integer;
+    return;
+  end if;
+  if v_profile_email is null then
+    return query select false, 'missing_profile'::text, null::integer;
+    return;
+  end if;
+  if lower(v_profile_email) <> lower(p_email) then
+    update public.email_verification_codes
+    set email = v_profile_email, code_hash = '', expires_at = p_now, attempt_count = 0, updated_at = p_now
+    where user_id = p_user_id;
+    return query select false, 'email_changed'::text, null::integer;
+    return;
+  end if;
+
+  if challenge.sent_at + make_interval(secs => greatest(p_resend_seconds, 0)) > p_now then
+    v_retry := ceil(extract(epoch from (challenge.sent_at + make_interval(secs => greatest(p_resend_seconds, 0)) - p_now)))::integer;
+    return query select false, 'resend'::text, greatest(v_retry, 1);
+    return;
+  end if;
+
+  if challenge.window_started_at is null
+    or p_now < challenge.window_started_at
+    or p_now >= challenge.window_started_at + make_interval(secs => greatest(p_window_seconds, 1)) then
+    v_window_started_at := p_now;
+    v_send_count := 0;
+  else
+    v_window_started_at := challenge.window_started_at;
+    v_send_count := challenge.send_count;
+  end if;
+
+  if v_send_count >= p_max_sends then
+    return query select false, 'hourly_limit'::text, null::integer;
+    return;
+  end if;
+
+  update public.email_verification_codes
+  set email = p_email,
+      code_hash = p_code_hash,
+      expires_at = p_expires_at,
+      sent_at = p_now,
+      window_started_at = v_window_started_at,
+      send_count = v_send_count + 1,
+      attempt_count = 0,
+      updated_at = p_now
+  where user_id = p_user_id;
+
+  return query select true, 'ok'::text, 0;
+end;
+$function$;
+
+-- Invalidate only the code whose delivery failed, without resetting the send counters or a newer code.
+create or replace function public.invalidate_email_verification_code(
+  p_user_id uuid,
+  p_code_hash text,
+  p_now timestamptz
+)
+returns void
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $function$
+begin
+  update public.email_verification_codes
+  set code_hash = '', expires_at = p_now, updated_at = p_now
+  where user_id = p_user_id and code_hash = p_code_hash;
+end;
+$function$;
+
+-- Verify and consume the challenge under one row lock. Wrong attempts increment atomically; success
+-- marks the profile and deletes the code in the same transaction.
+create or replace function public.complete_email_verification(
+  p_user_id uuid,
+  p_email text,
+  p_candidate_hash text,
+  p_now timestamptz,
+  p_max_attempts integer
+)
+returns table(outcome text, attempt_count integer, verified_at timestamptz)
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $function$
+declare
+  challenge public.email_verification_codes%rowtype;
+  v_next_attempt integer;
+  v_verified_at timestamptz;
+begin
+  select * into challenge
+  from public.email_verification_codes
+  where user_id = p_user_id
+  for update;
+
+  if not found then
+    select p.email_verified_at into v_verified_at
+    from public.profiles p
+    where p.id = p_user_id and lower(p.email) = lower(p_email);
+    if v_verified_at is not null then
+      return query select 'already_verified'::text, 0, v_verified_at;
+    else
+      return query select 'missing'::text, 0, null::timestamptz;
+    end if;
+    return;
+  end if;
+
+  if lower(challenge.email) <> lower(p_email) then
+    update public.email_verification_codes
+    set code_hash = '', expires_at = p_now, attempt_count = 0, updated_at = p_now
+    where user_id = p_user_id;
+    return query select 'email_changed'::text, challenge.attempt_count, null::timestamptz;
+    return;
+  end if;
+
+  if challenge.expires_at is null or challenge.expires_at <= p_now then
+    update public.email_verification_codes
+    set code_hash = '', expires_at = p_now, attempt_count = 0, updated_at = p_now
+    where user_id = p_user_id;
+    return query select 'expired'::text, challenge.attempt_count, null::timestamptz;
+    return;
+  end if;
+
+  if challenge.attempt_count >= p_max_attempts then
+    return query select 'too_many_attempts'::text, challenge.attempt_count, null::timestamptz;
+    return;
+  end if;
+
+  if challenge.code_hash is distinct from p_candidate_hash then
+    v_next_attempt := challenge.attempt_count + 1;
+    update public.email_verification_codes
+    set attempt_count = v_next_attempt, updated_at = p_now
+    where user_id = p_user_id;
+    if v_next_attempt >= p_max_attempts then
+      return query select 'too_many_attempts'::text, v_next_attempt, null::timestamptz;
+    else
+      return query select 'mismatch'::text, v_next_attempt, null::timestamptz;
+    end if;
+    return;
+  end if;
+
+  update public.profiles p
+  set email_verified_at = p_now, updated_at = p_now
+  where p.id = p_user_id and lower(p.email) = lower(p_email) and p.email_verified_at is null
+  returning p.email_verified_at into v_verified_at;
+
+  if v_verified_at is null then
+    select p.email_verified_at into v_verified_at
+    from public.profiles p
+    where p.id = p_user_id and lower(p.email) = lower(p_email);
+    delete from public.email_verification_codes where user_id = p_user_id;
+    if v_verified_at is not null then
+      return query select 'already_verified'::text, challenge.attempt_count, v_verified_at;
+    else
+      return query select 'email_changed'::text, challenge.attempt_count, null::timestamptz;
+    end if;
+    return;
+  end if;
+
+  delete from public.email_verification_codes where user_id = p_user_id;
+  return query select 'verified'::text, challenge.attempt_count, v_verified_at;
+end;
+$function$;
+
+revoke all on function public.reserve_email_verification_send(uuid, text, text, timestamptz, timestamptz, integer, integer, integer) from public, anon, authenticated;
+revoke all on function public.invalidate_email_verification_code(uuid, text, timestamptz) from public, anon, authenticated;
+revoke all on function public.complete_email_verification(uuid, text, text, timestamptz, integer) from public, anon, authenticated;
+grant execute on function public.reserve_email_verification_send(uuid, text, text, timestamptz, timestamptz, integer, integer, integer) to service_role;
+grant execute on function public.invalidate_email_verification_code(uuid, text, timestamptz) to service_role;
+grant execute on function public.complete_email_verification(uuid, text, text, timestamptz, integer) to service_role;
+
 
 -- Assign seven-digit IDs to any legacy profile rows; their old Supabase passwords are not copied.
 do $$
@@ -47,11 +275,30 @@ $$;
 alter table public.profiles alter column login_id set not null;
 create unique index if not exists profiles_login_id_unique_idx on public.profiles(login_id);
 
+-- Reusable owner-scoped folders for vault items, contacts, business cards, and medical records.
+create table if not exists public.vault_folders (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  scope text not null check (scope in (
+    'documents', 'academics', 'subscriptions', 'family', 'purchases', 'accounts',
+    'memberships', 'wallet-cards', 'study', 'business-card', 'urls', 'notes',
+    'contacts', 'business-cards', 'medical-records'
+  )),
+  name text not null check (char_length(name) between 1 and 64),
+  color text not null default 'blue' check (color in ('blue','sky','teal','violet','amber','rose','slate','mint')),
+  pinned boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create unique index if not exists vault_folders_owner_scope_name_idx on public.vault_folders(user_id, scope, lower(name));
+create index if not exists vault_folders_owner_scope_pinned_idx on public.vault_folders(user_id, scope, pinned desc, name);
+
 -- Detach owner data from auth.users. User IDs remain internal UUIDs; the separate
 -- seven-digit login_id is the identifier members use to sign in.
 create table if not exists public.vault_items (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles(id) on delete cascade,
+  folder_id uuid references public.vault_folders(id) on delete set null,
   section text not null check (section in (
     'documents', 'academics', 'subscriptions', 'family', 'purchases',
     'accounts', 'memberships', 'wallet-cards', 'study', 'business-card', 'urls', 'notes'
@@ -73,6 +320,8 @@ create table if not exists public.vault_items (
   )
 );
 alter table public.vault_items add column if not exists pinned boolean not null default false;
+alter table public.vault_items add column if not exists folder_id uuid references public.vault_folders(id) on delete set null;
+create index if not exists vault_items_owner_folder_idx on public.vault_items(user_id, section, folder_id);
 alter table public.vault_items drop constraint if exists vault_items_user_id_fkey;
 alter table public.vault_items add constraint vault_items_user_id_fkey foreign key (user_id) references public.profiles(id) on delete cascade;
 
@@ -111,6 +360,7 @@ grant all on public.timeline_events, public.timeline_event_links to service_role
 create table if not exists public.contacts (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles(id) on delete cascade,
+  folder_id uuid references public.vault_folders(id) on delete set null,
   full_name text not null check (char_length(full_name) between 1 and 160),
   phone_numbers jsonb not null default '[]'::jsonb,
   email text,
@@ -125,12 +375,15 @@ create table if not exists public.contacts (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+alter table public.contacts add column if not exists folder_id uuid references public.vault_folders(id) on delete set null;
 create index if not exists contacts_owner_name_idx on public.contacts(user_id, lower(full_name));
 create index if not exists contacts_owner_updated_idx on public.contacts(user_id, updated_at desc);
+create index if not exists contacts_owner_folder_idx on public.contacts(user_id, folder_id);
 
 create table if not exists public.business_cards (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles(id) on delete cascade,
+  folder_id uuid references public.vault_folders(id) on delete set null,
   card_id text unique check (card_id is null or card_id ~ '^[A-F0-9]{32}$'),
   is_public boolean not null default false,
   full_name text not null check (char_length(full_name) between 1 and 160),
@@ -150,7 +403,9 @@ create table if not exists public.business_cards (
   updated_at timestamptz not null default now(),
   constraint business_cards_public_has_id check (not is_public or card_id is not null)
 );
+alter table public.business_cards add column if not exists folder_id uuid references public.vault_folders(id) on delete set null;
 create index if not exists business_cards_owner_updated_idx on public.business_cards(user_id, updated_at desc);
+create index if not exists business_cards_owner_folder_idx on public.business_cards(user_id, folder_id);
 create index if not exists business_cards_public_idx on public.business_cards(card_id) where is_public = true;
 
 create table if not exists public.business_card_reports (
@@ -308,7 +563,7 @@ on conflict (setting_key) do nothing;
 
 insert into public.subscription_plans (id, slug, name, description, storage_gb, price_per_gb_monthly, active, sort_order)
 values ('00000000-0000-4000-8000-000000000001', 'free', 'Free', 'A private place to get started.', 5, 0, true, 0)
-on conflict (slug) do nothing;
+on conflict (slug) do update set active = true;
 
 insert into public.document_types (id, name, sort_order) values
   ('national-id-nid', 'National ID / NID', 10),
@@ -356,6 +611,8 @@ $$;
 
 drop trigger if exists profiles_touch_updated_at on public.profiles;
 create trigger profiles_touch_updated_at before update on public.profiles for each row execute function public.touch_updated_at();
+drop trigger if exists vault_folders_touch_updated_at on public.vault_folders;
+create trigger vault_folders_touch_updated_at before update on public.vault_folders for each row execute function public.touch_updated_at();
 drop trigger if exists vault_items_touch_updated_at on public.vault_items;
 create trigger vault_items_touch_updated_at before update on public.vault_items for each row execute function public.touch_updated_at();
 drop trigger if exists timeline_events_touch_updated_at on public.timeline_events;
@@ -469,7 +726,8 @@ create table if not exists public.medical_records (
   title text not null check (char_length(title) between 1 and 200),
   record_type text not null check (record_type in ('Prescription','Medical Report','Lab Test','Imaging / Scan','Doctor Visit','Hospital Record','Vaccination','Medical Certificate','Discharge Summary','Other')),
   record_date date not null,
-  provider text not null default '', hospital text not null default '', specialty text not null default '', notes text not null default '',
+  folder_id uuid references public.vault_folders(id) on delete set null,
+  provider text not null default '', hospital text not null default '', specialty text not null default '', notes text not null default '', additional_data text not null default '',
   diagnosis text not null default '', test_name text not null default '', test_result text not null default '', medication_notes text not null default '',
   follow_up_date date, related_reminder_id uuid references public.vault_items(id) on delete set null,
   file_key text, file_name text, file_size bigint check (file_size is null or file_size >= 0), file_type text,
@@ -480,8 +738,51 @@ create table if not exists public.medical_records (
   ),
   constraint medical_records_id_owner_unique unique (id, user_id)
 );
+alter table public.medical_records add column if not exists folder_id uuid references public.vault_folders(id) on delete set null;
 create index if not exists medical_records_owner_date_idx on public.medical_records(user_id, record_date desc, updated_at desc);
 create index if not exists medical_records_owner_type_idx on public.medical_records(user_id, record_type, record_date desc);
+create index if not exists medical_records_owner_folder_idx on public.medical_records(user_id, folder_id);
+
+-- Aggregate Smart Scan usage and admin-controlled per-user access; no file contents are stored here.
+create table if not exists public.smart_scan_usage (
+  user_id uuid primary key references public.profiles(id) on delete cascade,
+  enabled boolean not null default true,
+  scan_count bigint not null default 0 check (scan_count >= 0),
+  ocr_run_count bigint not null default 0 check (ocr_run_count >= 0),
+  ai_extraction_count bigint not null default 0 check (ai_extraction_count >= 0),
+  last_scanned_at timestamptz,
+  updated_at timestamptz not null default now()
+);
+alter table public.smart_scan_usage enable row level security;
+revoke all on public.smart_scan_usage from anon, authenticated;
+grant all on public.smart_scan_usage to service_role;
+
+create or replace function public.persora_record_smart_scan_usage(
+  p_user_id uuid,
+  p_scans bigint default 0,
+  p_ocr_runs bigint default 0,
+  p_ai_extractions bigint default 0
+) returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if p_user_id is null or p_scans < 0 or p_ocr_runs < 0 or p_ai_extractions < 0 then
+    raise exception 'Invalid Smart Scan usage increment';
+  end if;
+  insert into public.smart_scan_usage (user_id, enabled, scan_count, ocr_run_count, ai_extraction_count, last_scanned_at, updated_at)
+  values (p_user_id, true, p_scans, p_ocr_runs, p_ai_extractions, case when p_scans > 0 then now() else null end, now())
+  on conflict (user_id) do update set
+    scan_count = public.smart_scan_usage.scan_count + excluded.scan_count,
+    ocr_run_count = public.smart_scan_usage.ocr_run_count + excluded.ocr_run_count,
+    ai_extraction_count = public.smart_scan_usage.ai_extraction_count + excluded.ai_extraction_count,
+    last_scanned_at = case when p_scans > 0 then now() else public.smart_scan_usage.last_scanned_at end,
+    updated_at = now();
+end;
+$$;
+revoke all on function public.persora_record_smart_scan_usage(uuid, bigint, bigint, bigint) from public, anon, authenticated;
+grant execute on function public.persora_record_smart_scan_usage(uuid, bigint, bigint, bigint) to service_role;
 
 -- Short-lived, account-scoped OCR/extraction cache. The original upload is never copied here.
 create table if not exists public.smart_scan_cache (
@@ -514,6 +815,7 @@ revoke all on public.medical_records, public.medical_record_links from anon, aut
 grant all on public.medical_records, public.medical_record_links to service_role;
 
 alter table public.profiles enable row level security;
+alter table public.vault_folders enable row level security;
 alter table public.vault_items enable row level security;
 alter table public.contacts enable row level security;
 alter table public.business_cards enable row level security;
@@ -543,11 +845,11 @@ drop policy if exists "document_types_public_read" on public.document_types;
 drop policy if exists "admin_audit_select_admin" on public.admin_audit_events;
 
 -- All application traffic goes through the authenticated Pages Function; direct browser DB access is closed.
-revoke all on public.profiles, public.vault_items, public.contacts, public.business_cards, public.business_card_reports, public.user_sessions, public.auth_login_attempts,
+revoke all on public.profiles, public.vault_folders, public.vault_items, public.contacts, public.business_cards, public.business_card_reports, public.user_sessions, public.auth_login_attempts,
   public.vault_shares, public.record_shares, public.vault_share_comments, public.share_notifications,
   public.admin_audit_events, public.platform_settings, public.subscription_plans, public.user_subscriptions,
   public.payment_records, public.document_types, public.admin_bootstrap_state, public.timeline_events, public.timeline_event_links from anon, authenticated;
-grant all on public.profiles, public.vault_items, public.contacts, public.business_cards, public.business_card_reports, public.user_sessions, public.auth_login_attempts,
+grant all on public.profiles, public.vault_folders, public.vault_items, public.contacts, public.business_cards, public.business_card_reports, public.user_sessions, public.auth_login_attempts,
   public.vault_shares, public.record_shares, public.vault_share_comments, public.share_notifications,
   public.admin_audit_events, public.platform_settings, public.subscription_plans, public.user_subscriptions,
   public.payment_records, public.document_types, public.admin_bootstrap_state, public.timeline_events, public.timeline_event_links to service_role;

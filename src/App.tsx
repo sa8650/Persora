@@ -9,7 +9,8 @@ const AdminConsole = lazy(() => import("./components/AdminConsole"));
 const AdminAccessPage = lazy(() => import("./components/AdminAccessPage"));
 import PublicInfoPage from "./components/PublicInfoPage";
 import { ConfirmDialog, ItemDetailDialog, ItemEditorDialog, ShareManagementDialog, TodoEditorDialog, ToastNotice } from "./components/VaultDialogs";
-import type { ActiveScheduleAlert, AppUser, BusinessCardDraft, ContactDraft, ContactImportProgress, DigitalBusinessCard, DocumentTypeOption, MedicalRecord, MedicalRecordDraft, MedicalRecordFile, NotesRecordKind, PersoraContact, SectionId, ShareComment, ShareNotification, SharePermission, SharedVaultEntry, RecordShareEntry, SiteContent, SubscriptionPlan, TimelineDraft, TimelineEvent, TransferProgress, VaultFilePreview, VaultItem, ViewId } from "./types";
+import { ADD_DOCUMENT_DESTINATION_EVENT, ADD_DOCUMENT_HANDOFF_EVENT } from "./types";
+import type { ActiveScheduleAlert, AddDocumentFlowDraft, AppUser, BusinessCardDraft, ContactDraft, ContactImportProgress, DigitalBusinessCard, DocumentTypeOption, MedicalRecord, MedicalRecordDraft, MedicalRecordFile, NotesRecordKind, PersoraContact, SectionId, ShareComment, ShareNotification, SharePermission, SharedVaultEntry, RecordShareEntry, SiteContent, SubscriptionPlan, TimelineDraft, TimelineEvent, TransferProgress, SmartScanResult, VaultFilePreview, VaultItem, ViewId } from "./types";
 import { DEFAULT_SITE_CONTENT } from "./data/siteContent";
 import PersoraBootScreen from "./components/PersoraBootScreen";
 import {
@@ -58,7 +59,7 @@ import {
   fetchMedicalRecordFile,
   downloadMedicalRecordFile,
 } from "./lib/backend";
-import { loadAdminBootstrapStatus, loadDocumentTypes, loadPublicPlans, loadPublicSiteContent } from "./lib/cloud";
+import { loadAdminBootstrapStatus, loadDocumentTypes, loadPublicPlans, loadPublicSiteContent, sendEmailVerificationCode, verifyEmailVerificationCode } from "./lib/cloud";
 import { signIn, signOut, signUp, getCurrentUser } from "./lib/auth";
 import { getLocalAvatar, getLocalBusinessCards, getLocalContacts, getLocalItems, getLocalProfile, putLocalAvatar, putLocalBusinessCards, putLocalContacts, putLocalItems, putLocalProfile } from "./lib/local-store";
 
@@ -89,6 +90,7 @@ export default function App() {
   const [siteContent, setSiteContent] = useState<SiteContent>(DEFAULT_SITE_CONTENT);
   const [siteContentPath, setSiteContentPath] = useState(isPagesApiConfigured ? "" : "/");
   const [items, setItems] = useState<VaultItem[]>(() => getLocalItems());
+  const familyMembers = useMemo(() => items.filter((item) => item.section === "family"), [items]);
   const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([]);
   const [medicalRecords, setMedicalRecords] = useState<MedicalRecord[]>([]);
   const medicalRecordsRef = useRef(medicalRecords);
@@ -118,7 +120,8 @@ export default function App() {
   const [authOpen, setAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<AuthMode>("signup");
   const [authBusy, setAuthBusy] = useState(false);
-  const [editor, setEditor] = useState<{ section: SectionId; item?: VaultItem; initialMetadata?: Record<string, string> } | null>(null);
+  const [editor, setEditor] = useState<{ section: SectionId; item?: VaultItem; initialMetadata?: Record<string, string>; initialFile?: File | null; initialScanResult?: SmartScanResult | null; initialScanComplete?: boolean; initialProtectedKeys?: string[] } | null>(null);
+  useEffect(() => { const closeEditorForHandoff = () => setEditor(null); window.addEventListener(ADD_DOCUMENT_HANDOFF_EVENT, closeEditorForHandoff); return () => window.removeEventListener(ADD_DOCUMENT_HANDOFF_EVENT, closeEditorForHandoff); }, []);
   const [todoEditor, setTodoEditor] = useState<VaultItem | null | false>(false);
   const [todoEditorType, setTodoEditorType] = useState<NotesRecordKind>("todo");
   const [focusedItem, setFocusedItem] = useState<VaultItem | null>(null);
@@ -339,6 +342,23 @@ commitContacts(getLocalContacts(DEMO_USER.id));
     setAuthOpen(true);
   };
 
+  useEffect(() => {
+    if (!user || user.demo || !isPagesApiConfigured) return;
+    let active = true;
+    const refreshAccount = async () => {
+      if (document.visibilityState === "hidden") return;
+      try {
+        const profile = await getCurrentUser();
+        if (active && profile) setUser((current) => current?.id === profile.id ? { ...current, ...profile } : current);
+      } catch { /* Upload routes remain server-enforced if a refresh is temporarily unavailable. */ }
+    };
+    const onForeground = () => { void refreshAccount(); };
+    window.addEventListener("focus", onForeground);
+    document.addEventListener("visibilitychange", onForeground);
+    const interval = window.setInterval(onForeground, 60_000);
+    return () => { active = false; window.removeEventListener("focus", onForeground); document.removeEventListener("visibilitychange", onForeground); window.clearInterval(interval); };
+  }, [user?.id, user?.demo]);
+
   const handleAuthSubmit = async (mode: AuthMode, values: { fullName: string; email: string; identifier: string; password: string }): Promise<void> => {
     setAuthBusy(true);
     try {
@@ -371,6 +391,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
 
   const handleSaveItem = async (draft: EditorDraft, onUploadProgress?: (progress: TransferProgress) => void) => {
     if (!user) throw new Error("Please sign in before adding a record.");
+    if (draft.fileUpload && (user.demo || user.uploadsEnabled !== true)) throw new Error("New file uploads require an active paid plan. You can still save this record without an attachment.");
     const sharedAccess = draft.sharedAccess;
     if (sharedAccess?.direction === "incoming") {
       if (user.demo || sharedAccess.permission !== "edit") throw new Error("This share does not allow editing.");
@@ -421,8 +442,8 @@ commitContacts(getLocalContacts(DEMO_USER.id));
     }
 
     const candidate: VaultItem = {
-      id, section: draft.section, title: draft.title.trim(), subtitle: draft.subtitle,
-      metadata: draft.metadata, file: nextFile, favorite: Boolean(draft.favorite), pinned: Boolean(draft.pinned),
+      id, section: draft.section, title: draft.title.trim(), subtitle: draft.subtitle ?? oldItem?.subtitle,
+      metadata: draft.metadata, file: nextFile, favorite: Boolean(draft.favorite), pinned: Boolean(draft.pinned), folderId: draft.folderId ?? oldItem?.folderId,
       createdAt: oldItem?.createdAt || now, updatedAt: now,
     };
 
@@ -634,6 +655,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
     if (!user) throw new Error("Please sign in before saving contacts.");
     const existing = draft.id ? contactsRef.current.find((contact) => contact.id === draft.id) : undefined;
     const photoFile = draft.photoFile || null;
+    if (photoFile && (user.demo || user.uploadsEnabled !== true)) throw new Error("New contact photos require an active paid plan. You can still save the contact without a photo.");
     if (user.demo) {
       const photoDataUrl = draft.clearPhoto ? undefined : photoFile ? await contactPhotoDataUrl(photoFile) : draft.photoDataUrl || existing?.photoDataUrl;
       const now = new Date().toISOString();
@@ -711,21 +733,23 @@ commitContacts(getLocalContacts(DEMO_USER.id));
 
   const handleImportContacts = async (drafts: ContactDraft[], onProgress?: (progress: ContactImportProgress) => void) => {
     if (!drafts.length) throw new Error("No contacts were selected for import.");
+    const uploadEnabled = Boolean(user && !user.demo && user.uploadsEnabled === true);
+    const safeDrafts = uploadEnabled ? drafts : drafts.map((draft) => ({ ...draft, photoFile: undefined, photoDataUrl: undefined, photoKey: undefined }));
     const imported: PersoraContact[] = [];
     const startedAt = performance.now();
     const emitProgress = (completed: number, fraction: number, currentName: string) => {
       const elapsed = Math.max(0.1, (performance.now() - startedAt) / 1000);
       const safeFraction = Math.max(0, Math.min(1, fraction));
       const rate = safeFraction / elapsed;
-      onProgress?.({ completed, total: drafts.length, percent: Math.round(safeFraction * 100), remainingSeconds: rate > 0 ? Math.max(0, (1 - safeFraction) / rate) : null, currentName });
+      onProgress?.({ completed, total: safeDrafts.length, percent: Math.round(safeFraction * 100), remainingSeconds: rate > 0 ? Math.max(0, (1 - safeFraction) / rate) : null, currentName });
     };
-    emitProgress(0, 0, drafts[0]?.name || "");
-    for (let index = 0; index < drafts.length; index++) {
-      const draft = drafts[index];
-      const photoProgress = (progress: TransferProgress) => emitProgress(index, (index + progress.percent / 100) / drafts.length, draft.name);
+    emitProgress(0, 0, safeDrafts[0]?.name || "");
+    for (let index = 0; index < safeDrafts.length; index++) {
+      const draft = safeDrafts[index];
+      const photoProgress = (progress: TransferProgress) => emitProgress(index, (index + progress.percent / 100) / safeDrafts.length, draft.name);
       imported.push(await handleSaveContact({ ...draft, id: undefined }, photoProgress));
       const completed = index + 1;
-      emitProgress(completed, completed / drafts.length, drafts[completed]?.name || "");
+      emitProgress(completed, completed / safeDrafts.length, safeDrafts[completed]?.name || "");
     }
     return imported;
   };
@@ -741,6 +765,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
     const existing = draft.id ? businessCardsRef.current.find((card) => card.id === draft.id) : undefined;
     const profileFile = draft.profilePhotoFile || null;
     const logoFile = draft.businessLogoFile || null;
+    if ((profileFile || logoFile) && (user.demo || user.uploadsEnabled !== true)) throw new Error("New business-card photos and logos require an active paid plan. You can still save the card without new images.");
     if (user.demo) {
       const profilePhotoDataUrl = draft.clearProfilePhoto ? undefined : profileFile ? await contactPhotoDataUrl(profileFile) : draft.profilePhotoDataUrl || existing?.profilePhotoDataUrl;
       const businessLogoDataUrl = draft.clearBusinessLogo ? undefined : logoFile ? await contactPhotoDataUrl(logoFile) : draft.businessLogoDataUrl || existing?.businessLogoDataUrl;
@@ -806,6 +831,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
 
   const handleSaveMedicalRecord = async (draft: MedicalRecordDraft): Promise<MedicalRecord> => {
     if (!user) throw new Error("Sign in before adding medical records.");
+    if (draft.fileUpload && (user.demo || user.uploadsEnabled !== true)) throw new Error("New medical attachments require an active paid plan. You can still save the record without a file.");
     const existing = draft.id ? medicalRecordsRef.current.find((record) => record.id === draft.id) : undefined;
     if (user.demo) {
       const id = draft.id || createId();
@@ -817,7 +843,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       } else if (draft.removeFile) demoMedicalFiles.current.delete(id);
       const saved: MedicalRecord = {
         id, title: draft.title.trim(), recordType: draft.recordType, recordDate: draft.recordDate,
-        provider: draft.provider, hospital: draft.hospital, specialty: draft.specialty, notes: draft.notes,
+        provider: draft.provider, hospital: draft.hospital, specialty: draft.specialty, notes: draft.notes, additionalData: draft.additionalData,
         diagnosis: draft.diagnosis, testName: draft.testName, testResult: draft.testResult, medicationNotes: draft.medicationNotes,
         followUpDate: draft.followUpDate, ...(draft.relatedReminderId ? { relatedReminderId: draft.relatedReminderId } : {}),
         ...(file ? { file } : {}), links: draft.links.filter((link) => link.linkKind !== "reminder"), ...(draft.folderId ? { folderId: draft.folderId } : {}), createdAt: existing?.createdAt || now, updatedAt: now,
@@ -873,6 +899,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
 
   const handleSaveTimelineEvent = async (draft: TimelineDraft) => {
     if (!user || user.demo || !isPagesApiConfigured) throw new Error("Encrypted timeline posts require a signed-in Persora cloud account.");
+    if (draft.attachmentFile && user.uploadsEnabled !== true) throw new Error("New timeline attachments require an active paid plan. You can still post or edit the event.");
     if (typeof navigator !== "undefined" && !navigator.onLine) throw new Error("Connect to the internet to post or edit a timeline event. Offline automatic dates are queued locally.");
     setTimelineSaving(true);
     let uploadedKey = "";
@@ -999,6 +1026,8 @@ commitContacts(getLocalContacts(DEMO_USER.id));
 
   const handleProfileSave = async (values: { fullName: string; timezone: string; avatarUrl: string }) => {
     if (!user) return;
+    const newPhoto = values.avatarUrl.startsWith("data:image/") && values.avatarUrl !== user.avatarUrl;
+    if (newPhoto && (user.demo || user.uploadsEnabled !== true)) throw new Error("New profile-photo uploads require an active paid plan. Emoji and built-in avatars are still available.");
     if (!user.demo) await updateProfile(values);
     setUser((current) => current ? { ...current, fullName: values.fullName.trim(), timezone: values.timezone, avatarUrl: values.avatarUrl } : current);
     if (user.demo) {
@@ -1006,6 +1035,22 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       putLocalAvatar(user.id, values.avatarUrl || null);
       putLocalAvatar(`demo-${user.email}`, values.avatarUrl || null);
     }
+  };
+
+  const handleSendVerificationCode = async () => {
+    if (!user || user.demo) throw new Error("Email verification is available for signed-in accounts.");
+    const result = await sendEmailVerificationCode();
+    if (result.alreadyVerified) {
+      const profile = await getCurrentUser();
+      if (profile) setUser((current) => current?.id === profile.id ? { ...current, ...profile } : current);
+    }
+    return result;
+  };
+
+  const handleVerifyEmailCode = async (code: string) => {
+    if (!user || user.demo) throw new Error("Email verification is available for signed-in accounts.");
+    const result = await verifyEmailVerificationCode(code);
+    setUser((current) => current?.id === result.user.id ? { ...current, ...result.user } : current);
   };
 
   const handlePasswordChange = async (currentPassword: string, newPassword: string) => {
@@ -1146,7 +1191,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       onManageDocumentSharing={(item) => setShareTarget(item)}
       onAddDocumentComment={handleAddShareComment}
       onDownloadDocumentFile={(item) => void handleDownloadFile(item)}
-      onAdd={(section, initialMetadata) => { if (section === "documents" && view !== "documents") { navigateWorkspace("documents"); setSearch(""); } setEditor({ section, initialMetadata }); setFocusedItem(null); }}
+      onAdd={(section, initialMetadata, initialFile, initialScanResult, initialScanComplete, initialProtectedKeys) => { if (section === "documents" && view !== "documents") { navigateWorkspace("documents"); setSearch(""); } setEditor({ section, initialMetadata, initialFile, initialScanResult, initialScanComplete, initialProtectedKeys }); setFocusedItem(null); }}
       onSaveItem={handleSaveItem}
       onAddTodo={(kind = "todo") => { setTodoEditorType(kind); setTodoEditor(null); setFocusedItem(null); }}
       onEditTodoItem={(item) => { const type = item.metadata.recordType; setTodoEditorType(type === "reminder" || type === "alarm" ? type : "todo"); setTodoEditor(item); setFocusedItem(null); }}
@@ -1180,6 +1225,8 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       onOpenPublicPage={goToPath}
       onOpenContact={openContactPage}
       onProfileSave={handleProfileSave}
+      onSendVerificationCode={handleSendVerificationCode}
+      onVerifyEmailCode={handleVerifyEmailCode}
       onPasswordChange={handlePasswordChange}
       onExport={handleExport}
       onImport={handleImport}
@@ -1194,10 +1241,11 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       onClose={() => setAuthOpen(false)}
       onSubmit={handleAuthSubmit}
     />}
-    {editor && user && !(view === "documents" && editor.section === "documents") && <ItemEditorDialog sectionId={editor.section} item={editor.item} initialMetadata={editor.initialMetadata} documentTypes={documentTypes} maxUploadMb={maxUploadMb} onClose={() => setEditor(null)} onSave={handleSaveItem} />}
-    {todoEditor !== false && user && <TodoEditorDialog key={`${todoEditorType}:${todoEditor?.id || "new"}`} kind={todoEditorType} item={todoEditor || undefined} onClose={() => setTodoEditor(false)} onSave={async (draft) => { await handleSaveItem(draft); setTodoEditor(false); }} />}
+    {editor && user && !(view === "documents" && editor.section === "documents") && <ItemEditorDialog sectionId={editor.section} item={editor.item} initialMetadata={editor.initialMetadata} initialFile={editor.initialFile} initialScanResult={editor.initialScanResult} initialScanComplete={editor.initialScanComplete} initialProtectedKeys={editor.initialProtectedKeys} documentTypes={documentTypes} familyMembers={familyMembers} maxUploadMb={maxUploadMb} canUpload={!user.demo && user.uploadsEnabled === true} onUpgrade={!user.demo ? () => { setView("billing"); setEditor(null); } : undefined} onChangeAddDocumentDestination={(draft) => window.dispatchEvent(new CustomEvent<AddDocumentFlowDraft>(ADD_DOCUMENT_DESTINATION_EVENT, { detail: draft }))} onClose={() => setEditor(null)} onSave={handleSaveItem} />}
+    {todoEditor !== false && user && <TodoEditorDialog key={`${todoEditorType}:${todoEditor?.id || "new"}`} kind={todoEditorType} item={todoEditor || undefined} canUpload={!user.demo && user.uploadsEnabled === true} maxUploadMb={maxUploadMb} onUpgrade={!user.demo ? () => { setView("billing"); setTodoEditor(false); } : undefined} onClose={() => setTodoEditor(false)} onSave={async (draft) => { await handleSaveItem(draft); setTodoEditor(false); }} />}
     {focusedItem && !(view === "documents" && focusedItem.section === "documents") && <ItemDetailDialog
       item={focusedItem}
+      familyMembers={familyMembers}
       filePreview={filePreview}
       shareAccess={focusedItem.sharedAccess}
       comments={shareComments}

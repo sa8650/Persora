@@ -79,6 +79,7 @@ export default function AuthDialog({ initialMode, connected, variant = "user", b
             )}
             {mode === "signup" ? <label className="field-label">Email address
               <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" autoComplete="email" placeholder="you@example.com" maxLength={254} required />
+              <small className="auth-field-hint">After signup, verify this address in Settings to add your check badge.</small>
             </label> : <label className="field-label">Email or 7-digit Persora ID
               <input value={identifier} onChange={(event) => setIdentifier(event.target.value.slice(0, 254))} type="text" autoComplete="username" placeholder="you@example.com or 4827613" maxLength={254} required />
             </label>}

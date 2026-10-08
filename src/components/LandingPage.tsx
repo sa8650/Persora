@@ -1,19 +1,28 @@
+import type { CSSProperties } from "react";
 import {
   ArrowRight,
   ArrowUpRight,
   BookOpen,
+  CalendarDays,
   Check,
+  CheckCircle2,
   FileText,
   Fingerprint,
   HardDrive,
   HeartPulse,
+  Home,
+  LayoutGrid,
   LockKeyhole,
+  MoreHorizontal,
+  Plus,
+  Search,
   ShieldCheck,
   Sparkles,
   UsersRound,
   WalletCards,
 } from "lucide-react";
 import { Button } from "./ui/button";
+import IphoneMockup from "./IphoneMockup";
 import { BlurFade, BorderBeam, MagicCard, ShimmerButton } from "./magic-ui";
 import type { SubscriptionPlan } from "../types";
 
@@ -28,17 +37,19 @@ interface LandingPageProps {
 }
 
 const features = [
-  { icon: FileText, title: "Documents, in order", body: "Keep IDs, certificates, warranties, and their important dates close at hand.", tone: "blue" },
-  { icon: HeartPulse, title: "Your health history", body: "Bring health records and key life moments into one private timeline.", tone: "red" },
-  { icon: UsersRound, title: "People & connections", body: "Save the contacts and digital business cards you want to find again.", tone: "blue" },
-  { icon: WalletCards, title: "The details between", body: "Track subscriptions, memberships, study records, notes, and useful links.", tone: "yellow" },
+  { icon: Sparkles, title: "Smart Scan + editable catch-all", body: "Scan supported IDs and paperwork. Matching facts fill the right fields; other readable facts land in editable Additional Data for review.", tone: "blue" },
+  { icon: UsersRound, title: "Family-linked records", body: "Choose Me or a person from your Family space when saving identity and student records. Rename a family member without losing the link.", tone: "yellow" },
+  { icon: HeartPulse, title: "Health records & life timeline", body: "Keep visits, prescriptions, tests and files together, then see important dates and milestones in context.", tone: "red" },
+  { icon: FileText, title: "Documents that stay useful", body: "Organize NID, student ID, passport, certificates, warranties and expiry dates with fields that adapt to the record type.", tone: "blue" },
+  { icon: WalletCards, title: "Everyday life, in its own spaces", body: "Track subscriptions, memberships, personal finance, study materials, tasks, reminders and useful links.", tone: "yellow" },
+  { icon: LockKeyhole, title: "People, sharing & control", body: "Import contacts on Android or from a file, make digital business cards, organize folders, share selected records and export a backup.", tone: "blue" },
 ];
 
 const faqs = [
   { question: "Can I try Persora before creating an account?", answer: "Yes. Choose Explore the demo to look around with sample information stored in this browser. Demo data is separate from a registered account." },
   { question: "Is Persora only for documents?", answer: "No. Your workspace includes dedicated spaces for records, subscriptions, contacts, business cards, reminders, notes, study, and more." },
   { question: "Can I share something from my vault?", answer: "You decide what to share. Persora supports sharing specific records with another Persora account, and you can manage or revoke access." },
-  { question: "How large can an uploaded file be?", answer: "The current maximum is {maxUploadMb} MB per file. The exact limit is shown again when you add an attachment." },
+  { question: "How large can an uploaded file be?", answer: "You can add and manage records on any plan. New file and image uploads require an active paid plan, with a limit of {maxUploadMb} MB per file." },
   { question: "How do paid plans work?", answer: "Storage plans and prices are shown above when configured. Where manual payments are enabled, an administrator verifies the transaction reference before a paid plan starts." },
 ];
 
@@ -57,6 +68,7 @@ export default function LandingPage({ onSignIn, onGetStarted, onDemo, onChoosePl
         </a>
         <nav className="landing-links" aria-label="Main navigation">
           <a href="#features">Features</a>
+          <a href="#how-it-works">Phone flow</a>
           <a href="#security">Privacy</a>
           <a href="#pricing">Pricing</a>
           <a href="#faqs">FAQ</a>
@@ -80,18 +92,20 @@ export default function LandingPage({ onSignIn, onGetStarted, onDemo, onChoosePl
                 <h1>Your life,<br /><span>all in one place.</span></h1>
               </BlurFade>
               <BlurFade delay={120}>
-                <p className="hero-description">Documents, records, contacts, subscriptions and the small details you don’t want to lose—organized in one calm, private space.</p>
+                <p className="hero-description">A phone-friendly personal portal for IDs, family details, health records, contacts and everyday admin—with type-aware forms, Smart Scan suggestions and one calm place to find it again.</p>
                 <div className="hero-actions">
                   <ShimmerButton onClick={onGetStarted} className="hero-primary">Create your free vault <ArrowRight size={17} /></ShimmerButton>
                   <button className="hero-secondary" onClick={onDemo}>Explore the demo <ArrowUpRight size={16} /></button>
                 </div>
-                <div className="hero-note"><ShieldCheck size={15} /> Private by default <span /> Set up at your own pace</div>
+                <div className="hero-note"><ShieldCheck size={15} /> Private by default <span /> Built for phone and desktop</div>
               </BlurFade>
             </div>
 
             <BlurFade delay={110} className="hero-preview-wrap">
-              <div className="hero-preview-shadow" />
-              <div className="hero-preview-card">
+              <div className="hero-device-stage" role="img" aria-label="Persora personal portal shown on a laptop and iPhone">
+                <div className="hero-laptop">
+                  <div className="hero-laptop-bezel">
+                    <div className="hero-preview-card">
                 <div className="preview-topbar">
                   <div className="preview-brand"><span className="brand-mark tiny"><ShieldCheck size={12} /></span><b>persora</b><span className="preview-workspace-label">Personal space</span></div>
                   <div className="preview-avatar">AR</div>
@@ -129,9 +143,26 @@ export default function LandingPage({ onSignIn, onGetStarted, onDemo, onChoosePl
                     <div className="preview-bottom-note"><LockKeyhole size={12} /> Your vault is private <span><Check size={12} /></span></div>
                   </div>
                 </div>
+                  </div>
+                  <span className="hero-laptop-camera" aria-hidden="true" />
+                </div>
+                <div className="hero-laptop-base" aria-hidden="true"><span /></div>
+                </div>
+                <IphoneMockup className="hero-iphone-device" aria-hidden="true">
+                  <div className="hero-iphone-screen">
+                    <div className="hero-iphone-status"><span>9:41</span><span>● ● ● ▰</span></div>
+                    <div className="hero-iphone-header"><span className="hero-iphone-brand"><span className="hero-iphone-brand-mark"><ShieldCheck size={13}/></span>persora<span>.</span></span><span className="hero-iphone-avatar">AR</span></div>
+                    <div className="hero-iphone-welcome"><small>YOUR PERSONAL SPACE</small><b>Good morning,<br/>Amina</b><span>Your life, in one place.</span></div>
+                    <div className="hero-iphone-search"><Search size={13}/><span>Search your vault</span></div>
+                    <div className="hero-iphone-add"><span><Plus size={15}/></span><span><b>Add document</b><small>Scan or add a record</small></span><ArrowRight size={13}/></div>
+                    <div className="hero-iphone-section"><b>Your spaces</b><span>View all</span></div>
+                    <div className="hero-iphone-spaces"><span><FileText size={13}/><b>Documents</b></span><span><HeartPulse size={13}/><b>Medical</b></span><span><UsersRound size={13}/><b>Family</b></span><span><BookOpen size={13}/><b>Study</b></span></div>
+                    <div className="hero-iphone-section hero-iphone-upcoming"><b>Coming up</b><span>See all</span></div>
+                    <div className="hero-iphone-record"><span><Fingerprint size={13}/></span><b>Bangladesh passport</b><small>Expires in 8 days</small></div>
+                    <div className="hero-iphone-bottom-nav"><span><Home size={12}/>Home</span><span><LayoutGrid size={12}/>Spaces</span><span className="hero-iphone-nav-add"><i><Plus size={13}/></i>Add</span><span><CheckCircle2 size={12}/>Tasks</span><span><MoreHorizontal size={12}/>More</span></div>
+                  </div>
+                </IphoneMockup>
               </div>
-              <div className="hero-float-card hero-float-left"><span className="float-bubble float-bubble-blue"><HardDrive size={15} /></span><span><b>Everything connected</b><small>One organized workspace</small></span></div>
-              <div className="hero-float-card hero-float-right"><span className="float-bubble float-bubble-blue"><ShieldCheck size={16} /></span><span><b>You’re in control</b><small>Share only what you choose</small></span></div>
             </BlurFade>
           </div>
           <div className="hero-bottom-rule"><span />A LITTLE MORE ROOM TO THINK<span /></div>
@@ -146,9 +177,9 @@ export default function LandingPage({ onSignIn, onGetStarted, onDemo, onChoosePl
 
         <section className="features-section" id="features">
           <div className="section-heading">
-            <span className="section-eyebrow">A home for all the important bits</span>
-            <h2>Everything has a place.<br /><span>Everything stays within reach.</span></h2>
-            <p>Persora brings the practical and personal parts of life together—without adding more noise.</p>
+            <span className="section-eyebrow">Useful features available today</span>
+            <h2>One thoughtful portal.<br /><span>Spaces that fit real life.</span></h2>
+            <p>From NID and student records to medical history, contacts, money and reminders—Persora adapts the form to what you’re saving.</p>
           </div>
           <div className="feature-grid">
             {features.map(({ icon: Icon, title, body, tone }, index) => (
@@ -158,7 +189,60 @@ export default function LandingPage({ onSignIn, onGetStarted, onDemo, onChoosePl
               </MagicCard>
             ))}
           </div>
-          <div className="feature-chip-row"><span>Family documents</span><span>Health records</span><span>Reminders</span><span>Useful links</span><span>Contacts</span><span>Memberships</span></div>
+          <div className="feature-chip-row"><span>NID + Student ID</span><span>Smart Scan + Additional Data</span><span>Family members</span><span>Medical records</span><span>Contacts + business cards</span><span>Folders + backup</span><span>Finance + subscriptions</span><span>Tasks + reminders</span></div>
+        </section>
+
+        <section className="portal-flow-section" id="how-it-works">
+          <div className="portal-flow-heading">
+            <span className="section-eyebrow">A phone-first portal flow</span>
+            <h2>From home to saved.<br/><span>Five clear steps.</span></h2>
+            <p>Persora’s web workspace follows the same simple flow on a phone: choose a space, choose a type, scan if useful, review every suggestion, then save.</p>
+          </div>
+          <div className="portal-flow-layout">
+            <ol className="portal-flow-steps">
+              {[
+                ["01", "Open your home", "See your spaces, recent records and dates coming up."],
+                ["02", "Choose a space", "Documents, Family, Medical Records, Contacts and more."],
+                ["03", "Choose the record type", "NID, Student ID, passport, visit, task—fields adapt to your choice."],
+                ["04", "Scan and review", "Smart Scan suggests matching fields; other readable facts stay editable in Additional Data."],
+                ["05", "Save to your vault", "Find it later, move it to a folder, or share only that record."],
+              ].map(([number, title, body], index) => <li className="portal-flow-step" key={number} style={{ "--flow-index": index } as CSSProperties}>
+                <span className="portal-flow-step-number">{number}</span><span className="portal-flow-step-copy"><b>{title}</b><small>{body}</small></span><span className="portal-flow-step-state"><Check size={13}/></span>
+              </li>)}
+              <li className="portal-flow-progress" aria-hidden="true"><span/></li>
+            </ol>
+            <div className="portal-phone-stage" aria-label="Illustrative Persora mobile web workspace">
+              <div className="portal-phone-glow"/>
+              <div className="portal-phone-shell">
+                <div className="portal-phone-speaker" aria-hidden="true"><i/></div>
+                <div className="portal-phone-screen">
+                  <div className="portal-phone-status"><span>9:41</span><span aria-hidden="true">● ● ●</span></div>
+                  <div className="portal-phone-header"><span className="portal-phone-brand"><span className="portal-phone-brand-mark"><ShieldCheck size={13}/></span>persora<span className="portal-phone-dot">.</span></span><span className="portal-phone-avatar">AR</span></div>
+                  <div className="portal-phone-greeting"><span>YOUR PERSONAL SPACE</span><b>Good morning, Amina</b><small>Your important details, together.</small></div>
+                  <div className="portal-phone-search"><Search size={13}/> Search your vault</div>
+                  <div className="portal-phone-add"><span><Plus size={16}/></span><span><b>Add document</b><small>Choose a space and record type</small></span><ArrowRight size={14}/></div>
+                  <div className="portal-phone-section-head"><b>Your spaces</b><span>View all</span></div>
+                  <div className="portal-phone-spaces">
+                    <div><span className="phone-space-icon phone-space-blue"><FileText size={13}/></span><b>Documents</b><small>Identity &amp; records</small></div>
+                    <div><span className="phone-space-icon phone-space-rose"><HeartPulse size={13}/></span><b>Medical</b><small>Health archive</small></div>
+                    <div><span className="phone-space-icon phone-space-yellow"><UsersRound size={13}/></span><b>Family</b><small>People &amp; details</small></div>
+                    <div><span className="phone-space-icon phone-space-violet"><BookOpen size={13}/></span><b>Study</b><small>Notes &amp; files</small></div>
+                  </div>
+                  <div className="portal-phone-scan">
+                    <div className="portal-phone-scan-head"><span><Sparkles size={13}/> Smart Scan</span><small>READY TO REVIEW</small></div>
+                    <div className="portal-phone-scan-row"><span>NID number</span><b>•••• •••• 3412</b></div>
+                    <div className="portal-phone-scan-row"><span>Belongs to</span><b>Me</b></div>
+                    <div className="portal-phone-scan-row"><span>Additional Data</span><b>Address · issue date</b></div>
+                    <div className="portal-phone-scan-foot"><Check size={11}/> Editable before saving</div>
+                  </div>
+                  <div className="portal-phone-reminder"><CalendarDays size={14}/><span><small>UP NEXT</small><b>Passport expires in 8 days</b></span><ArrowRight size={12}/></div>
+                  <div className="portal-phone-nav"><span><span>⌂</span>Home</span><span><span>▦</span>Spaces</span><span className="portal-phone-nav-add"><span>＋</span>Add</span><span><span>✓</span>Tasks</span><span><span>···</span>More</span></div>
+                </div>
+                <div className="portal-phone-home-indicator" aria-hidden="true"/>
+              </div>
+              <div className="portal-phone-caption"><span><LockKeyhole size={13}/></span><b>Private by default</b><small>Review first. Save when ready.</small></div>
+            </div>
+          </div>
         </section>
 
         <section className="security-section" id="security">
@@ -183,19 +267,6 @@ export default function LandingPage({ onSignIn, onGetStarted, onDemo, onChoosePl
               <div className="security-card-state"><span><LockKeyhole size={14} /> Only you decide what to share</span><i><Check size={13} /></i></div>
             </div>
             <div className="security-mini-card"><span className="security-mini-avatar">AR</span><span><b>Amina Rahman</b><small>Personal account</small></span><span className="security-mini-dot" /></div>
-          </div>
-        </section>
-
-        <section className="how-section" id="how-it-works">
-          <div className="section-heading section-heading-compact">
-            <span className="section-eyebrow">Easy to start, easy to keep up</span>
-            <h2>Start small. <span>Stay organized.</span></h2>
-            <p>Bring things together one step at a time. Your space grows with you.</p>
-          </div>
-          <div className="how-steps">
-            <article className="how-step"><span className="step-number">01</span><span className="step-icon step-blue"><Fingerprint size={20} /></span><h3>Create your space</h3><p>Set up a personal account or take a quick look around the demo.</p></article>
-            <article className="how-step"><span className="step-number">02</span><span className="step-icon step-blue"><FileText size={20} /></span><h3>Add what matters</h3><p>Save records, people, subscriptions, notes, and helpful reminders.</p></article>
-            <article className="how-step"><span className="step-number">03</span><span className="step-icon step-yellow"><Sparkles size={20} /></span><h3>Find it when you need it</h3><p>Search your workspace and see important dates at a glance.</p></article>
           </div>
         </section>
 

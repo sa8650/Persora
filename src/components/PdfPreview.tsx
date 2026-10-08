@@ -5,6 +5,7 @@ import "../pdf-preview.css";
 interface Props {
   src: string;
   name: string;
+  onReady?: () => void;
 }
 
 function withPdfViewerOptions(src: string, zoom: number | null) {
@@ -24,7 +25,7 @@ function withPdfViewerOptions(src: string, zoom: number | null) {
   }
 }
 
-export default function PdfPreview({ src, name }: Props) {
+export default function PdfPreview({ src, name, onReady }: Props) {
   const [zoom, setZoom] = useState<number | null>(null);
   const viewerSrc = useMemo(() => withPdfViewerOptions(src, zoom), [src, zoom]);
   const label = name || "PDF document";
@@ -44,6 +45,6 @@ export default function PdfPreview({ src, name }: Props) {
         <a href={viewerSrc} target="_blank" rel="noopener noreferrer" aria-label="Open PDF in a new tab" title="Open in new tab"><ExternalLink size={14}/></a>
       </div>
     </div>
-    <iframe className="pdf-preview-frame" src={viewerSrc} title={`PDF preview: ${label}`} loading="lazy" />
+    <iframe className="pdf-preview-frame" src={viewerSrc} title={`PDF preview: ${label}`} loading="lazy" onLoad={() => onReady?.()} onError={() => onReady?.()} />
   </section>;
 }

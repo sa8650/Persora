@@ -35,8 +35,10 @@
 
 /* Private workspace shell and navigation */
 .workspace-shell { position: relative; display: flex; width: 100%; height: 100vh; height: 100dvh; min-height: 0; overflow: hidden; color: var(--p-text); background: var(--p-bg); font-size: 14px; }
+.striped-pattern { position: absolute; inset: 0; display: block; width: 100%; height: 100%; pointer-events: none; stroke-width: .5; }
+.workspace-striped-pattern { z-index: 0!important; color: rgba(26,115,232,.18); opacity: .43; stroke-width: .55; -webkit-mask-image: radial-gradient(ellipse 72% 82% at 61% 39%,#000 0%,rgba(0,0,0,.64) 58%,transparent 100%); mask-image: radial-gradient(ellipse 72% 82% at 61% 39%,#000 0%,rgba(0,0,0,.64) 58%,transparent 100%); }
 .workspace-sidebar { z-index: 30; position: relative; display: flex; flex: 0 0 254px; flex-direction: column; width: 254px; min-width: 254px; height: 100%; border-right: 1px solid var(--p-line); background: transparent; }
-.sidebar-header { position: relative; z-index: 2; display: flex; align-items: center; justify-content: flex-start; height: 68px; flex: 0 0 auto; border-bottom: 1px solid rgba(232,234,237,.72); padding: 0 22px; background: rgba(255,255,255,.60); backdrop-filter: blur(12px); }
+.sidebar-header { position: relative; z-index: 2; display: flex; align-items: center; justify-content: flex-start; height: 74px; min-height: 74px; flex: 0 0 74px; box-sizing: border-box; border-bottom: 1px solid rgba(232,234,237,.72); padding: 0 22px; background: rgba(255,255,255,.60); backdrop-filter: blur(12px); }
 .workspace-brand { display: inline-flex; align-items: center; gap: 9px; border: 0; padding: 0; color: #202124; background: transparent; font-size: 20px; font-weight: 710; letter-spacing: -.055em; cursor: pointer; }
 .workspace-brand .brand-mark { width: 30px; height: 30px; border-radius: 9px; }
 .brand-period { margin-left: -8px; color: var(--p-blue); }
@@ -79,8 +81,8 @@
 .user-popover > button:hover { color: #174ea6; background: #f1f3f4; }
 .user-popover > button svg { color: #70757a; }
 .user-popover > button.popover-logout { margin-top: 4px; border-top: 1px solid #e8eaed; border-radius: 0 0 8px 8px; padding-top: 7px; color: #d93025; }
-.workspace-main { display: flex; flex: 1; flex-direction: column; min-width: 0; height: 100%; overflow: auto; background: var(--p-bg); scrollbar-width: thin; scrollbar-color: #dadce0 transparent; }
-.workspace-topbar { z-index: 20; position: sticky; top: 0; display: flex; align-items: center; justify-content: space-between; min-height: 74px; border-bottom: 1px solid rgba(218,220,224,.76); padding: 0 clamp(20px,3vw,42px); background: rgba(255,255,255,.60); backdrop-filter: blur(12px); }
+.workspace-main { z-index: 1; position: relative; display: flex; flex: 1; flex-direction: column; min-width: 0; height: 100%; overflow: auto; background: transparent; scrollbar-width: thin; scrollbar-color: #dadce0 transparent; }
+.workspace-topbar { z-index: 20; position: sticky; top: 0; display: flex; align-items: center; justify-content: space-between; height: 74px; min-height: 74px; flex: 0 0 74px; box-sizing: border-box; border-bottom: 1px solid rgba(218,220,224,.76); padding: 0 clamp(20px,3vw,42px); background: rgba(255,255,255,.60); backdrop-filter: blur(12px); }
 .breadcrumb-area { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .breadcrumb-overline { color: #80868b; font-size: 10px; font-weight: 540; }
 .breadcrumb-title { display: flex; align-items: center; gap: 10px; }
@@ -618,7 +620,7 @@
 
 /* Protected administrator views */
 .admin-portal { display: grid; grid-template-columns: 258px minmax(0,1fr)!important; min-height: 100vh; color: #3c4043; background: var(--p-bg); }
-.admin-sidebar { width: auto; min-height: 100vh; border-color: #e8eaed; padding: 18px 14px; background: #fff; }
+.admin-sidebar { width: auto; min-height: 100vh; border-color: #e8eaed; padding: 0 14px 18px; background: #fff; }
 .admin-brand { color: #202124; font-size: 20px; font-weight: 710; letter-spacing: -.05em; }
 .admin-brand > span { width: 31px; height: 31px; border-radius: 9px; color: #fff; background: #1a73e8; }
 .admin-brand i { color: #174ea6; background: #e8f0fe; font-size: 8px; }
@@ -632,7 +634,7 @@
 .admin-sidebar-safe b { color: #3c4043; font-size: 10px; }
 .admin-sidebar-safe small { color: #5f6368; font-size: 9px; }
 .admin-main { min-width: 0; padding: 0 32px 40px; }
-.admin-topbar { min-height: 62px; border-color: #e8eaed; margin: 0 -32px 25px; padding: 0 32px; background: rgba(255,255,255,.94); }
+.admin-topbar { height: 74px; min-height: 74px; flex: 0 0 74px; box-sizing: border-box; border-color: #e8eaed; margin: 0 -32px 25px; padding: 0 32px; background: rgba(255,255,255,.94); }
 .admin-breadcrumb,.admin-top-actions { color: #5f6368; font-size: 11px; }
 .admin-breadcrumb b { color: #202124; }
 .admin-session-pill { border-color: #ceead6; color: #188038; background: #f7fcf8; font-size: 9px; }
@@ -832,7 +834,7 @@
   .admin-tabs { flex-wrap: wrap; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .hero-float-card,.hero-preview-card,.feature-card,.how-step,.blur-fade,.admin-orbit-b,.persora-boot-core,.persora-boot-orbiting-item { animation: none!important; transition: none!important; }
+  .hero-preview-card,.feature-card,.how-step,.blur-fade,.admin-orbit-b,.persora-boot-core,.persora-boot-orbiting-item { animation: none!important; transition: none!important; }
 }
 
 /* Auth panel, share dialogs, comments and other overlays share one calm light theme. */
@@ -1693,3 +1695,4 @@
   overflow: auto;
   overscroll-behavior: contain;
 }
+.auth-field-hint { display: block; margin-top: 5px; color: #747f90; font-size: 10px; line-height: 1.45; }

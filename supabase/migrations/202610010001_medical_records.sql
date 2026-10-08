@@ -9,6 +9,7 @@ create table if not exists public.medical_records (
   hospital text not null default '',
   specialty text not null default '',
   notes text not null default '',
+  additional_data text not null default '',
   diagnosis text not null default '',
   test_name text not null default '',
   test_result text not null default '',

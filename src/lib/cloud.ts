@@ -1,7 +1,9 @@
 import type { AdminConsoleSnapshot, AdminMetrics, AlarmRingtone, BillingSnapshot, BusinessCardDraft, BusinessSocialLink, DigitalBusinessCard, DocumentTypeOption, MedicalRecord, MedicalRecordDraft, MedicalRecordFile, MedicalRecordLink, PersoraContact, PaymentRecord, PublicDigitalBusinessCard, ShareComment, ShareNotification, SharePermission, SharedDirection, SharedVaultEntry, RecordShareEntry, SiteContent, SmartScanFieldDefinition, SmartScanResult, SubscriptionPlan, TimelineAttachment, TimelineDraft, TimelineEvent, TransferProgress, VaultFile, VaultFolder, VaultFolderDraft, VaultFolderScope, VaultItem } from "../types";
 import { DEFAULT_SITE_CONTENT } from "../data/siteContent";
 
-const pagesFunctionsEnabled = import.meta.env.VITE_USE_PAGES_FUNCTIONS === "true";
+// Cloudflare Pages always serves the authenticated Functions API from /api in production.
+// Keep the explicit flag for local development, where no API worker is running by default.
+const pagesFunctionsEnabled = import.meta.env.PROD || import.meta.env.VITE_USE_PAGES_FUNCTIONS === "true";
 const apiBase = pagesFunctionsEnabled ? "/api" : "";
 export const isPagesApiConfigured = pagesFunctionsEnabled;
 
@@ -315,7 +317,7 @@ function medicalRecordFromRow(row: Record<string, unknown>): MedicalRecord {
   }) : [];
   return {
     id: String(row.id || ""), title: String(row.title || ""), recordType: String(row.record_type || "Other") as MedicalRecord["recordType"],
-    recordDate: String(row.record_date || ""), provider: String(row.provider || ""), hospital: String(row.hospital || ""), specialty: String(row.specialty || ""), notes: String(row.notes || ""),
+    recordDate: String(row.record_date || ""), provider: String(row.provider || ""), hospital: String(row.hospital || ""), specialty: String(row.specialty || ""), notes: String(row.notes || ""), additionalData: String(row.additional_data || ""),
     diagnosis: String(row.diagnosis || ""), testName: String(row.test_name || ""), testResult: String(row.test_result || ""), medicationNotes: String(row.medication_notes || ""),
     followUpDate: String(row.follow_up_date || ""), ...(typeof row.related_reminder_id === "string" && row.related_reminder_id ? { relatedReminderId: row.related_reminder_id } : {}),
     ...(file ? { file } : {}), links: links.filter((link) => link.linkKind !== "reminder"),
@@ -330,7 +332,7 @@ export async function loadMedicalRecords(): Promise<MedicalRecord[]> {
 
 export async function saveMedicalRecord(draft: MedicalRecordDraft): Promise<MedicalRecord> {
   const row = await postJson<Record<string, unknown>>("/medical-records", {
-    id: draft.id, title: draft.title, recordType: draft.recordType, recordDate: draft.recordDate, provider: draft.provider, hospital: draft.hospital, specialty: draft.specialty, notes: draft.notes,
+    id: draft.id, title: draft.title, recordType: draft.recordType, recordDate: draft.recordDate, provider: draft.provider, hospital: draft.hospital, specialty: draft.specialty, notes: draft.notes, additionalData: draft.additionalData,
     diagnosis: draft.diagnosis, testName: draft.testName, testResult: draft.testResult, medicationNotes: draft.medicationNotes, followUpDate: draft.followUpDate,
     relatedReminderId: draft.relatedReminderId || null, links: draft.links, file: draft.removeFile ? null : draft.file || null, folderId: draft.folderId || null,
   });
@@ -445,6 +447,14 @@ export async function updateProfile(values: { fullName: string; timezone: string
   await pagesApiJson("/profile", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(values) });
 }
 
+export async function sendEmailVerificationCode(): Promise<{ ok: boolean; alreadyVerified?: boolean; expiresInSeconds?: number }> {
+  return pagesApiJson("/email-verification/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+}
+
+export async function verifyEmailVerificationCode(code: string): Promise<{ user: import("../types").AppUser }> {
+  return pagesApiJson("/email-verification/verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }) });
+}
+
 export async function uploadVaultFile(file: File, onProgress?: (progress: TransferProgress) => void): Promise<VaultFile> {
   const form = new FormData();
   form.append("file", file, file.name);
@@ -452,9 +462,62 @@ export async function uploadVaultFile(file: File, onProgress?: (progress: Transf
   return { key: result.key, name: result.name, size: result.size, type: result.type };
 }
 
+const SMART_SCAN_MAX_FILE_BYTES = 7 * 1024 * 1024;
+
+function requiresAzureImageConversion(file: File) {
+  const type = file.type.toLowerCase().split(";")[0];
+  return type === "image/webp" || type === "image/gif" || /\.(?:webp|gif)$/i.test(file.name);
+}
+
+function canvasToImageBlob(canvas: HTMLCanvasElement, type: string, quality?: number): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Image conversion failed.")), type, quality);
+  });
+}
+
+async function azureCompatibleScanFile(file: File): Promise<File> {
+  if (!requiresAzureImageConversion(file)) return file;
+  if (typeof createImageBitmap !== "function" || typeof document === "undefined") {
+    throw new Error("WebP and GIF scans need a browser that can convert images. Save the file as PNG or JPEG and retry.");
+  }
+
+  let bitmap: ImageBitmap | undefined;
+  try {
+    bitmap = await createImageBitmap(file);
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Image conversion is unavailable in this browser.");
+    context.fillStyle = "#fff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(bitmap, 0, 0);
+
+    let converted = await canvasToImageBlob(canvas, "image/png");
+    if (converted.size > SMART_SCAN_MAX_FILE_BYTES) {
+      const jpeg = await canvasToImageBlob(canvas, "image/jpeg", 0.92);
+      if (jpeg.size < converted.size) converted = jpeg;
+    }
+    if (converted.size > SMART_SCAN_MAX_FILE_BYTES) {
+      throw new Error("Smart Scan's converted image exceeds the 7 MB limit. Choose a smaller image.");
+    }
+
+    const baseName = file.name.replace(/\.[^./\\]+$/, "") || "smart-scan-image";
+    const extension = converted.type === "image/jpeg" ? ".jpg" : ".png";
+    return new File([converted], `${baseName}${extension}`, { type: converted.type, lastModified: file.lastModified });
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("Smart Scan")) throw error;
+    throw new Error("This WebP/GIF image couldn't be converted for Smart Scan. Save it as PNG or JPEG and retry.");
+  } finally {
+    bitmap?.close();
+  }
+}
+
 export async function smartScanDocument(file: File, section: string, fields: SmartScanFieldDefinition[], retry = false): Promise<SmartScanResult> {
+  const scanFile = await azureCompatibleScanFile(file);
+  if (scanFile.size > SMART_SCAN_MAX_FILE_BYTES) throw new Error("Smart Scan supports files up to 7 MB.");
   const form = new FormData();
-  form.append("file", file, file.name);
+  form.append("file", scanFile, scanFile.name);
   form.append("section", section);
   form.append("fields", JSON.stringify(fields));
   form.append("retry", retry ? "true" : "false");
@@ -509,17 +572,27 @@ export async function runAdminAction(userId: string, action: "suspend" | "restor
   await postJson("/admin/users", { userId, action });
 }
 
+export async function saveSmartScanAccess(scope: "global" | "user", enabled: boolean, userId?: string): Promise<void> {
+  await postJson("/admin/smart-scan/access", { scope, enabled, ...(userId ? { userId } : {}) });
+}
+
 export async function loadAdminConsole(): Promise<AdminConsoleSnapshot> {
   const snapshot = await pagesApiJson<AdminConsoleSnapshot>("/admin/console");
   return {
     ...snapshot,
     paymentMethods: Array.isArray(snapshot.paymentMethods) ? snapshot.paymentMethods : [],
     siteContent: { ...DEFAULT_SITE_CONTENT, ...(snapshot.siteContent || {}) },
+    emailSettings: snapshot.emailSettings || { verificationEnabled: true, senderName: "Persora", senderEmail: "", replyToEmail: "", replyToName: "Persora Support" },
+    smartScan: snapshot.smartScan || { enabled: true, usageAvailable: false, totals: { scans: 0, ocrRuns: 0, aiExtractions: 0 }, byUser: {} },
   };
 }
 
-export async function savePlatformSetting(key: "billing" | "storage" | "payment_methods" | "site_content", value: unknown): Promise<void> {
+export async function savePlatformSetting(key: "billing" | "storage" | "payment_methods" | "site_content" | "email" | "smart_scan", value: unknown): Promise<void> {
   await postJson("/admin/settings", { key, value });
+}
+
+export async function sendAdminTestEmail(to: string): Promise<{ ok: boolean; messageId: string }> {
+  return postJson("/admin/email/test", { to });
 }
 
 export async function saveSubscriptionPlan(plan: Partial<SubscriptionPlan>): Promise<SubscriptionPlan> {

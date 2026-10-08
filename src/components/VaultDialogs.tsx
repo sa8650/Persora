@@ -5,24 +5,34 @@ import QRPreview from "./QRPreview";
 import ImagePreview from "./ImagePreview";
 import PdfPreview from "./PdfPreview";
 import { TransferProgressIndicator } from "./ProgressIndicator";
-import type { AlarmRingtone, FieldDefinition, NotesRecordKind, SectionId, ShareComment, SharePermission, SharedItemAccess, SharedVaultEntry, SmartScanFieldDefinition, SmartScanResult, VaultFile, VaultFilePreview, VaultItem, TransferProgress } from "../types";
+import type { AddDocumentFlowDraft, AlarmRingtone, FieldDefinition, NotesRecordKind, SectionId, ShareComment, SharePermission, SharedItemAccess, SharedVaultEntry, SmartScanFieldDefinition, SmartScanResult, VaultFile, VaultFilePreview, VaultItem, TransferProgress } from "../types";
 import { daysUntil, formatDate, formatRelativeDate, humanSize, makeVCard, sanitizeNoteHtml } from "../lib/utils";
 import { alarmRingtoneAudioPath, fetchVaultFile, isPagesApiConfigured, loadAlarmRingtones, smartScanDocument } from "../lib/cloud";
 import { isSmartScanFileSizeAllowed, SmartScanActionPanel, SmartScanFieldNote, supportsSmartScanFile } from "./SmartScan";
 import { BUILTIN_RINGTONES, startBuiltinRingtone } from "../lib/ringtone";
+import { editorFieldsFor, matchDocumentTypeSuggestion } from "../lib/editorFields";
 
 interface ItemEditorDialogProps {
   sectionId: SectionId;
   item?: VaultItem;
   initialMetadata?: Record<string, string>;
+  initialFile?: File | null;
+  initialScanResult?: SmartScanResult | null;
+  initialScanComplete?: boolean;
+  initialProtectedKeys?: string[];
+  onChangeAddDocumentDestination?: (draft: AddDocumentFlowDraft) => void;
   documentTypes?: string[];
+  familyMembers?: Pick<VaultItem, "id" | "title" | "metadata">[];
   maxUploadMb?: number;
+  canUpload: boolean;
+  onUpgrade?: () => void;
   presentation?: "modal" | "panel";
   onClose: () => void;
   onSave: (value: Omit<VaultItem, "id" | "createdAt" | "updatedAt"> & { id?: string; fileUpload?: File | null }, onProgress?: (progress: TransferProgress) => void) => Promise<void>;
 }
 
 const detailColors: Record<SectionId, string> = { notes: "tag-yellow", documents: "tag-blue", academics: "tag-violet", subscriptions: "tag-orange", family: "tag-rose", purchases: "tag-blue", accounts: "tag-indigo", memberships: "tag-blue", "wallet-cards": "tag-blue", study: "tag-sky", "business-card": "tag-slate", urls: "tag-cyan", "personal-finance": "tag-blue" };
+const EMPTY_PROTECTED_KEYS: string[] = [];
 
 function detectCardNetwork(digits: string) {
   if (/^4/.test(digits)) return "Visa";
@@ -61,23 +71,34 @@ function savedExpiry(month?: string, year?: string) {
 }
 
 
-export function ItemEditorDialog({ sectionId, item, initialMetadata, documentTypes = [], maxUploadMb = 25, presentation = "modal", onClose, onSave }: ItemEditorDialogProps) {
+export function ItemEditorDialog({ sectionId, item, initialMetadata, initialFile, initialScanResult, initialScanComplete = false, initialProtectedKeys = EMPTY_PROTECTED_KEYS, onChangeAddDocumentDestination, documentTypes = [], familyMembers = [], maxUploadMb = 25, canUpload, onUpgrade, presentation = "modal", onClose, onSave }: ItemEditorDialogProps) {
   const section = SECTION_BY_ID[sectionId];
   const [values, setValues] = useState<Record<string, string>>({});
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(initialFile || null);
   const [removeFile, setRemoveFile] = useState(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<TransferProgress | null>(null);
-  const [scanResult, setScanResult] = useState<SmartScanResult | null>(null);
+  const [scanResult, setScanResult] = useState<SmartScanResult | null>(initialScanResult || null);
   const [scanError, setScanError] = useState("");
   const [scanBusy, setScanBusy] = useState(false);
+  const autoScanFileRef = useRef<File | null>(null);
+  const autoScanSchemaRef = useRef<string | null>(null);
+  const autoScanAppliedRef = useRef(false);
+  const autoAppliedValuesRef = useRef<Record<string, string>>({});
+  const userEditedFieldsRef = useRef(new Set<string>(initialProtectedKeys));
   const [dragging, setDragging] = useState(false);
   const previewUrl = useMemo(() => selectedFile && selectedFile.type.startsWith("image/") ? URL.createObjectURL(selectedFile) : "", [selectedFile]);
 
   useEffect(() => {
-    const initial: Record<string, string> = {};
-    section.fields.forEach((field) => { initial[field.key] = field.key === "title" ? item?.title || "" : item?.metadata[field.key] ?? initialMetadata?.[field.key] ?? ""; });
+    userEditedFieldsRef.current = new Set(initialProtectedKeys);
+    const initial: Record<string, string> = { ...(initialMetadata || {}) };
+    const savedMember = item?.metadata.member ?? initialMetadata?.member ?? "";
+    const matchedFamilyMember = familyMembers.find((member) => member.id === savedMember || member.title.trim().toLocaleLowerCase() === savedMember.trim().toLocaleLowerCase());
+    const selectedMember = !savedMember ? "" : ["me", "Me"].includes(savedMember) ? "me" : matchedFamilyMember?.id || savedMember;
+    section.fields.forEach((field) => { initial[field.key] = field.key === "title" ? item?.title || initialMetadata?.title || "" : field.key === "member" ? selectedMember : item?.metadata[field.key] ?? initialMetadata?.[field.key] ?? ""; });
+    initial.additionalData = item?.metadata.additionalData ?? initialMetadata?.additionalData ?? "";
+    if (item?.metadata.addFlowType) initial.addFlowType = item.metadata.addFlowType;
     if (section.id === "accounts") {
       initial.accountKind = item?.metadata.accountKind || initialMetadata?.accountKind || "Internet Account";
       initial.bankAccountType = item?.metadata.bankAccountType || "Savings";
@@ -92,65 +113,132 @@ export function ItemEditorDialog({ sectionId, item, initialMetadata, documentTyp
       initial.currency = item?.metadata.currency || "BDT";
     }
     setValues(initial);
-  }, [item, section, initialMetadata]);
+  }, [item, section, initialMetadata, familyMembers, initialProtectedKeys]);
 
   useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
 
   const setValue = (key: string, value: string) => setValues((current) => ({ ...current, [key]: value }));
   const acceptFile = (file?: File) => {
     if (!file) return;
+    if (!canUpload) { setError("New file uploads require an active paid plan. You can still save this record without an attachment."); return; }
     const maxFileSize = Math.max(1, Number(maxUploadMb) || 25) * 1024 * 1024;
     if (file.size > maxFileSize) { setError(`Files must be ${maxUploadMb} MB or smaller.`); return; }
     setError("");
     setScanResult(null);
     setScanError("");
+    autoScanFileRef.current = null;
+    autoScanSchemaRef.current = null;
+    autoScanAppliedRef.current = false;
+    autoAppliedValuesRef.current = {};
+    userEditedFieldsRef.current.clear();
     setSelectedFile(file);
     setRemoveFile(false);
   };
 
-  const selectedType = (values.type || "").trim().toLowerCase();
+  useEffect(() => {
+    if (initialFile && selectedFile !== initialFile) acceptFile(initialFile);
+  }, [initialFile, selectedFile]);
+
+  const selectedType = (values.type || "").trim();
   const isWalletCard = sectionId === "wallet-cards";
   const isBankAccount = sectionId === "accounts" && (values.accountKind || item?.metadata.accountKind || initialMetadata?.accountKind) === "Bank Account";
-  const isCv = sectionId === "documents" && /^(cv|resume)/.test(selectedType);
-  const isAdmission = sectionId === "academics" && /admission/.test(selectedType);
-  const isPaymentSlip = selectedType.includes("payment slip");
-  const cvKeys = new Set(["title", "type", "targetRole", "email", "phone", "location", "portfolio", "summary", "experience", "education", "skills", "notes"]);
-  const cvOnlyKeys = new Set(["targetRole", "email", "phone", "location", "portfolio", "summary", "experience", "education", "skills"]);
-  const admissionKeys = new Set(["title", "type", "institution", "program", "admissionSession", "applicationNumber", "paymentAmount", "paymentDate", "notes"]);
-  const admissionOnlyKeys = new Set(["program", "admissionSession", "applicationNumber", "paymentAmount", "paymentDate"]);
-  const fields = section.fields.filter((field) => {
-    if (sectionId === "documents") return isCv ? cvKeys.has(field.key) : !cvOnlyKeys.has(field.key);
-    if (sectionId === "academics") {
-      if (isAdmission) return admissionKeys.has(field.key) && (isPaymentSlip || !["paymentAmount", "paymentDate"].includes(field.key));
-      return !admissionOnlyKeys.has(field.key);
-    }
-    if (sectionId === "accounts") {
-      const shared = ["title", "accountKind", "notes"];
-      const bankFields = ["bankName", "accountHolder", "bankAccountType", "accountNumber", "currency", "branch", "routingNumber", "swiftCode", "iban", "mobileBanking", "website"];
-      const internetFields = ["accountType", "username", "email", "website", "registered", "status"];
-      return shared.includes(field.key) || (isBankAccount ? bankFields : internetFields).includes(field.key);
-    }
-    return true;
-  });
+  const isCv = sectionId === "documents" && /^(cv|resume)/i.test(selectedType);
+  const isAdmission = sectionId === "academics" && /admission/i.test(selectedType);
+  const fields = editorFieldsFor(sectionId, selectedType, values.accountKind || item?.metadata.accountKind || initialMetadata?.accountKind || "", values.financeType || "", values.materialType || "");
+  const scanSchemaSignature = [selectedType, values.accountKind || "", values.financeType || "", values.materialType || "", fields.map((field) => field.key).join(",")].join("::");
+  const setUserValue = (key: string, value: string) => { userEditedFieldsRef.current.add(key); setValue(key, value); };
   const scanAttachment = selectedFile || (!removeFile ? item?.file || null : null);
   const canScanAttachment = supportsSmartScanFile(scanAttachment);
   const scanSizeAllowed = isSmartScanFileSizeAllowed(selectedFile?.size ?? (!removeFile ? item?.file?.size : undefined));
-  const runSmartScan = async (retry: boolean) => {
+  const runSmartScan = async (retry: boolean, sourceFile?: File | null) => {
+    if (!canUpload) { setScanError("Smart Scan uploads are available on an active paid plan."); return; }
     if (scanBusy || !canScanAttachment || !scanSizeAllowed || !isPagesApiConfigured) return;
+    const requestedSchema = scanSchemaSignature;
     setScanBusy(true); setScanError("");
     try {
-      let file = selectedFile;
+      let file = sourceFile || selectedFile;
       if (!file && item?.file?.key && !removeFile) {
         const downloaded = await fetchVaultFile(item.file.key);
         file = new File([downloaded.blob], downloaded.name || item.file.name, { type: downloaded.blob.type || item.file.type || "" });
       }
       if (!file || !supportsSmartScanFile(file)) throw new Error("Select a PDF or supported image to scan.");
-      const definitions: SmartScanFieldDefinition[] = fields.map((field) => ({ key: field.key, label: field.label, kind: field.kind, options: field.options }));
+      if (initialFile === file) { autoScanFileRef.current = file; autoScanSchemaRef.current = requestedSchema; }
+      const definitions: SmartScanFieldDefinition[] = fields.map((field) => ({
+        key: field.key, label: field.label, kind: field.kind,
+        options: sectionId === "documents" && field.key === "member" ? ["Me", ...familyMembers.map((member) => member.title)] : field.options,
+      }));
       const result = await smartScanDocument(file, sectionId, definitions, retry);
       setScanResult(result);
+      const available = new Set(definitions.map((field) => field.key));
+      setValues((current) => {
+        const next = { ...current };
+        const appliedNow: Record<string, string> = {};
+        const previousAutoValues = autoAppliedValuesRef.current;
+        const firstAppliedScan = !autoScanAppliedRef.current;
+        const destinationKeys = new Set(["type", "accountKind", "financeType", "materialType", "relationship", "cardType", "urlCategory", "recordType"]);
+        Object.entries(result.fields).forEach(([key, field]) => {
+          if (!available.has(key) || !field.value.trim() || userEditedFieldsRef.current.has(key)) return;
+          const currentValue = next[key] || "";
+          if (destinationKeys.has(key) && initialMetadata?.[key] && currentValue === initialMetadata[key]) return;
+          const untouchedInitial = ["title", "additionalData"].includes(key) && initialMetadata?.[key] !== undefined && currentValue === initialMetadata[key];
+          const mayApply = firstAppliedScan || !currentValue.trim() || currentValue === previousAutoValues[key] || untouchedInitial;
+          if (!mayApply) return;
+          if (sectionId === "documents" && key === "member") {
+            if (/^me$/i.test(field.value.trim())) { next.member = "me"; appliedNow.member = "me"; }
+            else {
+              const matched = familyMembers.find((member) => member.title.trim().toLocaleLowerCase() === field.value.trim().toLocaleLowerCase());
+              if (matched) { next.member = matched.id; appliedNow.member = matched.id; }
+            }
+          } else {
+            next[key] = field.value;
+            appliedNow[key] = field.value;
+          }
+        });
+        if (sectionId === "documents" && result.documentType && !userEditedFieldsRef.current.has("type")) {
+          const typeDefinition = section.fields.find((field) => field.key === "type");
+          const options = [...new Set([...(documentTypes.length ? documentTypes : typeDefinition?.options || []), "CV / Resume", ...(current.type ? [current.type] : [])])];
+          const matched = matchDocumentTypeSuggestion(result.documentType, options);
+          const currentType = next.type || "";
+          const mayUpdateType = matched && (firstAppliedScan || !currentType || currentType === previousAutoValues.type || currentType === initialMetadata?.type);
+          if (matched && mayUpdateType) { next.type = matched; appliedNow.type = matched; }
+        }
+        autoAppliedValuesRef.current = { ...previousAutoValues, ...appliedNow };
+        return next;
+      });
+      if (initialFile === file) { autoScanAppliedRef.current = true; autoScanSchemaRef.current = requestedSchema; }
     } catch (reason) {
       setScanError(reason instanceof Error ? reason.message : "We couldn't scan this attachment. Try again.");
     } finally { setScanBusy(false); }
+  };
+
+  useEffect(() => {
+    if (!initialFile || selectedFile !== initialFile || autoScanFileRef.current === initialFile) return;
+    const initialFieldsReady = ["type", "accountKind", "financeType", "materialType"].every((key) => !initialMetadata?.[key] || values[key] === initialMetadata[key]);
+    if (!initialFieldsReady) return;
+    autoScanFileRef.current = initialFile;
+    autoScanSchemaRef.current = scanSchemaSignature;
+    if (!initialScanComplete && canUpload && isPagesApiConfigured && supportsSmartScanFile(initialFile) && isSmartScanFileSizeAllowed(initialFile.size)) {
+      void runSmartScan(false, initialFile);
+    }
+  }, [initialFile, selectedFile, values, initialMetadata, initialScanComplete, canUpload, sectionId]);
+
+  useEffect(() => {
+    if (!initialFile || selectedFile !== initialFile || scanBusy || !canUpload || !isPagesApiConfigured || !supportsSmartScanFile(initialFile) || !isSmartScanFileSizeAllowed(initialFile.size)) return;
+    if (initialScanComplete && !autoScanAppliedRef.current) return;
+    if (!autoScanAppliedRef.current || autoScanSchemaRef.current === scanSchemaSignature) return;
+    autoScanSchemaRef.current = scanSchemaSignature;
+    void runSmartScan(false, initialFile);
+  }, [initialFile, selectedFile, scanBusy, scanSchemaSignature, initialScanComplete, canUpload, scanResult]);
+
+  const changeAddDocumentDestination = () => {
+    const file = selectedFile || initialFile;
+    if (!file || !onChangeAddDocumentDestination) return;
+    const typeValue = values.type || values.accountKind || values.financeType || values.materialType || values.relationship || values.cardType || values.urlCategory || values.recordType || values.addFlowType || "";
+    onChangeAddDocumentDestination({
+      file, spaceId: sectionId, typeValue, scanResult, scanError, scanAttempted: Boolean(scanResult || scanError || initialScanComplete),
+      values: { ...values, title: values.title || item?.title || "" },
+      userEditedKeys: Array.from(userEditedFieldsRef.current),
+    });
   };
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -168,7 +256,13 @@ export function ItemEditorDialog({ sectionId, item, initialMetadata, documentTyp
     const visibleKeys = new Set(fields.map((field) => field.key));
     const transientCardKeys = new Set(["cardNumber", "expiry", "network"]);
     const metadata: Record<string, string> = {};
-    Object.entries(values).forEach(([key, value]) => { if (key !== "title" && visibleKeys.has(key) && (!isWalletCard || !transientCardKeys.has(key)) && value.trim()) metadata[key] = value.trim(); });
+    Object.entries(values).forEach(([key, value]) => { if (key !== "title" && (visibleKeys.has(key) || key === "addFlowType" || (initialFile && key === "additionalData")) && (!isWalletCard || !transientCardKeys.has(key)) && value.trim()) metadata[key] = value.trim(); });
+    if (initialFile) {
+      const destinationKeys = new Set(["type", "accountKind", "financeType", "materialType", "relationship", "cardType", "urlCategory", "recordType", "addFlowType"]);
+      const nonDataKeys = new Set(["title", "additionalData", "enabled", "ringtoneId", "ringtoneName", "completed", "favorite", "pinned", "snoozedUntil"]);
+      const unmatched = Object.entries(values).filter(([key, value]) => !visibleKeys.has(key) && !destinationKeys.has(key) && !nonDataKeys.has(key) && value.trim()).map(([key, value]) => `${key}: ${value.trim()}`);
+      if (unmatched.length) metadata.additionalData = [...new Set([metadata.additionalData || "", ...unmatched].filter(Boolean))].join("\n\n");
+    }
     if (isWalletCard) {
       const [expiryMonth, shortYear] = expiryInput.split("/");
       const year = Number(shortYear);
@@ -186,8 +280,10 @@ export function ItemEditorDialog({ sectionId, item, initialMetadata, documentTyp
         ...(item?.id ? { id: item.id } : {}),
         section: sectionId,
         title,
+        subtitle: item?.subtitle,
         metadata,
         file,
+        folderId: item?.folderId,
         favorite: item?.favorite,
         pinned: item?.pinned,
         sharedAccess: item?.sharedAccess,
@@ -201,35 +297,44 @@ export function ItemEditorDialog({ sectionId, item, initialMetadata, documentTyp
 
   const renderInput = (field: FieldDefinition) => {
     const value = values[field.key] || "";
-    const common = { id: `field-${field.key}`, value, onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setValue(field.key, event.target.value), required: field.required };
+    const common = { id: `field-${field.key}`, value, onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setUserValue(field.key, event.target.value), required: field.required };
     if (isWalletCard && field.key === "cardNumber") return <input {...common} type="text" value={formatCardNumber(value.replace(/\D/g, ""))} inputMode="numeric" maxLength={23} autoComplete="off" spellCheck={false} placeholder={item?.metadata.lastFour ? `Leave blank to keep card ending ${item.metadata.lastFour}` : "Enter full card number"} onChange={(event) => {
       const digits = event.target.value.replace(/\D/g, "").slice(0, 19);
       setValues((current) => ({ ...current, cardNumber: digits, network: digits ? detectCardNetwork(digits) : item?.metadata.network || "" }));
     }} />;
     if (isWalletCard && field.key === "network") return <input {...common} type="text" value={values.cardNumber ? detectCardNetwork(values.cardNumber) : value} readOnly placeholder="Type a card number to detect" aria-readonly="true" />;
-    if (isWalletCard && field.key === "expiry") return <input {...common} type="text" inputMode="numeric" maxLength={5} placeholder="MM/YY" autoComplete="cc-exp" onChange={(event) => setValue(field.key, formatExpiryInput(event.target.value))} />;
+    if (isWalletCard && field.key === "expiry") return <input {...common} type="text" inputMode="numeric" maxLength={5} placeholder="MM/YY" autoComplete="cc-exp" onChange={(event) => setUserValue(field.key, formatExpiryInput(event.target.value))} />;
     if (field.kind === "select") {
+      if (sectionId === "documents" && field.key === "member") {
+        const options = ["me", ...familyMembers.map((member) => member.id)];
+        if (value && !options.includes(value)) options.push(value); // Keep older saved relationship/name values selectable until edited.
+        const labels = new Map<string, string>([["me", "Me"]]);
+        familyMembers.forEach((member) => labels.set(member.id, `${member.title}${member.metadata.relationship ? ` · ${member.metadata.relationship}` : ""}`));
+        if (value && !labels.has(value)) labels.set(value, value);
+        return <select {...common}><option value="">Choose a family member…</option>{options.map((option) => <option key={option} value={option}>{labels.get(option) || option}</option>)}</select>;
+      }
       const options = sectionId === "documents" && field.key === "type"
         ? [...new Set([...documentTypes, "CV / Resume", ...(value && !documentTypes.includes(value) ? [value] : [])])]
         : field.options || [];
       return <select {...common}><option value="">Choose one…</option>{options.map((option) => <option key={option} value={option}>{option}</option>)}</select>;
     }
-    if (sectionId === "notes" && field.key === "content") return <RichNoteEditor key={`${item?.id || "new"}-${sectionId}`} id={common.id} value={value} onChange={(next) => setValue(field.key, next)} />;
+    if (sectionId === "notes" && field.key === "content") return <RichNoteEditor key={`${item?.id || "new"}-${sectionId}`} id={common.id} value={value} onChange={(next) => setUserValue(field.key, next)} />;
     if (field.kind === "textarea") return <textarea {...common} rows={3} placeholder={field.placeholder || "Add a few helpful details…"} />;
     const type = field.kind === "number" ? "number" : field.kind;
     return <input {...common} type={type} placeholder={field.placeholder || ""} />;
   };
 
   const content = <section className={`editor-dialog ${section.id === "notes" ? "notes-editor-drawer" : ""} ${presentation === "panel" ? "documents-editor-panel" : ""}`} role={presentation === "panel" ? "region" : "dialog"} aria-modal={presentation === "modal" ? true : undefined} aria-labelledby="editor-title">
-      <div className="editor-dialog-head"><div className={`editor-icon ${section.id}`}><section.icon size={19} /></div><div><span className="section-eyebrow">{isCv ? "Career profile" : isAdmission ? "Education record" : item ? "Edit your record" : `Add to ${section.label.toLowerCase()}`}</span><h2 id="editor-title">{isCv ? item ? "Update your CV / Resume." : "Add a CV / Resume." : isAdmission ? item ? "Update admission details." : "Add an admission record." : item ? "Make a quick update." : `Add a ${section.singular}.`}</h2></div><button className="icon-button" onClick={onClose} aria-label={presentation === "panel" ? "Close document panel" : "Close"} disabled={saving}><X size={18} /></button></div>
+      <div className="editor-dialog-head"><div className={`editor-icon ${section.id}`}><section.icon size={19} /></div><div><span className="section-eyebrow">{isCv ? "Career profile" : isAdmission ? "Education record" : item ? "Edit your record" : `Add to ${section.label.toLowerCase()}`}</span><h2 id="editor-title">{isCv ? item ? "Update your CV / Resume." : "Add a CV / Resume." : isAdmission ? item ? "Update admission details." : "Add an admission record." : item ? "Make a quick update." : `Add a ${section.singular}.`}</h2></div>{initialFile && onChangeAddDocumentDestination && <button type="button" className="quiet-button" onClick={changeAddDocumentDestination} disabled={saving}>Change space / type</button>}<button className="icon-button" onClick={onClose} aria-label={presentation === "panel" ? "Close document panel" : "Close"} disabled={saving}><X size={18} /></button></div>
       <p className="editor-intro">{isWalletCard ? "Add a card reference. The full card number is used only in this browser to detect the network and ending digits, then discarded." : sectionId === "accounts" && isBankAccount ? "Keep bank and branch details together. Do not store online banking passwords, PINs, CVVs, or one-time codes." : sectionId === "accounts" ? "Keep a useful index of online services and sign-in links. Never save passwords or one-time codes." : isCv ? "Add your career details and attach a current CV. Identity numbers and expiry dates aren't needed here." : isAdmission ? "Keep the admission, application and payment details together. Grade and passing-year fields are hidden for this record type." : "A few details now make it easier to find later. Everything you add is just for you."}</p>
       <form className="editor-form" onSubmit={submit}>
-        <div className="editor-fields-grid">{fields.map((field) => <label key={field.key} className={`field-label ${field.wide || field.kind === "textarea" ? "field-wide" : ""}`} htmlFor={`field-${field.key}`}>{isCv && field.key === "title" ? "CV / Resume title" : sectionId === "accounts" && field.key === "title" ? isBankAccount ? "Account label" : "Service name" : field.label}{field.required && <span className="required-star">*</span>}{renderInput(field)}<SmartScanFieldNote field={scanResult?.fields[field.key]} currentValue={values[field.key] || ""} onApply={(value) => setValue(field.key, value)}/></label>)}</div>
+        <div className="editor-fields-grid">{fields.map((field) => <label key={field.key} className={`field-label ${field.wide || field.kind === "textarea" ? "field-wide" : ""}`} htmlFor={`field-${field.key}`}>{isCv && field.key === "title" ? "CV / Resume title" : sectionId === "accounts" && field.key === "title" ? isBankAccount ? "Account label" : "Service name" : field.label}{field.required && <span className="required-star">*</span>}{renderInput(field)}<SmartScanFieldNote field={scanResult?.fields[field.key]} currentValue={values[field.key] || ""} onApply={(value) => setUserValue(field.key, value)} allowApply={!initialFile}/></label>)}</div>
+        {initialFile && !isWalletCard && fields.every((field) => field.key !== "additionalData") && <label className="field-label field-wide" htmlFor="field-additional-data">Additional Data <small>Other extracted information that does not fit the fields above</small><textarea id="field-additional-data" value={values.additionalData || ""} onChange={(event) => setUserValue("additionalData", event.target.value)} rows={4} maxLength={5000} placeholder="Review or add other information from the file"/></label>}
         {!isWalletCard && <div className="upload-field-block"><div className="upload-field-title"><span>Attach a file <small>Optional · PDF, photo or document</small></span><span className="upload-lock"><LockKeyhole size={12} /> Private</span></div>
-          {selectedFile ? <div className="upload-preview-row">{previewUrl ? <img src={previewUrl} alt="Selected file preview" className="upload-image-preview" /> : <span className="upload-file-icon"><FileText size={20} /></span>}<span className="upload-preview-name"><b>{selectedFile.name}</b><small>{humanSize(selectedFile.size)} · Ready to upload</small></span><button type="button" className="plain-icon upload-remove" onClick={() => { setSelectedFile(null); setScanResult(null); setScanError(""); }} aria-label="Remove selected file"><X size={16} /></button></div> : item?.file && !removeFile ? <div className="upload-preview-row existing-file-row"><span className="upload-file-icon">{item.file.type?.startsWith("image/") ? <FileImage size={19} /> : <FileText size={19} />}</span><span className="upload-preview-name"><b>{item.file.name}</b><small>{humanSize(item.file.size)} · Saved in your vault</small></span><button type="button" className="upload-replace" onClick={() => document.getElementById("vault-file-input")?.click()}>Replace</button><button type="button" className="plain-icon upload-remove" onClick={() => { setRemoveFile(true); setScanResult(null); setScanError(""); }} aria-label="Remove attachment"><X size={16} /></button></div> : <label htmlFor="vault-file-input" className={`file-dropzone ${dragging ? "file-dropzone-active" : ""}`} onDragOver={(event) => { event.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={(event) => { event.preventDefault(); setDragging(false); acceptFile(event.dataTransfer.files[0]); }}>
-            <span className="upload-circle"><UploadCloud size={19} /></span><span className="dropzone-copy"><b>Choose a file or drop it here</b><small>PDF, PNG, JPG or document · up to {maxUploadMb} MB</small></span><span className="browse-button">Browse files</span></label>}
-          <input className="hidden-file-input" id="vault-file-input" type="file" onChange={(event) => { acceptFile(event.target.files?.[0]); event.currentTarget.value = ""; }} accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.txt" />
-          {canScanAttachment && <SmartScanActionPanel fileName={selectedFile?.name || item?.file?.name || ""} canScan={isPagesApiConfigured && scanSizeAllowed && Boolean(selectedFile || (item?.file?.key && !removeFile))} unavailableMessage={!isPagesApiConfigured ? "Smart Scan needs a connected Cloudflare Pages account." : !scanSizeAllowed ? "Smart Scan supports files up to 7 MB." : "Select this attachment again to scan it."} busy={scanBusy} error={scanError} result={scanResult} onScan={(retry) => void runSmartScan(retry)}/>}
+          {selectedFile ? <div className="upload-preview-row">{previewUrl ? <img src={previewUrl} alt="Selected file preview" className="upload-image-preview" /> : <span className="upload-file-icon"><FileText size={20} /></span>}<span className="upload-preview-name"><b>{selectedFile.name}</b><small>{humanSize(selectedFile.size)} · Ready to upload</small></span><button type="button" className="plain-icon upload-remove" onClick={() => { setSelectedFile(null); setScanResult(null); setScanError(""); }} aria-label="Remove selected file"><X size={16} /></button></div> : item?.file && !removeFile ? <div className="upload-preview-row existing-file-row"><span className="upload-file-icon">{item.file.type?.startsWith("image/") ? <FileImage size={19} /> : <FileText size={19} />}</span><span className="upload-preview-name"><b>{item.file.name}</b><small>{humanSize(item.file.size)} · Saved in your vault</small></span><button type="button" className="upload-replace" disabled={!canUpload} onClick={() => document.getElementById("vault-file-input")?.click()}>Replace</button><button type="button" className="plain-icon upload-remove" onClick={() => { setRemoveFile(true); setScanResult(null); setScanError(""); }} aria-label="Remove attachment"><X size={16} /></button></div> : canUpload ? <label htmlFor="vault-file-input" className={`file-dropzone ${dragging ? "file-dropzone-active" : ""}`} onDragOver={(event) => { event.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={(event) => { event.preventDefault(); setDragging(false); acceptFile(event.dataTransfer.files[0]); }}>
+            <span className="upload-circle"><UploadCloud size={19} /></span><span className="dropzone-copy"><b>Choose a file or drop it here</b><small>PDF, PNG, JPG or document · up to {maxUploadMb} MB</small></span><span className="browse-button">Browse files</span></label> : <div className="file-upload-locked"><LockKeyhole size={16}/><span>New attachments require an active paid plan. Records remain available on every plan.</span>{onUpgrade && <button type="button" onClick={onUpgrade}>View plans</button>}</div>}
+          <input className="hidden-file-input" id="vault-file-input" type="file" disabled={!canUpload} onChange={(event) => { acceptFile(event.target.files?.[0]); event.currentTarget.value = ""; }} accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.txt" />
+          {canScanAttachment && <SmartScanActionPanel fileName={selectedFile?.name || item?.file?.name || ""} canScan={canUpload && isPagesApiConfigured && scanSizeAllowed && Boolean(selectedFile || (item?.file?.key && !removeFile))} unavailableMessage={!canUpload ? "Smart Scan uploads require an active paid plan." : !isPagesApiConfigured ? "Smart Scan needs a connected Cloudflare Pages account." : !scanSizeAllowed ? "Smart Scan supports files up to 7 MB." : "Select this attachment again to scan it."} busy={scanBusy} error={scanError} result={scanResult} onScan={(retry) => void runSmartScan(retry)}/>}
         </div>}
         {isWalletCard && <div className="wallet-card-privacy-note"><ShieldCheck size={14}/><span><b>Sherlock Security System.</b> Card number is used in this browser only to detect the network and ending digits, then discarded on save. Only the last four digits are stored. CVV is never saved.</span></div>}
         {uploadProgress && <TransferProgressIndicator progress={uploadProgress} label="Uploading file" detail={`${humanSize(uploadProgress.loaded)} of ${humanSize(uploadProgress.total)}`}/>}
@@ -278,9 +383,15 @@ function localDateTimeInput(value?: string) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}T${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
 
-export function TodoEditorDialog({ kind = "todo", item, onClose, onSave }: { kind?: NotesRecordKind; item?: VaultItem; onClose: () => void; onSave: (value: Omit<VaultItem, "id" | "createdAt" | "updatedAt"> & { id?: string }) => Promise<void> }) {
+export function TodoEditorDialog({ kind = "todo", item, canUpload, maxUploadMb = 25, onUpgrade, onClose, onSave }: { kind?: NotesRecordKind; item?: VaultItem; canUpload: boolean; maxUploadMb?: number; onUpgrade?: () => void; onClose: () => void; onSave: (value: Omit<VaultItem, "id" | "createdAt" | "updatedAt"> & { id?: string; fileUpload?: File | null }) => Promise<void> }) {
   const [title, setTitle] = useState(item?.title || "");
   const [details, setDetails] = useState(item?.metadata.todoDetails || "");
+  const [additionalData, setAdditionalData] = useState(item?.metadata.additionalData || "");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [removeFile, setRemoveFile] = useState(false);
+  const [scanResult, setScanResult] = useState<SmartScanResult | null>(null);
+  const [scanError, setScanError] = useState("");
+  const [scanBusy, setScanBusy] = useState(false);
   const [dueDate, setDueDate] = useState(item?.metadata.dueDate || "");
   const [reminderAt, setReminderAt] = useState(localDateTimeInput(item?.metadata.reminderAt));
   const [alarmDate, setAlarmDate] = useState(item?.metadata.alarmDate || "");
@@ -294,6 +405,44 @@ export function TodoEditorDialog({ kind = "todo", item, onClose, onSave }: { kin
   const toggleRepeat = (day: string) => setRepeatDays((days) => days.includes(day) ? days.filter((entry) => entry !== day) : [...days, day].sort());
   useEffect(() => { let active = true; void loadAlarmRingtones().then((entries) => { if (active) { setRingtones(entries); setRingtonesLoaded(true); } }).catch(() => { if (active) { setRingtones([]); setRingtonesLoaded(true); } }); return () => { active = false; }; }, []);
   useEffect(() => { if (ringtonesLoaded && !BUILTIN_RINGTONES.some((tone) => tone.id === ringtoneId) && !ringtones.some((tone) => tone.id === ringtoneId)) setRingtoneId(BUILTIN_RINGTONES[0].id); }, [ringtonesLoaded, ringtones, ringtoneId]);
+  const scanAttachment = selectedFile || (!removeFile ? item?.file || null : null);
+  const canScanAttachment = supportsSmartScanFile(scanAttachment);
+  const scanSizeAllowed = isSmartScanFileSizeAllowed(selectedFile?.size ?? (!removeFile ? item?.file?.size : undefined));
+  const scanDefinitions: SmartScanFieldDefinition[] = [
+    { key: "title", label: kind === "todo" ? "Task title" : `${kind} title`, kind: "text" },
+    { key: "todoDetails", label: "Details", kind: "textarea" },
+    ...(kind === "todo" ? [{ key: "dueDate", label: "Due date", kind: "date" }] : []),
+    { key: "additionalData", label: "Additional Data", kind: "textarea" },
+  ];
+  const acceptFile = (file?: File) => {
+    if (!file) return;
+    if (!canUpload) { setError("New attachments require an active paid plan."); return; }
+    if (file.size > Math.max(1, maxUploadMb) * 1024 * 1024) { setError(`Files must be ${maxUploadMb} MB or smaller.`); return; }
+    setError(""); setSelectedFile(file); setRemoveFile(false); setScanResult(null); setScanError("");
+  };
+  const runSmartScan = async (retry: boolean) => {
+    if (!canUpload) { setScanError("Smart Scan uploads require an active paid plan."); return; }
+    if (scanBusy || !canScanAttachment || !scanSizeAllowed || !isPagesApiConfigured) return;
+    setScanBusy(true); setScanError("");
+    try {
+      let file = selectedFile;
+      if (!file && item?.file?.key && !removeFile) {
+        const downloaded = await fetchVaultFile(item.file.key);
+        file = new File([downloaded.blob], downloaded.name || item.file.name, { type: downloaded.blob.type || item.file.type || "" });
+      }
+      if (!file || !supportsSmartScanFile(file)) throw new Error("Select a PDF or supported image to scan.");
+      const result = await smartScanDocument(file, "notes", scanDefinitions, retry);
+      setScanResult(result);
+      Object.entries(result.fields).forEach(([key, field]) => {
+        if (!field.value.trim() || !scanDefinitions.some((definition) => definition.key === key)) return;
+        if (key === "title") setTitle(field.value);
+        else if (key === "todoDetails") setDetails(field.value);
+        else if (key === "dueDate" && kind === "todo") setDueDate(field.value);
+        else if (key === "additionalData") setAdditionalData(field.value);
+      });
+    } catch (reason) { setScanError(reason instanceof Error ? reason.message : "We couldn't scan this attachment. Try again."); }
+    finally { setScanBusy(false); }
+  };
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!title.trim()) { setError(`Add a ${kind === "todo" ? "task" : kind} title first.`); return; }
@@ -309,12 +458,12 @@ export function TodoEditorDialog({ kind = "todo", item, onClose, onSave }: { kin
     setSaving(true); setError("");
     const selectedRingtoneId = BUILTIN_RINGTONES.some((tone) => tone.id === ringtoneId) || ringtones.some((tone) => tone.id === ringtoneId) ? ringtoneId : BUILTIN_RINGTONES[0].id;
     const selectedRingtoneName = BUILTIN_RINGTONES.find((tone) => tone.id === selectedRingtoneId)?.name || ringtones.find((tone) => tone.id === selectedRingtoneId)?.name || BUILTIN_RINGTONES[0].name;
-    const metadata: Record<string, string> = { recordType: kind, enabled: item?.metadata.enabled === "false" ? "false" : "true", ringtoneId: selectedRingtoneId, ringtoneName: selectedRingtoneName, ...(details.trim() ? { todoDetails: details.trim() } : {}) };
+    const metadata: Record<string, string> = { recordType: kind, enabled: item?.metadata.enabled === "false" ? "false" : "true", ringtoneId: selectedRingtoneId, ringtoneName: selectedRingtoneName, ...(details.trim() ? { todoDetails: details.trim() } : {}), ...(additionalData.trim() ? { additionalData: additionalData.trim() } : {}) };
     if (kind === "todo") { metadata.completed = item?.metadata.completed === "true" ? "true" : "false"; if (dueDate) metadata.dueDate = dueDate; }
     if (kind === "reminder") metadata.reminderAt = new Date(reminderAt).toISOString();
     if (kind === "alarm") { metadata.alarmTime = alarmTime; if (repeatDays.length) metadata.repeatDays = repeatDays.join(","); else metadata.alarmDate = alarmDate; }
     try {
-      await onSave({ ...(item?.id ? { id: item.id } : {}), section: "notes", title: title.trim(), metadata, favorite: item?.favorite, pinned: false });
+      await onSave({ ...(item?.id ? { id: item.id } : {}), section: "notes", title: title.trim(), subtitle: item?.subtitle, metadata, favorite: item?.favorite, pinned: false, folderId: item?.folderId, file: selectedFile ? { name: selectedFile.name, size: selectedFile.size, type: selectedFile.type, localOnly: true } : removeFile ? undefined : item?.file, fileUpload: selectedFile });
     } catch (reason) { setError(reason instanceof Error ? reason.message : `Couldn't save this ${kind}.`); setSaving(false); }
   };
   const heading = kind === "todo" ? "task" : kind;
@@ -330,6 +479,12 @@ export function TodoEditorDialog({ kind = "todo", item, onClose, onSave }: { kin
         {kind !== "todo" && <div className="ringtone-picker-row"><label className="field-label" htmlFor="schedule-ringtone"><span><Music2 size={14}/> Ringtone</span><select id="schedule-ringtone" value={ringtoneId} onChange={(event) => setRingtoneId(event.target.value)}><optgroup label="Persora tones">{BUILTIN_RINGTONES.map((tone) => <option key={tone.id} value={tone.id}>{tone.name}</option>)}</optgroup>{ringtones.length > 0 && <optgroup label="More ringtones">{ringtones.map((tone) => <option key={tone.id} value={tone.id}>{tone.name}</option>)}</optgroup>}</select></label><RingtonePreviewButton ringtoneId={ringtoneId}/></div>}
         {kind !== "todo" && <p className="ringtone-help-note">Rings with sound while Persora is open. Browser alarms can’t play after the page is fully closed.</p>}
         <label className="field-label todo-details-field" htmlFor="todo-details">Details <small>Optional</small><textarea id="todo-details" value={details} onChange={(event) => setDetails(event.target.value)} rows={4} maxLength={5000} placeholder="Add a little context…"/></label>
+        <label className="field-label todo-details-field" htmlFor="todo-additional-data">Additional Data <small>Optional</small><textarea id="todo-additional-data" value={additionalData} onChange={(event) => setAdditionalData(event.target.value)} rows={3} maxLength={5000} placeholder="Other information to keep with this task"/></label>
+        <div className="upload-field-block"><div className="upload-field-title"><span>Attach a file <small>Optional · PDF or image for Smart Scan</small></span><span className="upload-lock"><LockKeyhole size={12}/> Private</span></div>
+          {selectedFile ? <div className="upload-preview-row"><span className="upload-file-icon"><FileText size={20}/></span><span className="upload-preview-name"><b>{selectedFile.name}</b><small>{humanSize(selectedFile.size)} · Ready to upload</small></span><button type="button" className="plain-icon upload-remove" onClick={() => { setSelectedFile(null); setScanResult(null); setScanError(""); if (item?.file) setRemoveFile(false); }} aria-label="Remove selected file"><X size={16}/></button></div> : item?.file && !removeFile ? <div className="upload-preview-row existing-file-row"><span className="upload-file-icon">{item.file.type?.startsWith("image/") ? <FileImage size={19}/> : <FileText size={19}/>}</span><span className="upload-preview-name"><b>{item.file.name}</b><small>{humanSize(item.file.size)} · Saved in your vault</small></span><button type="button" className="upload-replace" disabled={!canUpload} onClick={() => document.getElementById("todo-attachment-input")?.click()}>Replace</button><button type="button" className="plain-icon upload-remove" onClick={() => { setRemoveFile(true); setScanResult(null); setScanError(""); }} aria-label="Remove attachment"><X size={16}/></button></div> : canUpload ? <label htmlFor="todo-attachment-input" className="file-dropzone" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); acceptFile(event.dataTransfer.files[0]); }}><span className="upload-circle"><UploadCloud size={19}/></span><span className="dropzone-copy"><b>Choose a file or drop it here</b><small>PDF, PNG, JPG, WebP · up to {maxUploadMb} MB</small></span><span className="browse-button">Browse files</span></label> : <div className="file-upload-locked"><LockKeyhole size={16}/><span>New attachments and Smart Scan require an active paid plan. Existing records remain available.</span>{onUpgrade && <button type="button" onClick={onUpgrade}>View plans</button>}</div>}
+          <input className="hidden-file-input" id="todo-attachment-input" type="file" disabled={!canUpload} onChange={(event) => { acceptFile(event.target.files?.[0]); event.currentTarget.value = ""; }} accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.tif,.tiff,.bmp" />
+          {canScanAttachment && <SmartScanActionPanel fileName={selectedFile?.name || item?.file?.name || ""} canScan={canUpload && isPagesApiConfigured && scanSizeAllowed && Boolean(selectedFile || (item?.file?.key && !removeFile))} unavailableMessage={!canUpload ? "Smart Scan uploads require an active paid plan." : !isPagesApiConfigured ? "Smart Scan needs a connected Cloudflare Pages account." : !scanSizeAllowed ? "Smart Scan supports files up to 7 MB." : "Select the attachment again to scan it."} busy={scanBusy} error={scanError} result={scanResult} onScan={(retry) => void runSmartScan(retry)}/ >}
+        </div>
         {error && <div className="form-alert error-alert" role="alert">{error}</div>}
         <div className="editor-form-footer"><div className="editor-footnote"><ShieldCheck size={14}/><span>Private to your Persora account</span></div><div className="editor-actions"><button type="button" className="quiet-button" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="editor-submit" disabled={saving}>{saving ? <><span className="spinner"/> Saving…</> : <>{item ? `Save ${heading}` : `Add ${heading}`}<Check size={15}/></>}</button></div></div>
       </form>
@@ -406,7 +561,7 @@ function RichNoteEditor({ id, value, onChange }: { id: string; value: string; on
   </div>;
 }
 
-export function ItemDetailDialog({ item, filePreview, shareAccess, comments = [], presentation = "modal", onClose, onEdit, onDownloadFile, onManageSharing, onAddComment }: { item: VaultItem; filePreview?: VaultFilePreview | null; shareAccess?: SharedItemAccess; comments?: ShareComment[]; presentation?: "modal" | "panel"; onClose: () => void; onEdit: () => void; onDownloadFile: () => void; onManageSharing?: () => void; onAddComment?: (body: string) => Promise<void> }) {
+export function ItemDetailDialog({ item, familyMembers = [], filePreview, shareAccess, comments = [], presentation = "modal", onClose, onEdit, onDownloadFile, onManageSharing, onAddComment }: { item: VaultItem; familyMembers?: Pick<VaultItem, "id" | "title" | "metadata">[]; filePreview?: VaultFilePreview | null; shareAccess?: SharedItemAccess; comments?: ShareComment[]; presentation?: "modal" | "panel"; onClose: () => void; onEdit: () => void; onDownloadFile: () => void; onManageSharing?: () => void; onAddComment?: (body: string) => Promise<void> }) {
   const [commentDraft, setCommentDraft] = useState("");
   const [commentSending, setCommentSending] = useState(false);
   const [commentError, setCommentError] = useState("");
@@ -443,7 +598,13 @@ export function ItemDetailDialog({ item, filePreview, shareAccess, comments = []
     ? walletCardEntries.filter(([, value]) => Boolean(value))
     : Object.entries(item.metadata).filter(([key, value]) => Boolean(value) && key !== "notes" && !(item.section === "notes" && key === "content") && !(isTodoItem && ["recordType", "completed", "todoDetails", "dueDate"].includes(key)));
   const walletFieldLabels: Record<string, string> = { cardholder: "Cardholder name", cardNumber: "Card number", network: "Card network", expiryValue: "Expires", cardType: "Card type", issuer: "Bank / issuer", currency: "Currency" };
-  const formattedKey = (value: string) => isWalletCard && walletFieldLabels[value] ? walletFieldLabels[value] : value.replace(/([A-Z])/g, " $1").replace(/^\w/, (letter) => letter.toUpperCase());
+  const formattedKey = (value: string) => value === "member" ? "Belongs to" : isWalletCard && walletFieldLabels[value] ? walletFieldLabels[value] : value.replace(/([A-Z])/g, " $1").replace(/^\w/, (letter) => letter.toUpperCase());
+  const familyMemberLabel = (value: string) => {
+    if (["me", "Me"].includes(value)) return "Me";
+    const match = familyMembers.find((member) => member.id === value);
+    if (match) return match.title;
+    return /^[0-9a-f-]{30,}$/i.test(value) ? "Family member" : value;
+  };
   const note = isTodoItem ? item.metadata.todoDetails : item.section === "notes" ? item.metadata.content : item.metadata.notes;
   const qrValue = item.section === "memberships"
     ? [`PERSORA MEMBERSHIP`, item.title, item.metadata.organization, `Member ID: ${item.metadata.memberId || "not provided"}`, `Level: ${item.metadata.level || "not provided"}`, `Expires: ${item.metadata.expiryDate || "not provided"}`].filter(Boolean).join("\n")
@@ -465,12 +626,12 @@ export function ItemDetailDialog({ item, filePreview, shareAccess, comments = []
     finally { setCommentSending(false); }
   };
   const content = <section className={`detail-dialog ${presentation === "panel" ? "documents-detail-panel" : ""}`} role={presentation === "panel" ? "region" : "dialog"} aria-modal={presentation === "modal" ? true : undefined} aria-labelledby="detail-title">
-      <div className="detail-banner"><div className="detail-banner-pattern"/><div className={`detail-icon ${detailColors[item.section]}`}><section.icon size={22} /></div><button className="icon-button detail-close" onClick={onClose} aria-label={presentation === "panel" ? "Close document panel" : "Close details"}><X size={18} /></button><div className="detail-banner-title"><span>{section.eyebrow}</span><h2 id="detail-title">{item.title}</h2>{item.subtitle && <p>{item.subtitle}</p>}</div><div className="detail-private-pill">{shareAccess ? <><Share2 size={12} /> {shareAccess.direction === "incoming" ? `SHARED BY ${shareAccess.owner.fullName}` : `SHARED WITH ${shareAccess.recipient.fullName}`}</> : <><LockKeyhole size={12} /> YOUR PRIVATE VAULT</>}</div></div>
+      <div className="detail-banner"><div className="detail-banner-pattern"/><div className={`detail-icon ${detailColors[item.section]}`}><section.icon size={22} /></div><button className="icon-button detail-close" onClick={onClose} aria-label={presentation === "panel" ? "Close document panel" : "Close details"}><X size={18} /></button><div className="detail-banner-title"><span>{section.eyebrow}</span><h2 id="detail-title">{item.title}</h2></div><div className="detail-private-pill">{shareAccess ? <><Share2 size={12} /> {shareAccess.direction === "incoming" ? `SHARED BY ${shareAccess.owner.fullName}` : `SHARED WITH ${shareAccess.recipient.fullName}`}</> : <><LockKeyhole size={12} /> YOUR PRIVATE VAULT</>}</div></div>
       <div className="detail-body"><div className="detail-meta-strip"><span><CalendarDays size={13} /> Added {formatDate(item.createdAt)}</span><span className="detail-updated">Updated {formatRelativeDate(item.updatedAt.slice(0, 10))}</span>{dateValue && <span className={`detail-date-status ${days !== null && days >= 0 && days <= 30 ? "detail-date-soon" : ""}`}><span />{days !== null && days >= 0 && days <= 30 ? `${days === 0 ? "Due today" : `Due in ${days} days`} · ` : ""}{formatDate(dateValue)}</span>}</div>
         {isTodoItem && <div className="detail-fields-grid"><div className="detail-field"><span>Status</span><b>{item.metadata.completed === "true" ? "Completed" : "Active"}</b></div>{item.metadata.dueDate && <div className="detail-field"><span>Due date</span><b>{formatDate(item.metadata.dueDate)}</b></div>}</div>}
         {displayEntries.length ? <div className="detail-fields-grid">{displayEntries.map(([key, value]) => {
           const copyableWalletValue = isWalletCard && (key === "cardholder" || key === "cardNumber");
-          const displayValue = !isWalletCard && (key.toLowerCase().includes("date") || key.toLowerCase().includes("expiry") || key.toLowerCase().includes("renewal")) ? formatDate(value) : value;
+          const displayValue = key === "member" ? familyMemberLabel(value) : !isWalletCard && (key.toLowerCase().includes("date") || key.toLowerCase().includes("expiry") || key.toLowerCase().includes("renewal")) ? formatDate(value) : value;
           return <div className="detail-field" key={key}><span>{formattedKey(key)}</span>{copyableWalletValue ? <div className="wallet-card-copy-value"><b>{displayValue}</b><button type="button" className="wallet-card-copy-button" onClick={() => void copyWalletValue(key, displayValue)} aria-label={copiedWalletField === key ? `${formattedKey(key)} copied` : `Copy ${formattedKey(key)}`} title={copiedWalletField === `${key}-error` ? "Clipboard access is unavailable" : copiedWalletField === key ? "Copied" : `Copy ${formattedKey(key)}`}>{copiedWalletField === key ? <Check size={14}/> : <Copy size={14}/>}</button></div> : <b>{displayValue}</b>}</div>;
         })}</div> : <div className="detail-no-meta">No extra details have been added.</div>}
         {isWalletCard && <div className="wallet-card-detail-note"><ShieldCheck size={14}/><span>Sherlock Security System · full card numbers and CVV are never stored. The number stays masked; copy controls are limited to the cardholder name and masked number.</span></div>}

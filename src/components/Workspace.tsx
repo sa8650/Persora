@@ -1,12 +1,13 @@
-import { lazy, Suspense, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import {
-  Activity, AlarmClock, ArrowRight, ArrowUpRight, AtSign, Bell, BellRing, BookOpen, BriefcaseBusiness, Building2, CalendarClock, Check, ChevronRight, Cloud, Code2, ContactRound, Film, Folder, Gamepad2, Globe2, HeartPulse,
+  Activity, AlarmClock, ArrowRight, ArrowUpRight, AtSign, Bell, BellRing, BookOpen, BriefcaseBusiness, Building2, CalendarClock, Check, ChevronRight, Cloud, Code2, ContactRound, FileImage, Film, Folder, Gamepad2, Globe2, HeartPulse,
   CircleHelp, Clock3, CreditCard, FileText, Fingerprint, Heart, Home, LayoutGrid, Link2, List, Music2, Pin, Play, Search, ShoppingBag, Share2,
   LockKeyhole, LogOut, MoreHorizontal, Plus, Settings, ShieldCheck, Trash2,
   Sparkles, UploadCloud, UserRound, UsersRound, WalletCards, X, type LucideIcon,
 } from "lucide-react";
-import { NAV_GROUPS, SECTION_BY_ID } from "../data";
-import type { ActiveScheduleAlert, AppUser, BusinessCardDraft, BusinessSocialPlatform, ContactDraft, ContactImportProgress, DigitalBusinessCard, MedicalRecord, MedicalRecordDraft, NotesRecordKind, PersoraContact, SectionDefinition, SectionId, ShareComment, ShareNotification, SharePermission, SharedVaultEntry, RecordShareEntry, TimelineDraft, TimelineEvent, TransferProgress, VaultFilePreview, VaultFolder, VaultItem, ViewId } from "../types";
+import { NAV_GROUPS, SECTION_BY_ID, SECTION_DEFINITIONS } from "../data";
+import { ADD_DOCUMENT_DESTINATION_EVENT, ADD_DOCUMENT_HANDOFF_EVENT, CONTACT_CATEGORIES, MEDICAL_RECORD_TYPES } from "../types";
+import type { ActiveScheduleAlert, AddDocumentFlowDraft, AppUser, BusinessCardDraft, BusinessSocialPlatform, ContactCategory, ContactDraft, ContactImportProgress, DigitalBusinessCard, MedicalRecord, MedicalRecordDraft, MedicalRecordType, NotesRecordKind, PersoraContact, SectionDefinition, SectionId, ShareComment, ShareNotification, SharePermission, SharedVaultEntry, RecordShareEntry, TimelineDraft, TimelineEvent, TransferProgress, SmartScanFieldDefinition, SmartScanResult, VaultFilePreview, VaultFolder, VaultItem, ViewId } from "../types";
 import { daysUntil, formatDate, humanSize, initials, notePlainText } from "../lib/utils";
 import { BlurFade, MagicCard } from "./magic-ui";
 import ModalPortal from "./ModalPortal";
@@ -18,7 +19,11 @@ import ContactsView from "./ContactsView";
 import BusinessCardsView from "./BusinessCardsView";
 import TimelineView from "./TimelineView";
 import SocialBrandIcon from "./SocialBrandIcon";
-import { alarmRingtoneAudioPath } from "../lib/cloud";
+import { alarmRingtoneAudioPath, isPagesApiConfigured, smartScanDocument } from "../lib/cloud";
+import { editorFieldsFor, matchDocumentTypeSuggestion } from "../lib/editorFields";
+import { isSmartScanFileSizeAllowed, SMART_SCAN_MAX_FILE_BYTES, supportsSmartScanFile } from "./SmartScan";
+import ImagePreview from "./ImagePreview";
+import PdfPreview from "./PdfPreview";
 import { BUILTIN_RINGTONES, startBuiltinRingtone } from "../lib/ringtone";
 import PersonalFinanceView from "./PersonalFinanceView";
 import { ItemDetailDialog, ItemEditorDialog } from "./VaultDialogs";
@@ -54,7 +59,7 @@ interface WorkspaceProps {
   view: ViewId;
   search: string;
   pendingPlanId?: string;
-  documentEditor: { section: SectionId; item?: VaultItem; initialMetadata?: Record<string, string> } | null;
+  documentEditor: { section: SectionId; item?: VaultItem; initialMetadata?: Record<string, string>; initialFile?: File | null; initialScanResult?: SmartScanResult | null; initialScanComplete?: boolean; initialProtectedKeys?: string[] } | null;
   documentFocusedItem: VaultItem | null;
   documentFilePreview: VaultFilePreview | null;
   documentTypes: string[];
@@ -65,7 +70,7 @@ interface WorkspaceProps {
   onDownloadDocumentFile: (item: VaultItem) => void;
   onSearch: (value: string) => void;
   onNavigate: (view: ViewId) => void;
-  onAdd: (section: SectionId, initialMetadata?: Record<string, string>) => void;
+  onAdd: (section: SectionId, initialMetadata?: Record<string, string>, initialFile?: File | null, initialScanResult?: SmartScanResult | null, initialScanComplete?: boolean, initialProtectedKeys?: string[]) => void;
   onSaveItem: (value: Omit<VaultItem, "id" | "createdAt" | "updatedAt"> & { id?: string; fileUpload?: File | null }, onProgress?: (progress: TransferProgress) => void) => Promise<void>;
   onAddTodo: (kind: NotesRecordKind) => void;
   onEditTodoItem: (item: VaultItem) => void;
@@ -99,6 +104,8 @@ interface WorkspaceProps {
   onOpenPublicPage: (path: "/privacy" | "/terms" | "/contact") => void;
   onOpenContact: () => void;
   onProfileSave: (values: { fullName: string; timezone: string; avatarUrl: string }) => Promise<void>;
+  onSendVerificationCode: () => Promise<{ ok: boolean; alreadyVerified?: boolean; expiresInSeconds?: number }>;
+  onVerifyEmailCode: (code: string) => Promise<void>;
   onPasswordChange: (currentPassword: string, newPassword: string) => Promise<void>;
   onExport: () => void;
   onImport: (file: File) => Promise<void>;
@@ -133,6 +140,101 @@ function AccountTypeMark({ type }: { type: string }) {
   return <Icon size={17}/>;
 }
 const getSection = (view: ViewId): SectionDefinition | null => view !== "business-card" && view in SECTION_BY_ID ? SECTION_BY_ID[view as SectionId] : null;
+type AddDocumentSpaceKind = "section" | "contacts" | "medical-records" | "business-cards";
+interface AddDocumentTypeOption { label: string; value: string; }
+interface AddDocumentSpaceOption {
+  id: string; label: string; eyebrow: string; description: string; icon: LucideIcon; color: string;
+  kind: AddDocumentSpaceKind; section?: SectionDefinition; typeField?: string; types: AddDocumentTypeOption[];
+}
+type AddDocumentSelection = { space: AddDocumentSpaceOption; type: AddDocumentTypeOption; file?: File; title?: string; additionalData?: string; scanResult?: SmartScanResult | null; initialScanComplete?: boolean; carriedValues?: Record<string, string>; carriedUserEditedKeys?: string[] };
+
+function addDocumentSpaces(documentTypes: string[]): AddDocumentSpaceOption[] {
+  const spaces = SECTION_DEFINITIONS.filter((section) => section.id !== "business-card").map((section) => {
+    const configuredField: Partial<Record<SectionId, string>> = {
+      documents: "type", academics: "type", family: "relationship", accounts: "accountKind",
+      "personal-finance": "financeType", memberships: "type", "wallet-cards": "cardType",
+      study: "materialType", notes: "recordType", urls: "urlCategory",
+    };
+    const typeField = configuredField[section.id];
+    let types: AddDocumentTypeOption[];
+    if (section.id === "notes") types = [{ label: "Note", value: "note" }, { label: "Task", value: "todo" }, { label: "Reminder", value: "reminder" }, { label: "Alarm", value: "alarm" }];
+    else if (section.id === "documents") {
+      const options = [...new Set([...(documentTypes.length ? documentTypes : section.fields.find((field) => field.key === "type")?.options || []), "CV / Resume", "Other"])];
+      types = options.map((value) => ({ label: ["other", "others"].includes(normalizedAddType(value)) ? "Others" : value, value }));
+    } else if (section.id === "subscriptions") types = ["Streaming & entertainment", "Software & cloud", "Membership", "Other subscription"].map((value) => ({ label: value, value }));
+    else if (section.id === "purchases") types = ["Receipt / invoice", "Warranty record", "Purchase record"].map((value) => ({ label: value, value }));
+    else {
+      const field = section.fields.find((entry) => entry.key === typeField);
+      types = (field?.options || [section.singular.replace(/^./, (first) => first.toUpperCase())]).map((value) => ({ value, label: value }));
+    }
+    return { id: section.id, label: section.label, eyebrow: section.eyebrow, description: section.description, icon: section.icon, color: section.color, kind: "section" as const, section, typeField, types };
+  });
+  const aliasOther = (type: AddDocumentTypeOption): AddDocumentTypeOption => normalizedAddType(type.value) === "other" ? { ...type, label: "Others" } : type;
+  return [
+    ...spaces.map((space) => {
+      const types = space.types.map(aliasOther);
+      return { ...space, types: types.some((type) => normalizedAddType(type.value) === "other") ? types : [...types, { label: "Others", value: "Other" }] };
+    }),
+    { id: "contacts", label: "Contacts", eyebrow: "People, organized", description: "Add a person with the matching contact category preselected.", icon: UsersRound, color: "blue", kind: "contacts", types: CONTACT_CATEGORIES.map((value) => aliasOther({ label: value, value })) },
+    { id: "medical-records", label: "Medical Records", eyebrow: "Private health archive", description: "Start a health record with the chosen record type and its relevant fields.", icon: HeartPulse, color: "rose", kind: "medical-records", types: MEDICAL_RECORD_TYPES.map((value) => aliasOther({ label: value, value })) },
+    { id: "business-cards", label: "Business cards", eyebrow: "Your digital identity", description: "Create a private or shareable digital business card.", icon: BriefcaseBusiness, color: "slate", kind: "business-cards", types: [{ label: "Digital business card", value: "digital-business-card" }] },
+  ];
+}
+function addDocumentFileSpaces(spaces: AddDocumentSpaceOption[]): AddDocumentSpaceOption[] {
+  return spaces.filter((space) => (space.kind === "section" && space.id !== "wallet-cards" && space.id !== "business-card") || space.kind === "medical-records")
+    .map((space) => space.id === "notes" ? { ...space, types: space.types.filter((entry) => entry.value === "note") } : space);
+}
+function normalizedAddType(value: string) { return value.toLocaleLowerCase().replace(/[^a-z0-9]+/g, " ").trim(); }
+function matchAddDocumentType(space: AddDocumentSpaceOption, suggestion: string): AddDocumentTypeOption | undefined {
+  if (!suggestion.trim()) return undefined;
+  const normalized = normalizedAddType(suggestion);
+  const direct = space.types.find((entry) => normalizedAddType(entry.label) === normalized || normalizedAddType(entry.value) === normalized);
+  if (direct) return direct;
+  if (space.id === "documents") {
+    const matched = matchDocumentTypeSuggestion(suggestion, space.types.map((entry) => entry.value));
+    if (matched) return space.types.find((entry) => entry.value === matched);
+  }
+  const keywordRules: Array<[RegExp, RegExp]> = [
+    [/passport/i, /passport/i], [/\b(nid|national id|identity card)\b/i, /nid|national id/i], [/birth certificate/i, /birth certificate/i],
+    [/driv(e|ing).{0,8}(licen[cs]e|permit)|licen[cs]e/i, /driving|licen/i], [/\b(visa|residence permit|work permit)\b/i, /visa|permit/i],
+    [/transcript/i, /transcript/i], [/mark\s*sheet/i, /mark sheet/i], [/admission/i, /admission/i], [/degree/i, /degree|bachelor|master/i],
+    [/prescription|medicine/i, /prescription/i], [/lab\s*(test|report)|blood test/i, /lab test/i], [/x.?ray|imaging|scan/i, /imaging|scan/i],
+    [/vaccin/i, /vaccin/i], [/discharge/i, /discharge summary/i], [/warranty/i, /warranty/i], [/receipt|invoice/i, /receipt|invoice/i],
+    [/subscription|streaming/i, /subscription|streaming/i], [/bank account|bank statement/i, /bank account/i], [/photo|lecture|slides/i, /lecture slides|image/i],
+  ];
+  const matchedRule = keywordRules.find(([source]) => source.test(suggestion));
+  if (matchedRule) { const target = space.types.find((entry) => matchedRule[1].test(entry.label) || matchedRule[1].test(entry.value)); if (target) return target; }
+  const stopWords = new Set(["document", "record", "file", "card", "certificate", "official", "personal", "other"]);
+  const tokens = normalized.split(" ").filter((token) => token.length > 2 && !stopWords.has(token));
+  let best: AddDocumentTypeOption | undefined; let bestScore = 0;
+  for (const option of space.types) { const text = normalizedAddType(`${option.label} ${option.value}`); const score = tokens.reduce((total, token) => total + (text.includes(token) ? 1 : 0), 0); if (score > bestScore) { best = option; bestScore = score; } }
+  return bestScore > 0 ? best : undefined;
+}
+function otherAddDocumentType(space: AddDocumentSpaceOption): AddDocumentTypeOption | undefined {
+  return space.types.find((entry) => ["other", "others"].includes(normalizedAddType(entry.value)) || ["other", "others"].includes(normalizedAddType(entry.label)));
+}
+function addDocumentFileTitle(fileName: string) {
+  const dot = fileName.lastIndexOf("."); const stem = dot > 0 ? fileName.slice(0, dot) : fileName;
+  return stem.replace(/[._-]+/g, " ").replace(/\s+/g, " ").trim() || "Untitled document";
+}
+const addDocumentDestinationKeys = new Set(["type", "accountKind", "financeType", "materialType", "relationship", "cardType", "urlCategory", "recordType", "addFlowType"]);
+const addDocumentNonDataKeys = new Set(["enabled", "ringtoneId", "ringtoneName", "completed", "favorite", "pinned", "snoozedUntil"]);
+function combineCarryData(...blocks: string[]) { return blocks.map((block) => block.trim()).filter(Boolean).filter((block, index, all) => all.indexOf(block) === index).join("\n\n"); }
+function mapAddDocumentCarry(space: AddDocumentSpaceOption, type: AddDocumentTypeOption, values: Record<string, string>, scanAdditionalData: string) {
+  const allowed = space.kind === "section" && space.section
+    ? new Set(editorFieldsFor(space.id as SectionId, type.value, space.id === "accounts" ? type.value : values.accountKind || "", space.id === "personal-finance" ? type.value : values.financeType || "", space.id === "study" ? type.value : values.materialType || "").map((field) => field.key))
+    : space.kind === "medical-records" ? new Set(["title", "recordType", "recordDate", "provider", "hospital", "specialty", "diagnosis", "testName", "testResult", "medicationNotes", "followUpDate", "notes", "additionalData"])
+      : new Set<string>();
+  const mapped: Record<string, string> = {};
+  const unmatched: string[] = [];
+  Object.entries(values).forEach(([key, value]) => {
+    if (!value.trim() || key === "title" || key === "additionalData" || addDocumentNonDataKeys.has(key)) return;
+    if (allowed.has(key) && !addDocumentDestinationKeys.has(key)) mapped[key] = value;
+    else unmatched.push(`${key}: ${value}`);
+  });
+  const additionalData = combineCarryData(values.additionalData || "", ...unmatched, scanAdditionalData);
+  return { mapped, additionalData };
+}
 type ViewMode = "cards" | "list";
 function readPageView(userId: string, pageId: string): ViewMode {
   try { return localStorage.getItem(`persora-view:${userId}:${pageId}`) === "list" ? "list" : "cards"; } catch { return "cards"; }
@@ -212,16 +314,30 @@ async function encodeProfilePhoto(file: File): Promise<string> {
   }
 }
 
-export default function Workspace({ user, items, sharedByMe, sharedWithMe, recordSharesByMe, recordSharesWithMe, contacts, businessCards, notifications, ringingSchedules, sharingAvailable, timelineEvents, timelineOnline, timelineSaving, onSaveTimelineEvent, onDeleteTimelineEvent, onOpenTimelineAttachment, medicalRecords, maxUploadMb, onSaveMedicalRecord, onDeleteMedicalRecord, onOpenMedicalRecordFile, onPreviewMedicalRecordFile, onRefreshMedicalRecords, view, search, pendingPlanId, documentEditor, documentFocusedItem, documentFilePreview, documentTypes, documentComments, onCloseDocumentPanel, onManageDocumentSharing, onAddDocumentComment, onDownloadDocumentFile, onSearch, onNavigate, onAdd, onSaveItem, onAddTodo, onEditTodoItem, onToggleTodo, onToggleSchedule, onDismissSchedule, onSnoozeSchedule, onOpenItem, onEditItem, onDeleteItem, onShareItem, onOpenSharedEntry, onChangeSharePermission, onRevokeShare, onShareRecord, onRevokeRecordShare, onMarkNotificationsRead, onToggleFavorite, onTogglePin, onMoveVaultItem, onSaveContact, onDeleteContact, onMergeContacts, onImportContacts, onRefreshContacts, onSaveBusinessCard, onDeleteBusinessCard, onRefreshBusinessCards, onSignOut, onOpenAdmin, onOpenPublicPage, onOpenContact, onProfileSave, onPasswordChange, onExport, onImport, onDeleteAccount, notify }: WorkspaceProps) {
+export default function Workspace({ user, items, sharedByMe, sharedWithMe, recordSharesByMe, recordSharesWithMe, contacts, businessCards, notifications, ringingSchedules, sharingAvailable, timelineEvents, timelineOnline, timelineSaving, onSaveTimelineEvent, onDeleteTimelineEvent, onOpenTimelineAttachment, medicalRecords, maxUploadMb, onSaveMedicalRecord, onDeleteMedicalRecord, onOpenMedicalRecordFile, onPreviewMedicalRecordFile, onRefreshMedicalRecords, view, search, pendingPlanId, documentEditor, documentFocusedItem, documentFilePreview, documentTypes, documentComments, onCloseDocumentPanel, onManageDocumentSharing, onAddDocumentComment, onDownloadDocumentFile, onSearch, onNavigate, onAdd, onSaveItem, onAddTodo, onEditTodoItem, onToggleTodo, onToggleSchedule, onDismissSchedule, onSnoozeSchedule, onOpenItem, onEditItem, onDeleteItem, onShareItem, onOpenSharedEntry, onChangeSharePermission, onRevokeShare, onShareRecord, onRevokeRecordShare, onMarkNotificationsRead, onToggleFavorite, onTogglePin, onMoveVaultItem, onSaveContact, onDeleteContact, onMergeContacts, onImportContacts, onRefreshContacts, onSaveBusinessCard, onDeleteBusinessCard, onRefreshBusinessCards, onSignOut, onOpenAdmin, onOpenPublicPage, onOpenContact, onProfileSave, onSendVerificationCode, onVerifyEmailCode, onPasswordChange, onExport, onImport, onDeleteAccount, notify }: WorkspaceProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileMenu, setProfileMenu] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState(() => typeof Notification === "undefined" ? "unsupported" : Notification.permission);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
+  const [addDocumentOpen, setAddDocumentOpen] = useState(false);
+  const [addDocumentDraft, setAddDocumentDraft] = useState<AddDocumentFlowDraft | null>(null);
+  const [pendingContactAdd, setPendingContactAdd] = useState<ContactCategory | null>(null);
+  const [pendingMedicalAdd, setPendingMedicalAdd] = useState<MedicalRecordType | null>(null);
+  const [pendingMedicalFile, setPendingMedicalFile] = useState<File | null>(null);
+  const [pendingMedicalTitle, setPendingMedicalTitle] = useState("");
+  const [pendingMedicalAdditionalData, setPendingMedicalAdditionalData] = useState("");
+  const [pendingMedicalScanResult, setPendingMedicalScanResult] = useState<SmartScanResult | null>(null);
+  const [pendingMedicalScanComplete, setPendingMedicalScanComplete] = useState(false);
+  const [pendingMedicalValues, setPendingMedicalValues] = useState<Record<string, string> | null>(null);
+  const [pendingMedicalProtectedKeys, setPendingMedicalProtectedKeys] = useState<string[]>([]);
+  const [pendingBusinessCardCreate, setPendingBusinessCardCreate] = useState(0);
   const [compactDocumentPanels, setCompactDocumentPanels] = useState(() => typeof window !== "undefined" && window.matchMedia("(max-width: 900px)").matches);
   const section = getSection(view);
   const activeDocumentEditor = view === "documents" && documentEditor?.section === "documents" ? documentEditor : null;
   const activeDocumentItem = view === "documents" && documentFocusedItem?.section === "documents" ? documentFocusedItem : null;
+  const familyMembers = useMemo(() => items.filter((item) => item.section === "family"), [items]);
+  const canUpload = !user.demo && user.uploadsEnabled === true;
   const hasDocumentPanel = Boolean(activeDocumentEditor || activeDocumentItem);
   const titleInfo = section ? { title: section.label, eyebrow: section.eyebrow, icon: section.icon } : viewInfo[view] || viewInfo.dashboard;
   useEffect(() => {
@@ -238,6 +354,57 @@ export default function Workspace({ user, items, sharedByMe, sharedWithMe, recor
     return () => window.removeEventListener("keydown", onEscape);
   }, [sidebarOpen]);
   const updateView = (next: ViewId) => { onNavigate(next); setSidebarOpen(false); onSearch(""); setProfileMenu(false); };
+  const openAddDocument = (draft: AddDocumentFlowDraft | null = null) => { setAddDocumentDraft(draft); setAddDocumentOpen(true); };
+  useEffect(() => {
+    const handleDestinationChange = (event: Event) => {
+      const draft = (event as CustomEvent<AddDocumentFlowDraft>).detail;
+      if (!draft?.file) return;
+      openAddDocument(draft);
+    };
+    window.addEventListener(ADD_DOCUMENT_DESTINATION_EVENT, handleDestinationChange);
+    return () => window.removeEventListener(ADD_DOCUMENT_DESTINATION_EVENT, handleDestinationChange);
+  }, []);
+  const handleAddDocumentSelection = ({ space, type, file, title, additionalData, scanResult, initialScanComplete, carriedValues = {}, carriedUserEditedKeys = [] }: AddDocumentSelection) => {
+    const previousDraft = addDocumentDraft;
+    if (previousDraft) window.dispatchEvent(new CustomEvent(ADD_DOCUMENT_HANDOFF_EVENT, { detail: previousDraft.spaceId }));
+    setAddDocumentOpen(false);
+    setAddDocumentDraft(null);
+    const carried = mapAddDocumentCarry(space, type, carriedValues, scanResult?.fields.additionalData?.value || "");
+    const mergedAdditionalData = combineCarryData(additionalData || "", carried.additionalData);
+    const finalTitle = carriedValues.title?.trim() || title || (file ? addDocumentFileTitle(file.name) : "");
+    if (space.kind === "contacts") {
+      setPendingContactAdd(type.value as ContactCategory);
+      updateView("contacts");
+      return;
+    }
+    if (space.kind === "medical-records") {
+      const medicalValues = { ...carried.mapped, title: finalTitle, recordType: type.value, additionalData: mergedAdditionalData };
+      setPendingMedicalAdd(type.value as MedicalRecordType);
+      setPendingMedicalFile(file || null);
+      setPendingMedicalTitle(finalTitle);
+      setPendingMedicalAdditionalData(mergedAdditionalData);
+      setPendingMedicalScanResult(scanResult || null);
+      setPendingMedicalScanComplete(Boolean(initialScanComplete));
+      setPendingMedicalValues(medicalValues);
+      setPendingMedicalProtectedKeys(carriedUserEditedKeys);
+      updateView("medical-records");
+      return;
+    }
+    if (space.kind === "business-cards") {
+      setPendingBusinessCardCreate((request) => request + 1);
+      updateView("business-card");
+      return;
+    }
+    const metadata: Record<string, string> = { ...carried.mapped };
+    if (space.typeField) metadata[space.typeField] = type.value;
+    else metadata.addFlowType = type.label;
+    if (space.id === "notes") metadata.recordType = type.value;
+    if (file) {
+      metadata.title = finalTitle;
+      metadata.additionalData = mergedAdditionalData;
+    }
+    onAdd(space.id as SectionId, metadata, file, scanResult || null, Boolean(initialScanComplete), carriedUserEditedKeys);
+  };
   const searchEntries: { result: SearchResult; select: () => void }[] = [
     ...[...items].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map((item) => {
       const searchText = Object.entries(item.metadata)
@@ -246,7 +413,7 @@ export default function Workspace({ user, items, sharedByMe, sharedWithMe, recor
           if (item.section === "accounts" && item.metadata.accountKind === "Bank Account") return !["accountNumber", "routingNumber", "swiftCode", "iban"].includes(key);
           return true;
         })
-        .map(([key, value]) => `${key} ${item.section === "notes" && key === "content" ? notePlainText(value) : value}`)
+        .map(([key, value]) => `${key} ${key === "member" ? (value === "me" || value === "Me" ? "Me" : familyMembers.find((member) => member.id === value)?.title || (/^[0-9a-f-]{30,}$/i.test(value) ? "family member" : value)) : item.section === "notes" && key === "content" ? notePlainText(value) : value}`)
         .join(" ");
       return { result: { name: item.title, meta: [SECTION_BY_ID[item.section].label, item.subtitle, item.file?.name ? `File · ${item.file.name}` : ""].filter(Boolean).join(" · "), searchText, href: `persora:vault:${item.id}` }, select: () => onOpenItem(item) };
     }),
@@ -261,7 +428,7 @@ export default function Workspace({ user, items, sharedByMe, sharedWithMe, recor
   ];
   const searchQuickActions: QuickAction[] = [
     { label: "Create a note", icon: <FileText className="h-4 w-4"/>, shortcut: "N", onClick: () => { onSearch(""); onAdd("notes"); } },
-    { label: "Add a document", icon: <Plus className="h-4 w-4"/>, shortcut: "D", onClick: () => { onSearch(""); onAdd("documents"); } },
+    { label: "Add a document", icon: <Plus className="h-4 w-4"/>, shortcut: "D", onClick: () => { onSearch(""); openAddDocument(); } },
     { label: "Open contacts", icon: <UsersRound className="h-4 w-4"/>, shortcut: "P", onClick: () => updateView("contacts") },
   ];
   const searchFiles: SearchFile[] = [...items].filter((item) => item.file).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 12).map((item) => {
@@ -278,7 +445,7 @@ export default function Workspace({ user, items, sharedByMe, sharedWithMe, recor
   });
   const sidebarLink = (id: ViewId, label: string, Icon: LucideIcon, count?: number) => <button key={id} className={`sidebar-link ${view === id ? "active" : ""}`} onClick={() => updateView(id)} aria-current={view === id ? "page" : undefined}><Icon size={17}/><span>{label}</span>{count !== undefined && <span className="nav-count">{count}</span>}</button>;
   const sectionView = section && section.id !== "personal-finance" ? <SectionView userId={user.id} demoMode={user.demo || false} section={section} items={items.filter((item) => item.section === section.id)} query={search} onAdd={onAdd} onAddTodo={onAddTodo} onEditTodoItem={onEditTodoItem} onToggleTodo={onToggleTodo} onToggleSchedule={onToggleSchedule} onOpenItem={onOpenItem} onEditItem={onEditItem} onDeleteItem={onDeleteItem} onShareItem={onShareItem} onToggleFavorite={onToggleFavorite} onTogglePin={onTogglePin} onMoveItem={onMoveVaultItem} notify={notify}/> : null;
-  const documentPanelContent = activeDocumentEditor ? <ItemEditorDialog key={`document-editor-${activeDocumentEditor.item?.id || "new"}`} sectionId="documents" item={activeDocumentEditor.item} initialMetadata={activeDocumentEditor.initialMetadata} documentTypes={documentTypes} maxUploadMb={maxUploadMb} presentation="panel" onClose={onCloseDocumentPanel} onSave={onSaveItem}/> : activeDocumentItem ? <ItemDetailDialog key={`document-view-${activeDocumentItem.id}`} item={activeDocumentItem} filePreview={documentFilePreview} shareAccess={activeDocumentItem.sharedAccess} comments={documentComments} presentation="panel" onClose={onCloseDocumentPanel} onEdit={() => onEditItem(activeDocumentItem)} onDownloadFile={() => onDownloadDocumentFile(activeDocumentItem)} onManageSharing={() => onManageDocumentSharing(activeDocumentItem)} onAddComment={onAddDocumentComment}/> : null;
+  const documentPanelContent = activeDocumentEditor ? <ItemEditorDialog key={`document-editor-${activeDocumentEditor.item?.id || "new"}`} sectionId="documents" item={activeDocumentEditor.item} initialMetadata={activeDocumentEditor.initialMetadata} initialFile={activeDocumentEditor.initialFile} initialScanResult={activeDocumentEditor.initialScanResult} initialScanComplete={activeDocumentEditor.initialScanComplete} initialProtectedKeys={activeDocumentEditor.initialProtectedKeys} documentTypes={documentTypes} familyMembers={familyMembers} maxUploadMb={maxUploadMb} canUpload={canUpload} presentation="panel" onChangeAddDocumentDestination={(draft) => window.dispatchEvent(new CustomEvent(ADD_DOCUMENT_DESTINATION_EVENT, { detail: draft }))} onClose={onCloseDocumentPanel} onSave={onSaveItem}/> : activeDocumentItem ? <ItemDetailDialog key={`document-view-${activeDocumentItem.id}`} item={activeDocumentItem} filePreview={documentFilePreview} shareAccess={activeDocumentItem.sharedAccess} comments={documentComments} presentation="panel" onClose={onCloseDocumentPanel} onEdit={() => onEditItem(activeDocumentItem)} onDownloadFile={() => onDownloadDocumentFile(activeDocumentItem)} onManageSharing={() => onManageDocumentSharing(activeDocumentItem)} onAddComment={onAddDocumentComment}/> : null;
   const documentWorkspace = section?.id === "documents" && sectionView ? <ResizablePanelGroup id="documents-panel-group" orientation="horizontal" className={`documents-resizable-group ${hasDocumentPanel ? "documents-panels-active" : ""}`} style={hasDocumentPanel ? { height: "100%", minHeight: 0, maxHeight: "none", overflow: "hidden" } : { height: "auto", minHeight: 0, maxHeight: "none", overflow: "visible" }}>
     <ResizablePanel id="documents-list-panel" className={`documents-list-panel ${hasDocumentPanel ? "documents-list-panel-active" : ""}`} defaultSize={hasDocumentPanel ? (compactDocumentPanels ? "28%" : "64%") : "100%"} minSize={hasDocumentPanel ? (compactDocumentPanels ? "12%" : "40%") : "100%"} maxSize={hasDocumentPanel ? (compactDocumentPanels ? "62%" : "72%") : "100%"}>
       {sectionView}
@@ -301,16 +468,186 @@ export default function Workspace({ user, items, sharedByMe, sharedWithMe, recor
       </nav>
       <div className="sidebar-bottom"><div className="sidebar-secure-card"><span className="secure-card-icon"><ShieldCheck size={16}/></span><div><b>Your vault is private</b><small>Only you have access</small></div><span className="secure-mini-check"><Check size={11}/></span></div><div className="sidebar-profile-wrap">{profileMenu && <div className="user-popover"><div className="user-popover-header"><span className="avatar avatar-small"><AccountAvatarContent user={user}/></span><div><strong>{user.fullName}</strong><small>{user.email}</small></div></div>{user.role === "admin" && <button onClick={onOpenAdmin}><ShieldCheck size={15}/> Administrator console</button>}<button onClick={() => updateView("billing")}><CreditCard size={15}/> Plans &amp; billing</button><button onClick={() => updateView("settings")}><Settings size={15}/> Account settings</button><button className="popover-logout" onClick={onSignOut}><LogOut size={15}/> Sign out</button></div>}<button className="sidebar-profile" onClick={() => setProfileMenu((open) => !open)}><span className="avatar"><AccountAvatarContent user={user}/></span><span className="profile-copy"><b>{user.fullName}</b><small>{user.role === "admin" ? "Administrator" : "Personal account"}</small></span><MoreHorizontal size={19}/></button></div></div>
     </aside>
-    <div className="workspace-main"><header className="workspace-topbar"><button className="mobile-menu-button" onClick={() => setSidebarOpen(true)} aria-label="Open workspace sections" aria-expanded={sidebarOpen}>Sections</button><div className={`breadcrumb-area ${section ? "breadcrumb-section-hidden" : ""}`}><span className="breadcrumb-overline">{titleInfo.eyebrow}</span><div className="breadcrumb-title"><h1>{titleInfo.title}</h1>{view === "dashboard" && <span className="live-pill"><span/>Private workspace</span>}</div></div><div className="topbar-actions"><button type="button" className="global-search-trigger" onClick={() => setSearchModalOpen(true)} aria-label="Search your vault" aria-haspopup="dialog" aria-expanded={searchModalOpen}><Search size={16}/><span>Search your vault…</span><kbd>Ctrl/⌘ K</kbd></button><div className="notification-wrap"><button className={`notification-button icon-button ${notificationOpen ? "button-pressed" : ""}`} onClick={() => { const opening = !notificationOpen; setNotificationOpen(opening); if (opening) onMarkNotificationsRead(); }} aria-label={`Notifications${notifications.some((notification) => !notification.readAt) ? ", unread updates" : ""}`} aria-expanded={notificationOpen}><Bell size={17}/>{notifications.some((notification) => !notification.readAt) && <span className="notification-dot"/>}</button>{notificationOpen && <div className="notification-popover"><div className="notification-head"><div><b>Notifications</b><span>Reminders, alarms, and sharing activity</span></div><div className="notification-head-actions">{notificationPermission === "default" && <button className="notification-enable" onClick={async () => { try { const permission = await Notification.requestPermission(); setNotificationPermission(permission); if (permission === "granted") notify("Desktop notifications are enabled."); } catch { notify("Browser notifications are unavailable here.", "error"); } }}>Enable alerts</button>}<button className="plain-icon" onClick={() => setNotificationOpen(false)} aria-label="Close notifications">×</button></div></div>{notifications.length ? notifications.slice(0, 12).map((notification) => <button className="notification-row" key={notification.id} onClick={() => { const scheduleItem = notification.kind === "reminder" || notification.kind === "alarm" ? items.find((item) => notification.id.startsWith(`schedule:${item.id}:`)) : undefined; if (scheduleItem) onOpenItem(scheduleItem); else if (notification.kind === "reminder" || notification.kind === "alarm") updateView("notes"); else updateView("shared"); setNotificationOpen(false); }}><span className={`notification-icon ${notification.kind === "reminder" ? "tag-orange" : notification.kind === "alarm" ? "tag-violet" : "tag-blue"}`}>{notification.kind === "reminder" ? <BellRing size={14}/> : notification.kind === "alarm" ? <AlarmClock size={14}/> : <Share2 size={14}/>}</span><span><b>{notification.actorName}</b><small>{notification.message}</small></span><span className="notification-time">{new Date(notification.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span></button>) : <div className="notification-empty">You're all caught up.</div>}{(notificationPermission === "unsupported" || notificationPermission === "denied") && <div className="notification-footnote">{notificationPermission === "denied" ? "Desktop alerts are blocked by your browser settings. In-app reminders still work while Persora is open." : "Desktop alerts aren’t supported in this browser. In-app reminders still work while Persora is open."}</div>}</div>}</div><button className="topbar-avatar avatar" onClick={() => updateView("settings")} aria-label="Open account settings"><AccountAvatarContent user={user}/></button></div></header>
-      <main className={`workspace-content ${view === "documents" && hasDocumentPanel ? "workspace-content-document-split" : ""}`}>{view === "dashboard" && <DashboardView user={user} items={items} onNavigate={updateView} onOpenItem={onOpenItem} onAdd={onAdd} onToggleFavorite={onToggleFavorite}/>} {view === "timeline" && <TimelineView events={timelineEvents} items={items} online={timelineOnline} canPost={!user.demo && sharingAvailable} saving={timelineSaving} onSave={onSaveTimelineEvent} onDelete={onDeleteTimelineEvent} onOpenItem={onOpenItem} onOpenAttachment={onOpenTimelineAttachment} notify={notify}/>} {view === "medical-records" && <Suspense fallback={<div className="medical-loading">Loading your private health archive…</div>}><MedicalRecordsView userId={user.id} records={medicalRecords} contacts={contacts} items={items} demoMode={user.demo || false} connected={sharingAvailable} maxUploadMb={maxUploadMb} onRefresh={onRefreshMedicalRecords} onSave={onSaveMedicalRecord} onDelete={onDeleteMedicalRecord} onOpenFile={onOpenMedicalRecordFile} onPreviewFile={onPreviewMedicalRecordFile} notify={notify}/></Suspense>} {view === "personal-finance" && <PersonalFinanceView items={items} contacts={contacts} onSave={onSaveItem} onOpenItem={onOpenItem} onDeleteItem={onDeleteItem} onNavigate={updateView}/>} {documentWorkspace} {view === "shared" && <SharedDocumentsView userId={user.id} outgoing={sharedByMe} incoming={sharedWithMe} recordOutgoing={recordSharesByMe} recordIncoming={recordSharesWithMe} publicCards={businessCards.filter((card) => card.isPublic)} available={sharingAvailable} onOpen={onOpenSharedEntry} onPermissionChange={onChangeSharePermission} onRevoke={onRevokeShare} onRevokeRecord={onRevokeRecordShare}/>} {view === "contacts" && <ContactsView userId={user.id} contacts={contacts} demoMode={user.demo || false} connected={sharingAvailable} onSave={onSaveContact} onDelete={onDeleteContact} onShare={(contact, recipient) => onShareRecord("contact", contact.id, recipient)} onMerge={onMergeContacts} onImport={onImportContacts} onRefresh={onRefreshContacts} notify={notify}/>} {view === "business-card" && <BusinessCardsView userId={user.id} cards={businessCards} demoMode={user.demo || false} connected={sharingAvailable} onSave={onSaveBusinessCard} onDelete={onDeleteBusinessCard} onShare={(card, recipient) => onShareRecord("business_card", card.id, recipient)} onRefresh={onRefreshBusinessCards} notify={notify}/>} {view === "billing" && <BillingView initialPlanId={pendingPlanId} notify={notify}/>} {view === "settings" && <SettingsView user={user} items={items} onProfileSave={onProfileSave} onPasswordChange={onPasswordChange} onExport={onExport} onImport={onImport} onDeleteAccount={onDeleteAccount} onOpenContact={onOpenContact} notify={notify}/>}</main>
+    <div className="workspace-main"><header className="workspace-topbar"><button className="mobile-menu-button" onClick={() => setSidebarOpen(true)} aria-label="Open workspace sections" aria-expanded={sidebarOpen}>Sections</button><div className={`breadcrumb-area ${section ? "breadcrumb-section-hidden" : ""}`}><span className="breadcrumb-overline">{titleInfo.eyebrow}</span><div className="breadcrumb-title"><h1>{titleInfo.title}</h1>{view === "dashboard" && <span className="live-pill"><span/>Private workspace</span>}</div></div><div className="topbar-actions"><button type="button" className="workspace-add-document" onClick={() => openAddDocument()} aria-haspopup="dialog" aria-expanded={addDocumentOpen} aria-controls="add-document-drawer"><Plus size={15}/><span>Add document</span></button><button type="button" className="global-search-trigger" onClick={() => setSearchModalOpen(true)} aria-label="Search your vault" aria-haspopup="dialog" aria-expanded={searchModalOpen}><Search size={16}/><span>Search your vault…</span><kbd>Ctrl/⌘ K</kbd></button><div className="notification-wrap"><button className={`notification-button icon-button ${notificationOpen ? "button-pressed" : ""}`} onClick={() => { const opening = !notificationOpen; setNotificationOpen(opening); if (opening) onMarkNotificationsRead(); }} aria-label={`Notifications${notifications.some((notification) => !notification.readAt) ? ", unread updates" : ""}`} aria-expanded={notificationOpen}><Bell size={17}/>{notifications.some((notification) => !notification.readAt) && <span className="notification-dot"/>}</button>{notificationOpen && <div className="notification-popover"><div className="notification-head"><div><b>Notifications</b><span>Reminders, alarms, and sharing activity</span></div><div className="notification-head-actions">{notificationPermission === "default" && <button className="notification-enable" onClick={async () => { try { const permission = await Notification.requestPermission(); setNotificationPermission(permission); if (permission === "granted") notify("Desktop notifications are enabled."); } catch { notify("Browser notifications are unavailable here.", "error"); } }}>Enable alerts</button>}<button className="plain-icon" onClick={() => setNotificationOpen(false)} aria-label="Close notifications">×</button></div></div>{notifications.length ? notifications.slice(0, 12).map((notification) => <button className="notification-row" key={notification.id} onClick={() => { const scheduleItem = notification.kind === "reminder" || notification.kind === "alarm" ? items.find((item) => notification.id.startsWith(`schedule:${item.id}:`)) : undefined; if (scheduleItem) onOpenItem(scheduleItem); else if (notification.kind === "reminder" || notification.kind === "alarm") updateView("notes"); else updateView("shared"); setNotificationOpen(false); }}><span className={`notification-icon ${notification.kind === "reminder" ? "tag-orange" : notification.kind === "alarm" ? "tag-violet" : "tag-blue"}`}>{notification.kind === "reminder" ? <BellRing size={14}/> : notification.kind === "alarm" ? <AlarmClock size={14}/> : <Share2 size={14}/>}</span><span><b>{notification.actorName}</b><small>{notification.message}</small></span><span className="notification-time">{new Date(notification.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span></button>) : <div className="notification-empty">You're all caught up.</div>}{(notificationPermission === "unsupported" || notificationPermission === "denied") && <div className="notification-footnote">{notificationPermission === "denied" ? "Desktop alerts are blocked by your browser settings. In-app reminders still work while Persora is open." : "Desktop alerts aren’t supported in this browser. In-app reminders still work while Persora is open."}</div>}</div>}</div><button className="topbar-avatar avatar" onClick={() => updateView("settings")} aria-label="Open account settings"><AccountAvatarContent user={user}/></button></div></header>
+      <main className={`workspace-content ${view === "documents" && hasDocumentPanel ? "workspace-content-document-split" : ""}`}>{view === "dashboard" && <DashboardView user={user} items={items} onNavigate={updateView} onOpenItem={onOpenItem} onAdd={onAdd} onAddDocument={() => openAddDocument()} onToggleFavorite={onToggleFavorite}/>} {view === "timeline" && <TimelineView events={timelineEvents} items={items} online={timelineOnline} canPost={!user.demo && sharingAvailable} canUpload={canUpload} onUpgrade={!user.demo ? () => updateView("billing") : undefined} saving={timelineSaving} onSave={onSaveTimelineEvent} onDelete={onDeleteTimelineEvent} onOpenItem={onOpenItem} onOpenAttachment={onOpenTimelineAttachment} notify={notify}/>} {view === "medical-records" && <Suspense fallback={<div className="medical-loading">Loading your private health archive…</div>}><MedicalRecordsView userId={user.id} records={medicalRecords} contacts={contacts} items={items} demoMode={user.demo || false} connected={sharingAvailable} maxUploadMb={maxUploadMb} canUpload={canUpload} onUpgrade={!user.demo ? () => updateView("billing") : undefined} initialAddType={pendingMedicalAdd} initialAddFile={pendingMedicalFile} initialAddTitle={pendingMedicalTitle} initialAddAdditionalData={pendingMedicalAdditionalData} initialAddScanResult={pendingMedicalScanResult} initialAddScanComplete={pendingMedicalScanComplete} initialAddValues={pendingMedicalValues} initialAddProtectedKeys={pendingMedicalProtectedKeys} onAddRequestHandled={() => { setPendingMedicalAdd(null); setPendingMedicalFile(null); setPendingMedicalTitle(""); setPendingMedicalAdditionalData(""); setPendingMedicalScanResult(null); setPendingMedicalScanComplete(false); setPendingMedicalValues(null); setPendingMedicalProtectedKeys([]); }} onChangeAddDocumentDestination={(draft) => window.dispatchEvent(new CustomEvent(ADD_DOCUMENT_DESTINATION_EVENT, { detail: draft }))} onRefresh={onRefreshMedicalRecords} onSave={onSaveMedicalRecord} onDelete={onDeleteMedicalRecord} onOpenFile={onOpenMedicalRecordFile} onPreviewFile={onPreviewMedicalRecordFile} notify={notify}/></Suspense>} {view === "personal-finance" && <PersonalFinanceView items={items} contacts={contacts} onSave={onSaveItem} onOpenItem={onOpenItem} onDeleteItem={onDeleteItem} onNavigate={updateView}/>} {documentWorkspace} {view === "shared" && <SharedDocumentsView userId={user.id} outgoing={sharedByMe} incoming={sharedWithMe} recordOutgoing={recordSharesByMe} recordIncoming={recordSharesWithMe} publicCards={businessCards.filter((card) => card.isPublic)} available={sharingAvailable} onOpen={onOpenSharedEntry} onPermissionChange={onChangeSharePermission} onRevoke={onRevokeShare} onRevokeRecord={onRevokeRecordShare}/>} {view === "contacts" && <ContactsView userId={user.id} contacts={contacts} demoMode={user.demo || false} connected={sharingAvailable} canUpload={canUpload} onUpgrade={!user.demo ? () => updateView("billing") : undefined} initialAddCategory={pendingContactAdd} onAddRequestHandled={() => setPendingContactAdd(null)} onSave={onSaveContact} onDelete={onDeleteContact} onShare={(contact, recipient) => onShareRecord("contact", contact.id, recipient)} onMerge={onMergeContacts} onImport={onImportContacts} onRefresh={onRefreshContacts} notify={notify}/>} {view === "business-card" && <BusinessCardsView userId={user.id} cards={businessCards} demoMode={user.demo || false} connected={sharingAvailable} canUpload={canUpload} onUpgrade={!user.demo ? () => updateView("billing") : undefined} initialCreateRequestId={pendingBusinessCardCreate} onAddRequestHandled={() => setPendingBusinessCardCreate(0)} onSave={onSaveBusinessCard} onDelete={onDeleteBusinessCard} onShare={(card, recipient) => onShareRecord("business_card", card.id, recipient)} onRefresh={onRefreshBusinessCards} notify={notify}/>} {view === "billing" && <BillingView initialPlanId={pendingPlanId} notify={notify}/>} {view === "settings" && <SettingsView user={user} items={items} onProfileSave={onProfileSave} onSendVerificationCode={onSendVerificationCode} onVerifyEmailCode={onVerifyEmailCode} onPasswordChange={onPasswordChange} onExport={onExport} onImport={onImport} onDeleteAccount={onDeleteAccount} onOpenContact={onOpenContact} notify={notify}/>}</main>
       <footer className="workspace-footer"><span className="workspace-footer-brand">Persora</span><span>Powered by Dexter Studio</span><span className="workspace-footer-security"><ShieldCheck size={13}/> Sherlock Security System</span><nav aria-label="Legal and contact"><button onClick={() => onOpenPublicPage("/privacy")}>Privacy</button><button onClick={() => onOpenPublicPage("/terms")}>Terms</button><button onClick={onOpenContact}>Contact</button></nav></footer>
     </div>
     <ModalPortal><SearchModal modal open={searchModalOpen} onOpenChange={(open) => { setSearchModalOpen(open); if (!open) onSearch(""); }} hotkey="k" placeholder="Search records, people, files…" tags={searchTags} results={searchResults} quickActions={searchQuickActions} files={searchFiles} defaultQuery={search} onQueryChange={onSearch} onSelectResult={(result) => searchEntries.find((entry) => entry.result.href === result.href)?.select()} overlayClassName="z-[100]"/></ModalPortal>
+    {addDocumentOpen && <AddDocumentDrawer key={addDocumentDraft ? `change:${addDocumentDraft.spaceId}:${addDocumentDraft.typeValue}:${addDocumentDraft.file.name}` : "new"} initialDraft={addDocumentDraft} documentTypes={documentTypes} canUpload={canUpload} maxUploadMb={maxUploadMb} onUpgrade={!user.demo ? () => { setAddDocumentOpen(false); setAddDocumentDraft(null); updateView("billing"); } : undefined} onClose={() => { setAddDocumentOpen(false); setAddDocumentDraft(null); }} onContinue={handleAddDocumentSelection}/>}
     {ringingSchedules[0] && <RingingScheduleDialog alert={ringingSchedules[0]} onDismiss={() => onDismissSchedule(ringingSchedules[0])} onSnooze={() => onSnoozeSchedule(ringingSchedules[0])}/ >}
   </div>;
 }
 
-function DashboardView({ user, items, onNavigate, onOpenItem, onAdd, onToggleFavorite }: { user: AppUser; items: VaultItem[]; onNavigate: (view: ViewId) => void; onOpenItem: (item: VaultItem) => void; onAdd: (section: SectionId) => void; onToggleFavorite: (item: VaultItem, favorite: boolean) => void }) {
+function AddDocumentDrawer({ initialDraft, documentTypes, canUpload, maxUploadMb, onUpgrade, onClose, onContinue }: { initialDraft: AddDocumentFlowDraft | null; documentTypes: string[]; canUpload: boolean; maxUploadMb: number; onUpgrade?: () => void; onClose: () => void; onContinue: (selection: AddDocumentSelection) => void }) {
+  const spaces = useMemo(() => addDocumentSpaces(documentTypes), [documentTypes]);
+  const fileSpaces = useMemo(() => addDocumentFileSpaces(spaces), [spaces]);
+  const [step, setStep] = useState<"choose" | "preview" | "destination">(initialDraft ? "destination" : "choose");
+  const [destinationMode, setDestinationMode] = useState<"file" | "manual">("file");
+  const [file, setFile] = useState<File | null>(initialDraft?.file || null);
+  const [spaceId, setSpaceId] = useState(initialDraft?.spaceId || "");
+  const [typeValue, setTypeValue] = useState(initialDraft?.typeValue || "");
+  const [scanResult, setScanResult] = useState<SmartScanResult | null>(initialDraft?.scanResult || null);
+  const [scanError, setScanError] = useState(initialDraft?.scanError || "");
+  const [scanBusy, setScanBusy] = useState(false);
+  const [scanAttempted, setScanAttempted] = useState(Boolean(initialDraft?.scanAttempted));
+  const [previewReady, setPreviewReady] = useState(Boolean(initialDraft));
+  const [selectionTouched, setSelectionTouched] = useState(!initialDraft);
+  const previewFileRef = useRef<File | null>(initialDraft?.file || null);
+  const scanStartedRef = useRef<File | null>(null);
+  const handoffStartedRef = useRef(false);
+  const [fileError, setFileError] = useState("");
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const drawerRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const previewUrl = useMemo(() => file ? URL.createObjectURL(file) : "", [file]);
+  const activeSpaces = destinationMode === "file" ? fileSpaces : spaces;
+  const space = activeSpaces.find((entry) => entry.id === spaceId);
+  const type = space?.types.find((entry) => entry.value === typeValue);
+  const isPdf = Boolean(file && (file.type === "application/pdf" || /\.pdf$/i.test(file.name)));
+  const isBrowserImage = Boolean(file && (["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif", "image/bmp"].includes(file.type.toLowerCase()) || /\.(jpe?g|png|webp|gif|bmp)$/i.test(file.name)));
+  const canScanFile = Boolean(file && canUpload && isPagesApiConfigured && supportsSmartScanFile(file) && isSmartScanFileSizeAllowed(file.size));
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const onKeyDown = (event: KeyboardEvent) => {
+      const drawer = drawerRef.current;
+      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onCloseRef.current(); return; }
+      if (event.key !== "Tab" || !drawer) return;
+      const focusable = Array.from(drawer.querySelectorAll<HTMLElement>('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'));
+      if (!focusable.length) { event.preventDefault(); drawer.focus(); return; }
+      const first = focusable[0], last = focusable[focusable.length - 1], active = document.activeElement;
+      if (event.shiftKey && (active === first || active === drawer || !drawer.contains(active))) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && (active === last || active === drawer || !drawer.contains(active))) { event.preventDefault(); first.focus(); }
+    };
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", onKeyDown);
+    drawerRef.current?.focus();
+    return () => { document.body.style.overflow = previousOverflow; document.removeEventListener("keydown", onKeyDown); if (previousFocus?.isConnected) previousFocus.focus(); };
+  }, []);
+  useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
+
+  const acceptFile = (candidate?: File) => {
+    if (!candidate) return;
+    if (!canUpload) { setFileError("New file uploads require an active paid plan."); return; }
+    const limit = Math.max(1, Number(maxUploadMb) || 25) * 1024 * 1024;
+    if (candidate.size > limit) { setFileError(`Files must be ${maxUploadMb} MB or smaller.`); return; }
+    setFile(candidate); previewFileRef.current = candidate; setFileError(""); setScanResult(null); setScanError(""); setScanAttempted(false); setPreviewReady(false);
+    scanStartedRef.current = null; handoffStartedRef.current = false; setSelectionTouched(true); setSpaceId(""); setTypeValue(""); setDestinationMode("file"); setStep("preview");
+  };
+  const chooseSpace = (nextId: string) => {
+    setSelectionTouched(true); handoffStartedRef.current = false; setSpaceId(nextId);
+    const nextSpace = activeSpaces.find((entry) => entry.id === nextId);
+    const guessed = nextSpace && scanResult?.documentType ? matchAddDocumentType(nextSpace, scanResult.documentType) : undefined;
+    setTypeValue(scanResult && nextSpace ? (guessed || otherAddDocumentType(nextSpace))?.value || "" : "");
+  };
+  const runSmartScan = useCallback(async (retry = false) => {
+    const sourceFile = file;
+    if (!sourceFile || scanBusy) return;
+    if (!canUpload || !isPagesApiConfigured || !supportsSmartScanFile(sourceFile) || !isSmartScanFileSizeAllowed(sourceFile.size)) {
+      setScanResult(null); setScanError("Smart Scan isn't available for this file. Choose a destination and continue manually."); setSpaceId(""); setTypeValue(""); setScanAttempted(true); setStep("destination"); return;
+    }
+    if (!retry && scanStartedRef.current === sourceFile) return;
+    scanStartedRef.current = sourceFile; setScanAttempted(true); setScanBusy(true); setScanError("");
+    try {
+      const fields: SmartScanFieldDefinition[] = [
+        { key: "suggestedSpace", label: "Best-fit Persora space", kind: "select", options: fileSpaces.map((entry) => entry.label) },
+        { key: "additionalData", label: "Additional Data", kind: "textarea" },
+      ];
+      const result = await smartScanDocument(sourceFile, "documents", fields, retry);
+      setScanResult(result);
+      const suggestedSpace = fileSpaces.find((entry) => entry.label.toLocaleLowerCase() === result.fields.suggestedSpace?.value.trim().toLocaleLowerCase());
+      const typeMatches = result.documentType ? fileSpaces.map((entry) => ({ space: entry, type: matchAddDocumentType(entry, result.documentType) })).filter((entry) => entry.type) : [];
+      const documentsSpace = fileSpaces.find((entry) => entry.id === "documents");
+      const classifiedType = suggestedSpace ? matchAddDocumentType(suggestedSpace, result.documentType) : undefined;
+      const inferred = typeMatches.length === 1 ? typeMatches[0] : undefined;
+      const recognizedSpace = classifiedType ? suggestedSpace : inferred?.space;
+      const recognizedType = classifiedType || inferred?.type;
+      const recommendedSpace = recognizedSpace || documentsSpace;
+      const recommendedType = recognizedType || (documentsSpace ? otherAddDocumentType(documentsSpace) : undefined);
+      setSpaceId(recommendedSpace?.id || ""); setTypeValue(recommendedType?.value || ""); setScanError(""); setStep("destination");
+    } catch {
+      setScanResult(null); setScanError("Smart Scan couldn't read this file. Choose a space and type manually."); setSpaceId(""); setTypeValue(""); setStep("destination");
+    } finally { setScanBusy(false); }
+  }, [file, scanBusy, canUpload, fileSpaces]);
+
+  useEffect(() => {
+    if (step !== "preview" || !file || !previewReady || !canScanFile || scanBusy || scanStartedRef.current === file) return;
+    void runSmartScan(false);
+  }, [step, file, previewReady, canScanFile, scanBusy, runSmartScan]);
+  useEffect(() => {
+    if (step !== "preview" || !file || isPdf || isBrowserImage) return;
+    const frame = window.requestAnimationFrame(() => { if (previewFileRef.current === file) setPreviewReady(true); });
+    return () => window.cancelAnimationFrame(frame);
+  }, [step, file, isPdf, isBrowserImage]);
+
+  const continueToEditor = () => {
+    if (!space || !type) return;
+    const initialScanComplete = Boolean(file && (scanError || (!scanResult && (scanAttempted || initialDraft?.scanAttempted))));
+    const carriedValues = initialDraft?.values || {};
+    const mergedAdditionalData = combineCarryData(carriedValues.additionalData || "", scanResult?.fields.additionalData?.value || "");
+    onContinue({
+      space, type,
+      ...(file ? { file, title: carriedValues.title || addDocumentFileTitle(file.name), additionalData: mergedAdditionalData, scanResult: scanError ? null : scanResult, initialScanComplete } : {}),
+      carriedValues,
+      carriedUserEditedKeys: initialDraft?.userEditedKeys || [],
+    });
+  };
+  useEffect(() => {
+    if (step !== "destination" || scanBusy || !space || !type || handoffStartedRef.current) return;
+    if (initialDraft && !selectionTouched) return;
+    const readyToOpen = destinationMode === "manual" || !file || scanAttempted || Boolean(scanError);
+    if (!readyToOpen) return;
+    handoffStartedRef.current = true;
+    continueToEditor();
+  }, [step, scanBusy, spaceId, typeValue, destinationMode, file, scanAttempted, scanError, selectionTouched]);
+  const useManualDestination = () => {
+    setFile(null); previewFileRef.current = null; setDestinationMode("manual"); setScanResult(null); setScanError(""); setScanAttempted(false); setPreviewReady(false); scanStartedRef.current = null; handoffStartedRef.current = false; setSelectionTouched(true); setSpaceId(""); setTypeValue(""); setStep("destination");
+  };
+
+  return <ModalPortal><div className="add-document-drawer-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <aside id="add-document-drawer" ref={drawerRef} tabIndex={-1} className="add-document-drawer" role="dialog" aria-modal="true" aria-labelledby="add-document-drawer-title">
+      <header className="add-document-drawer-header"><span className="add-document-drawer-mark"><FileText size={19}/></span><div><span className="section-eyebrow">NEW VAULT ENTRY</span><h2 id="add-document-drawer-title">Add document</h2></div><button type="button" className="icon-button" onClick={onClose} aria-label="Close add document drawer"><X size={18}/></button></header>
+      <div className="add-document-drawer-body">
+        {step === "choose" && <>
+          <p className="add-document-drawer-intro">Start with a file. Persora previews it locally, then Smart Scan can suggest the best space and document type.</p>
+          <div className="add-document-methods">
+            <button type="button" className="add-document-method-card is-primary" onClick={() => fileInputRef.current?.click()} disabled={!canUpload}><span className="add-document-method-icon"><UploadCloud size={18}/></span><span><b>Choose File</b><small>Preview, scan and review before saving</small></span><ArrowRight size={16}/></button>
+            <button type="button" className="add-document-method-card is-deferred" disabled aria-disabled="true"><span className="add-document-method-icon"><Sparkles size={18}/></span><span><b>Scan &amp; Upload</b><small>Coming soon</small></span><span className="add-document-coming-soon">SOON</span></button>
+          </div>
+          <input ref={fileInputRef} className="add-document-hidden-input" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.tif,.tiff,.bmp,application/pdf,image/*" onChange={(event) => { acceptFile(event.currentTarget.files?.[0]); event.currentTarget.value = ""; }}/>
+          {fileError && <p className="add-document-inline-error" role="alert">{fileError}</p>}
+          {!canUpload && <div className="add-document-upload-locked"><LockKeyhole size={15}/><span>New uploads require an active paid plan.</span>{onUpgrade && <button type="button" onClick={onUpgrade}>View plans</button>}</div>}
+          <button type="button" className="add-document-manual-link" onClick={useManualDestination}>Add a record without a file</button>
+        </>}
+        {step === "preview" && file && <>
+          <p className="add-document-drawer-intro">Review your file before sending it to Smart Scan. The original stays in this browser until you Save the finished record.</p>
+          <div className="add-document-file-preview">{isPdf && previewUrl ? <PdfPreview src={previewUrl} name={file.name} onReady={() => { if (previewFileRef.current === file) setPreviewReady(true); }}/> : isBrowserImage && previewUrl ? <ImagePreview src={previewUrl} name={file.name} onReady={() => { if (previewFileRef.current === file) setPreviewReady(true); }}/> : <div className="add-document-preview-unavailable"><FileImage size={25}/><b>{file.name}</b><span>This format can't be rendered in the browser, but the file remains local until you continue.</span></div>}</div>
+          <div className="add-document-file-meta"><span className="add-document-file-icon"><FileText size={17}/></span><span><b>{file.name}</b><small>{humanSize(file.size)} · Previewed locally</small></span><button type="button" className="upload-replace" onClick={() => fileInputRef.current?.click()} disabled={!canUpload || scanBusy}>Change file</button></div>
+          <input ref={fileInputRef} className="add-document-hidden-input" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.tif,.tiff,.bmp,application/pdf,image/*" onChange={(event) => { acceptFile(event.currentTarget.files?.[0]); event.currentTarget.value = ""; }}/>
+          {file.size > SMART_SCAN_MAX_FILE_BYTES && <p className="add-document-scan-hint">Smart Scan supports files up to 7 MB. You can still choose a destination and save this file.</p>}
+          {!isPagesApiConfigured && <p className="add-document-scan-hint">Smart Scan isn't connected right now. You can choose a destination manually.</p>}
+          {scanBusy && <div className="add-document-scan-running" role="status"><span className="spinner"/><span><b>Uploading to Smart Scan…</b><small>OCR will start automatically. The vault copy is not stored until you Save.</small></span></div>}
+        </>}
+        {step === "destination" && <>
+          {destinationMode === "file" && !scanError && scanResult && (scanResult.documentType || scanResult.fields.suggestedSpace?.value) && <div className="add-document-suggestion" role="status"><Sparkles size={15}/><span><b>{scanResult.documentType ? `Smart Scan suggests ${scanResult.documentType}` : "Smart Scan suggested a destination"}</b><small>{[scanResult.documentType ? `${scanResult.documentTypeConfidence} confidence` : "", scanResult.fields.suggestedSpace?.value ? `Space: ${scanResult.fields.suggestedSpace.value}` : "", "You can change either selection below"].filter(Boolean).join(" · ")}</small></span></div>}
+          {destinationMode === "file" && scanError && <p className="add-document-scan-fallback" role="status">Smart Scan couldn't suggest a destination. Choose a Space and Document Type to continue.</p>}
+          <label className="add-document-flow-field"><span><i>01</i> Space</span><select value={spaceId} onChange={(event) => chooseSpace(event.target.value)}><option value="">Choose a space…</option>{(destinationMode === "file" ? fileSpaces : spaces).map((entry) => <option key={entry.id} value={entry.id}>{entry.label}</option>)}</select></label>
+          {space && <label className="add-document-flow-field add-document-type-field"><span><i>02</i> Document Type</span><select value={typeValue} onChange={(event) => { setSelectionTouched(true); handoffStartedRef.current = false; setTypeValue(event.target.value); }}><option value="">Choose a type…</option>{space.types.map((entry) => <option key={`${space.id}:${entry.value}`} value={entry.value}>{entry.label}</option>)}</select></label>}
+          {destinationMode === "file" && !scanError && <div className="add-document-private-note"><ShieldCheck size={14}/><span>The scanned values stay editable. Your original file is stored only when you save the selected record.</span></div>}
+        </>}
+      </div>
+      <footer className="add-document-drawer-footer">
+        {step === "choose" && <><button type="button" className="quiet-button" onClick={onClose}>Cancel</button><span className="add-document-footer-hint">Choose File to preview locally</span></>}
+        {step === "preview" && <><button type="button" className="quiet-button" disabled={scanBusy} onClick={() => { setStep("choose"); setFile(null); previewFileRef.current = null; setScanError(""); setScanAttempted(false); setPreviewReady(false); scanStartedRef.current = null; }}>Back</button><button type="button" className="main-add-button" disabled={scanBusy || (canScanFile && !previewReady)} onClick={() => canScanFile ? void runSmartScan(Boolean(scanError || scanResult)) : (setScanError("Smart Scan isn't available for this file. Choose a space and type manually."), setScanAttempted(true), setStep("destination"))}>{scanBusy ? <><span className="spinner"/> Scanning…</> : canScanFile ? <>{previewReady ? scanAttempted ? "Scan again" : "Scan now" : "Preparing preview…"} <Sparkles size={15}/></> : <>Choose destination <ArrowRight size={15}/></>}</button></>}
+        {step === "destination" && <><button type="button" className="quiet-button" onClick={() => { if (file) setStep("preview"); else { setStep("choose"); setDestinationMode("file"); } }}>{file ? "Back to preview" : "Back"}</button><span className="add-document-footer-hint">Fields open automatically when ready</span></>}
+      </footer>
+    </aside>
+  </div></ModalPortal>;
+}
+
+function DashboardView({ user, items, onNavigate, onOpenItem, onAdd, onAddDocument, onToggleFavorite }: { user: AppUser; items: VaultItem[]; onNavigate: (view: ViewId) => void; onOpenItem: (item: VaultItem) => void; onAdd: (section: SectionId) => void; onAddDocument: () => void; onToggleFavorite: (item: VaultItem, favorite: boolean) => void }) {
   const docs = items.filter((item) => item.section === "documents");
   const subscriptions = items.filter((item) => item.section === "subscriptions");
   const upcoming = items.filter((item) => {
@@ -329,11 +666,11 @@ function DashboardView({ user, items, onNavigate, onOpenItem, onAdd, onToggleFav
   ];
   const recent = [...items].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 5);
   const favorites = items.filter((item) => item.favorite).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 6);
-  return <div className="dashboard-view"><div className="dashboard-welcome-row"><div><div className="welcome-overline"><span className="welcome-spark"><Sparkles size={13}/></span>Your personal space · {new Date().toLocaleDateString("en", { weekday: "long", day: "numeric", month: "long" })}</div><h2>{greeting(user.fullName)}<span className="greeting-period">.</span></h2><p>Everything important, gathered in one thoughtful place.</p></div><div className="welcome-actions"><button className="quiet-button" onClick={() => onNavigate("settings")}><Settings size={16}/> Preferences</button><button className="main-add-button" onClick={() => onAdd("documents")}><Plus size={17}/> Add something</button></div></div>
+  return <div className="dashboard-view"><div className="dashboard-welcome-row"><div><div className="welcome-overline"><span className="welcome-spark"><Sparkles size={13}/></span>Your personal space · {new Date().toLocaleDateString("en", { weekday: "long", day: "numeric", month: "long" })}</div><h2>{greeting(user.fullName)}<span className="greeting-period">.</span></h2><p>Everything important, gathered in one thoughtful place.</p></div><div className="welcome-actions"><button className="quiet-button" onClick={() => onNavigate("settings")}><Settings size={16}/> Preferences</button><button className="main-add-button" onClick={onAddDocument}><Plus size={17}/> Add document</button></div></div>
     <div className="metric-grid">{metrics.map(({ title, count, id, icon: Icon, color, note }, index) => <BlurFade key={id} delay={index * 65}><MagicCard className={`metric-card metric-${color}`} onClick={() => onNavigate(id)} role="button" tabIndex={0} onKeyDown={(event) => event.key === "Enter" && onNavigate(id)}><div className="metric-card-heading"><span className="metric-icon-box"><Icon size={17}/></span></div><div className="metric-card-value">{count.toString().padStart(2, "0")}</div><div className="metric-label">{title}</div><div className="metric-meta">{note}<ArrowUpRight size={13}/></div></MagicCard></BlurFade>)}</div>
-    <div className="dashboard-grid-main"><section className="dashboard-panel upcoming-panel"><div className="panel-heading"><div><span className="panel-kicker">A gentle nudge</span><h3>Coming up soon <span className="panel-count">{upcoming.length}</span></h3></div><button className="panel-link" onClick={() => upcoming.length ? onNavigate(upcoming[0].section) : onAdd("documents")}>{upcoming.length ? "Open next" : "Add a document"} <ArrowRight size={14}/></button></div>{upcoming.length ? <div className="upcoming-list">{upcoming.map((item) => { const config = SECTION_BY_ID[item.section]; const Icon = item.metadata.recordType === "alarm" ? AlarmClock : item.metadata.recordType === "reminder" ? BellRing : config.icon; const at = dashboardItemDate(item); const label = item.metadata.recordType === "todo" ? "Task due" : item.metadata.recordType === "reminder" ? "Reminder" : item.metadata.recordType === "alarm" ? "Alarm" : config.label; return <button className="upcoming-row" key={item.id} onClick={() => onOpenItem(item)}><span className={`upcoming-icon ${colors[item.section]}`}><Icon size={16}/></span><span className="upcoming-main"><b>{item.title}</b><small>{label}{at ? ` · ${at.toLocaleDateString([], { month: "short", day: "numeric" })}` : ""}</small></span><span className="upcoming-date"><CalendarClock size={13}/>{at ? item.metadata.recordType === "reminder" || item.metadata.recordType === "alarm" ? at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : formatDate(item.metadata.dueDate || item.metadata[config.dateKey || ""] || at.toISOString().slice(0,10)) : "Soon"}</span></button>; })}</div> : <div className="empty-upcoming"><div className="empty-sun"><Check size={17}/></div><div><b>A clear horizon.</b><span>No dates need your attention just yet.</span></div></div>}</section><section className="dashboard-panel recent-panel"><div className="panel-heading"><div><span className="panel-kicker">All your spaces, one view</span><h3>Recently updated</h3></div><span className="recent-month">{new Date().toLocaleDateString("en", { month: "long" })}</span></div><div className="recent-list">{recent.map((item) => { const Icon = SECTION_BY_ID[item.section].icon; return <button className="recent-row" key={item.id} onClick={() => onOpenItem(item)}><span className={`recent-icon ${colors[item.section]}`}><Icon size={15}/></span><span className="recent-info"><b>{item.title}</b><small>{SECTION_BY_ID[item.section].label}</small></span>{item.file && <FileText size={14}/>}<ArrowUpRight size={14}/></button>; })}{!recent.length && <div className="dashboard-empty-state"><FileText size={17}/><span>Your saved records will appear here.</span></div>}</div></section></div>
+    <div className="dashboard-grid-main"><section className="dashboard-panel upcoming-panel"><div className="panel-heading"><div><span className="panel-kicker">A gentle nudge</span><h3>Coming up soon <span className="panel-count">{upcoming.length}</span></h3></div><button className="panel-link" onClick={() => upcoming.length ? onNavigate(upcoming[0].section) : onAddDocument()}>{upcoming.length ? "Open next" : "Add a document"} <ArrowRight size={14}/></button></div>{upcoming.length ? <div className="upcoming-list">{upcoming.map((item) => { const config = SECTION_BY_ID[item.section]; const Icon = item.metadata.recordType === "alarm" ? AlarmClock : item.metadata.recordType === "reminder" ? BellRing : config.icon; const at = dashboardItemDate(item); const label = item.metadata.recordType === "todo" ? "Task due" : item.metadata.recordType === "reminder" ? "Reminder" : item.metadata.recordType === "alarm" ? "Alarm" : config.label; return <button className="upcoming-row" key={item.id} onClick={() => onOpenItem(item)}><span className={`upcoming-icon ${colors[item.section]}`}><Icon size={16}/></span><span className="upcoming-main"><b>{item.title}</b><small>{label}{at ? ` · ${at.toLocaleDateString([], { month: "short", day: "numeric" })}` : ""}</small></span><span className="upcoming-date"><CalendarClock size={13}/>{at ? item.metadata.recordType === "reminder" || item.metadata.recordType === "alarm" ? at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : formatDate(item.metadata.dueDate || item.metadata[config.dateKey || ""] || at.toISOString().slice(0,10)) : "Soon"}</span></button>; })}</div> : <div className="empty-upcoming"><div className="empty-sun"><Check size={17}/></div><div><b>A clear horizon.</b><span>No dates need your attention just yet.</span></div></div>}</section><section className="dashboard-panel recent-panel"><div className="panel-heading"><div><span className="panel-kicker">All your spaces, one view</span><h3>Recently updated</h3></div><span className="recent-month">{new Date().toLocaleDateString("en", { month: "long" })}</span></div><div className="recent-list">{recent.map((item) => { const Icon = SECTION_BY_ID[item.section].icon; return <button className="recent-row" key={item.id} onClick={() => onOpenItem(item)}><span className={`recent-icon ${colors[item.section]}`}><Icon size={15}/></span><span className="recent-info"><b>{item.title}</b><small>{SECTION_BY_ID[item.section].label}</small></span>{item.file && <FileText size={14}/>}<ArrowUpRight size={14}/></button>; })}{!recent.length && <div className="dashboard-empty-state"><FileText size={17}/><span>Your saved records will appear here.</span></div>}</div></section></div>
     <section className="dashboard-panel favorites-panel"><div className="panel-heading"><div><span className="panel-kicker">Kept close</span><h3>Favorites <span className="panel-count">{items.filter((item) => item.favorite).length}</span></h3></div></div>{favorites.length ? <div className="favorite-dashboard-list">{favorites.map((item) => { const Icon = SECTION_BY_ID[item.section].icon; return <div className="favorite-dashboard-row" key={item.id}><button className="favorite-dashboard-open" onClick={() => onOpenItem(item)}><span className={`favorite-dashboard-icon ${colors[item.section]}`}><Icon size={15}/></span><span><b>{item.title}</b><small>{item.file ? `File · ${item.file.name}` : SECTION_BY_ID[item.section].label}</small></span><ArrowUpRight size={14}/></button><button className="favorite-dashboard-remove" onClick={() => onToggleFavorite(item, false)} aria-label={`Remove ${item.title} from favorites`} title="Remove from favorites"><Heart size={15} fill="currentColor"/></button></div>; })}</div> : <div className="dashboard-favorites-empty"><Heart size={17}/><span>Favorite records and attached files will stay handy here. Use the heart on any record to add it.</span></div>}</section>
-    <div className="dashboard-grid-secondary"><section className="dashboard-panel spaces-panel"><div className="panel-heading"><div><span className="panel-kicker">Every part of life</span><h3>Your spaces</h3></div></div><div className="spaces-grid">{NAV_GROUPS.flatMap((group) => group.ids).slice(0, 9).map((id) => { const section = SECTION_BY_ID[id]; const Icon = section.icon; return <button className="space-tile" key={id} onClick={() => onNavigate(id)}><span className={`space-tile-icon space-${section.color}`}><Icon size={16}/></span><span className="space-tile-copy"><b>{section.label}</b><small>{section.eyebrow}</small></span><span className="space-tile-count">{items.filter((item) => item.section === id).length}</span><ChevronRight size={15}/></button>; })}</div></section><section className="dashboard-panel dashboard-quick-capture-panel"><div className="panel-heading"><div><span className="panel-kicker">A little less typing</span><h3>Quick actions</h3></div><Sparkles size={17}/></div><div className="dashboard-quick-actions"><button className="dashboard-quick-action" onClick={() => onAdd("documents")}><span className="dashboard-quick-action-icon quick-action-blue"><FileText size={15}/></span><span><b>Smart Scan a document</b><small>Attach a photo or PDF to suggest fields</small></span><ArrowRight size={14}/></button><button className="dashboard-quick-action" onClick={() => onAdd("academics")}><span className="dashboard-quick-action-icon quick-action-violet"><BookOpen size={15}/></span><span><b>Add an academic record</b><small>Keep applications and results together</small></span><ArrowRight size={14}/></button><button className="dashboard-quick-action" onClick={() => onAdd("memberships")}><span className="dashboard-quick-action-icon quick-action-amber"><CreditCard size={15}/></span><span><b>Save a membership</b><small>Store membership details and dates</small></span><ArrowRight size={14}/></button><button className="dashboard-quick-action" onClick={() => onAdd("study")}><span className="dashboard-quick-action-icon quick-action-mint"><BookOpen size={15}/></span><span><b>Save study material</b><small>Keep learning files easy to find</small></span><ArrowRight size={14}/></button></div><div className="dashboard-quick-note"><ShieldCheck size={13}/> Scan suggestions stay editable and require your review.</div></section></div>
+    <div className="dashboard-grid-secondary"><section className="dashboard-panel spaces-panel"><div className="panel-heading"><div><span className="panel-kicker">Every part of life</span><h3>Your spaces</h3></div></div><div className="spaces-grid">{NAV_GROUPS.flatMap((group) => group.ids).slice(0, 9).map((id) => { const section = SECTION_BY_ID[id]; const Icon = section.icon; return <button className="space-tile" key={id} onClick={() => onNavigate(id)}><span className={`space-tile-icon space-${section.color}`}><Icon size={16}/></span><span className="space-tile-copy"><b>{section.label}</b><small>{section.eyebrow}</small></span><span className="space-tile-count">{items.filter((item) => item.section === id).length}</span><ChevronRight size={15}/></button>; })}</div></section><section className="dashboard-panel dashboard-quick-capture-panel"><div className="panel-heading"><div><span className="panel-kicker">A little less typing</span><h3>Quick actions</h3></div><Sparkles size={17}/></div><div className="dashboard-quick-actions"><button className="dashboard-quick-action" onClick={onAddDocument}><span className="dashboard-quick-action-icon quick-action-blue"><FileText size={15}/></span><span><b>Smart Scan a document</b><small>Attach a photo or PDF to suggest fields</small></span><ArrowRight size={14}/></button><button className="dashboard-quick-action" onClick={() => onAdd("academics")}><span className="dashboard-quick-action-icon quick-action-violet"><BookOpen size={15}/></span><span><b>Add an academic record</b><small>Keep applications and results together</small></span><ArrowRight size={14}/></button><button className="dashboard-quick-action" onClick={() => onAdd("memberships")}><span className="dashboard-quick-action-icon quick-action-amber"><CreditCard size={15}/></span><span><b>Save a membership</b><small>Store membership details and dates</small></span><ArrowRight size={14}/></button><button className="dashboard-quick-action" onClick={() => onAdd("study")}><span className="dashboard-quick-action-icon quick-action-mint"><BookOpen size={15}/></span><span><b>Save study material</b><small>Keep learning files easy to find</small></span><ArrowRight size={14}/></button></div><div className="dashboard-quick-note"><ShieldCheck size={13}/> Scan suggestions stay editable and require your review.</div></section></div>
   </div>;
 }
 
@@ -640,7 +977,7 @@ function SharedRecordDetailsDialog({ entry, onClose }: { entry: RecordShareEntry
   return <div className="modal-backdrop record-share-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="record-share-details" role="dialog" aria-modal="true" aria-labelledby="shared-record-title"><button className="icon-button" onClick={onClose} aria-label="Close"><X size={18}/></button><span className="section-eyebrow">{entry.resourceType === "contact" ? "Shared contact" : "Shared business card"}</span><h2 id="shared-record-title">{title}</h2><p>Shared {entry.direction === "incoming" ? `with you by ${entry.owner.fullName}` : `with ${entry.recipient.fullName}`} · {formatDate(entry.createdAt)}</p>{rows.length ? <div>{rows.map(([label, value]) => <section key={label}><small>{label}</small><span>{value}</span></section>)}</div> : <p>No additional details were included.</p>}<button className="shared-open-button" onClick={onClose}>Close</button></section></div>;
 }
 
-function SettingsView({ user, items, onProfileSave, onPasswordChange, onExport, onImport, onDeleteAccount, onOpenContact, notify }: { user: AppUser; items: VaultItem[]; onProfileSave: (values: { fullName: string; timezone: string; avatarUrl: string }) => Promise<void>; onPasswordChange: (currentPassword: string, newPassword: string) => Promise<void>; onExport: () => void; onImport: (file: File) => Promise<void>; onDeleteAccount: () => Promise<void>; onOpenContact: () => void; notify: (message: string, kind?: "success" | "error") => void }) {
+function SettingsView({ user, items, onProfileSave, onSendVerificationCode, onVerifyEmailCode, onPasswordChange, onExport, onImport, onDeleteAccount, onOpenContact, notify }: { user: AppUser; items: VaultItem[]; onProfileSave: (values: { fullName: string; timezone: string; avatarUrl: string }) => Promise<void>; onSendVerificationCode: () => Promise<{ ok: boolean; alreadyVerified?: boolean; expiresInSeconds?: number }>; onVerifyEmailCode: (code: string) => Promise<void>; onPasswordChange: (currentPassword: string, newPassword: string) => Promise<void>; onExport: () => void; onImport: (file: File) => Promise<void>; onDeleteAccount: () => Promise<void>; onOpenContact: () => void; notify: (message: string, kind?: "success" | "error") => void }) {
   const [fullName, setFullName] = useState(user.fullName);
   const [timezone, setTimezone] = useState(user.timezone || "Asia/Dhaka");
   const [avatarUrl, setAvatarUrl] = useState(user.avatarUrl || "");
@@ -650,6 +987,9 @@ function SettingsView({ user, items, onProfileSave, onPasswordChange, onExport, 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
+  const [verificationRequested, setVerificationRequested] = useState(false);
+  const [verificationBusy, setVerificationBusy] = useState(false);
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const save = async () => { setSaving(true); try { await onProfileSave({ fullName, timezone, avatarUrl }); notify("Your profile has been updated."); } catch (error) { notify(error instanceof Error ? error.message : "Couldn't save profile.", "error"); } finally { setSaving(false); } };
@@ -664,6 +1004,21 @@ function SettingsView({ user, items, onProfileSave, onPasswordChange, onExport, 
   };
   const avatarPreviewUser = { ...user, fullName, avatarUrl };
   const copyUserId = async () => { if (!user.userId) return; try { await navigator.clipboard.writeText(user.userId); notify("Your Persora ID has been copied."); } catch { notify("Copy is unavailable here. Select and copy your ID manually.", "error"); } };
+  const requestEmailVerification = async () => {
+    setVerificationBusy(true);
+    try {
+      const result = await onSendVerificationCode();
+      if (result.alreadyVerified) { notify("This email address is already verified."); setVerificationRequested(false); }
+      else { setVerificationRequested(true); notify("A verification code was sent to your email."); }
+    } catch (error) { notify(error instanceof Error ? error.message : "Couldn't send a verification code.", "error"); }
+    finally { setVerificationBusy(false); }
+  };
+  const verifyEmail = async () => {
+    setVerificationBusy(true);
+    try { await onVerifyEmailCode(verificationCode); setVerificationCode(""); setVerificationRequested(false); notify("Email address verified."); }
+    catch (error) { notify(error instanceof Error ? error.message : "Couldn't verify that code.", "error"); }
+    finally { setVerificationBusy(false); }
+  };
   const changePassword = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (newPassword !== confirmPassword) { notify("The new passwords don't match.", "error"); return; }
@@ -677,5 +1032,5 @@ function SettingsView({ user, items, onProfileSave, onPasswordChange, onExport, 
   };
   const importFile = async (event: ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; if (!file) return; try { await onImport(file); notify("Your data import is ready."); } catch (error) { notify(error instanceof Error ? error.message : "Import failed.", "error"); } finally { event.currentTarget.value = ""; } };
   const deleteAccount = async () => { try { await onDeleteAccount(); } catch (error) { notify(error instanceof Error ? error.message : "Couldn't delete this account.", "error"); } };
-  return <div className="settings-view"><div className="settings-intro settings-profile-hero"><div className="profile-hero-identity"><span className="profile-avatar-large account-avatar-large"><AccountAvatarContent user={avatarPreviewUser}/></span><div><span className="profile-hero-eyebrow">PERSONAL PROFILE</span><h2>{fullName || user.fullName}</h2><p>{user.email}</p><span className={`profile-account-badge ${user.demo ? "is-demo" : ""}`}><i/>{user.demo ? "Demo workspace" : "Active Persora account"}</span></div></div><div className="profile-hero-summary"><span className="profile-summary-label">ACCOUNT TIME ZONE</span><b>{timezone.replace(/_/g, " ")}</b><small>Changes to your profile are private.</small></div></div><div className="settings-layout"><div className="settings-main-column"><section className="settings-card"><div className="settings-card-header"><div><span className="settings-card-icon icon-soft-blue"><UserRound size={17}/></span><div><h3>Profile information</h3><p>Manage the identity and locale linked to your account.</p></div></div><span className="settings-card-status"><span/>PRIVATE PROFILE</span></div><div className="settings-profile-photo"><div className="settings-avatar-main"><span className="avatar settings-avatar-preview"><AccountAvatarContent user={avatarPreviewUser}/></span><span><b>Profile photo or emoji</b><small>Shown in your workspace navigation and saved with your profile.</small></span></div><div className="settings-avatar-actions"><label className="settings-avatar-upload"><UploadCloud size={14}/>{avatarProcessing ? "Preparing…" : "Upload photo"}<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void chooseAvatarPhoto(event)} disabled={avatarProcessing || saving}/></label><button type="button" className="settings-avatar-initials" onClick={() => { setAvatarUrl(""); setAvatarError(""); }}>Use initials</button></div><div className="settings-avatar-emoji-options" role="group" aria-label="Choose a profile emoji">{PROFILE_AVATAR_EMOJI.map((emoji) => <button type="button" key={emoji} className={avatarUrl === `emoji:${emoji}` ? "is-selected" : ""} onClick={() => { setAvatarUrl(`emoji:${emoji}`); setAvatarError(""); }} aria-label={`Choose profile emoji ${emoji}`} aria-pressed={avatarUrl === `emoji:${emoji}`}>{emoji}</button>)}</div><div className="settings-avatar-dicebear"><span className="settings-avatar-dicebear-label">DiceBear Adventurer</span><div className="settings-avatar-dicebear-options" role="group" aria-label="Choose a DiceBear Adventurer avatar">{PROFILE_AVATAR_DICEBEAR.map((avatar) => <button type="button" key={avatar.id} className={avatarUrl === avatar.image ? "is-selected" : ""} onClick={() => { setAvatarUrl(avatar.image); setAvatarError(""); }} aria-label={`Choose ${avatar.name} DiceBear Adventurer avatar`} aria-pressed={avatarUrl === avatar.image} title={avatar.name}><img src={avatar.image} alt="" referrerPolicy="no-referrer"/></button>)}</div></div>{avatarProcessing && <span className="settings-avatar-message" role="status">Preparing a small square profile photo…</span>}{avatarError && <span className="settings-avatar-error" role="alert">{avatarError}</span>}</div><div className="settings-form-grid profile-form-grid"><label className="field-label">Full name<input value={fullName} maxLength={100} onChange={(event) => setFullName(event.target.value)} /></label><label className="field-label">Email address<div className="settings-readonly">{user.email}<LockKeyhole size={13}/></div></label><label className="field-label">Persora ID<div className="settings-readonly settings-id-value"><strong>{user.userId || "Demo workspace"}</strong>{user.userId && <button type="button" className="settings-id-copy" onClick={() => void copyUserId()}>Copy</button>}</div></label><label className="field-label settings-timezone">Time zone<select value={timezone} onChange={(event) => setTimezone(event.target.value)}><option value="Asia/Dhaka">Asia/Dhaka · Bangladesh</option><option value="Asia/Kolkata">Asia/Kolkata · India</option><option value="Asia/Singapore">Asia/Singapore</option><option value="Europe/London">Europe/London</option><option value="UTC">UTC</option></select></label></div><div className="settings-card-footer"><span>Changes are private to your account.</span><button className="settings-save-button" onClick={() => void save()} disabled={saving || avatarProcessing}>{saving ? "Saving…" : <>Save changes <ArrowRight size={14}/></>}</button></div></section><section className="settings-card"><div className="settings-card-header"><div><span className="settings-card-icon icon-soft-blue"><ShieldCheck size={17}/></span><div><h3>Your account &amp; privacy</h3><p>How Persora keeps your space safe.</p></div></div></div><div className="security-rows"><div className="security-row"><span className="security-row-icon"><LockKeyhole size={15}/></span><div><b>Sign-in security</b><small>{user.demo ? "Local sample session" : "7-digit Persora ID · protected server session"}</small></div><span className="security-row-tag"><span/>ACTIVE</span></div><div className="security-row"><span className="security-row-icon"><Fingerprint size={15}/></span><div><b>Personal vault</b><small>{items.length} items across {new Set(items.map((item) => item.section)).size} spaces</small></div><span className="security-row-tag tag-blue-text"><span/>PRIVATE</span></div><div className="security-row"><span className="security-row-icon"><Activity size={15}/></span><div><b>Data access</b><small>Vault access is restricted to your signed-in account.</small></div><span className="security-row-tag">OWNER ONLY</span></div></div>{!user.demo && <form className="settings-password-form" onSubmit={(event) => void changePassword(event)}><h4>Change password</h4><div className="settings-password-grid"><label className="field-label">Current password<input type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} autoComplete="current-password" maxLength={72} required /></label><label className="field-label">New password<input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} autoComplete="new-password" minLength={12} maxLength={72} required /></label><label className="field-label">Confirm new password<input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" minLength={12} maxLength={72} required /></label></div><button className="settings-save-button" disabled={passwordSaving}>{passwordSaving ? "Updating…" : <>Update password <ArrowRight size={14}/></>}</button></form>}<div className="account-security-note"><ShieldCheck size={14}/><span>Persora never asks for or stores your other online account passwords.</span></div></section><section className="settings-card data-card"><div className="settings-card-header"><div><span className="settings-card-icon icon-soft-peach"><FileText size={17}/></span><div><h3>Your data, your call</h3><p>Export or restore your vault data.</p></div></div></div><div className="data-action-row"><div><b>Download a backup</b><small>Export all records; cloud backups also include attached files.</small></div><button className="outline-action-button" onClick={onExport}>Export data</button></div><label className="data-action-row import-row"><div><b>Import a backup</b><small>Restore a Persora JSON export in this account.</small></div><span className="outline-action-button">Choose file<input type="file" accept=".json,application/json" onChange={(event) => void importFile(event)}/></span></label></section><section className="settings-card danger-zone-card"><div className="settings-card-header"><div><span className="settings-card-icon icon-soft-red"><Trash2 size={17}/></span><div><h3>Delete your account</h3><p>Permanently remove this account and its personal data.</p></div></div></div>{!confirmDelete ? <div className="danger-action-row"><span>This can't be undone. Export a backup first.</span><button className="danger-outline-button" onClick={() => setConfirmDelete(true)}>Delete account</button></div> : <div className="delete-confirm-inline"><b>Are you sure? This permanently deletes your vault and files.</b><button className="danger-outline-button" onClick={() => void deleteAccount()}>Yes, delete account</button><button className="quiet-button" onClick={() => setConfirmDelete(false)}>Cancel</button></div>}</section></div><aside className="settings-side-column"><div className="settings-side-card plan-side-card"><div className="plan-sparkle"><Sparkles size={16}/></div><span className="plan-label">YOUR PERSONAL SPACE</span><h3>Calm looks good on you.</h3><p>Everything here is yours to organize, in your own time.</p><div className="plan-side-divider"/><div className="plan-stats"><span>Available spaces</span><b>{Object.keys(SECTION_BY_ID).length}</b></div><div className="plan-stats"><span>Items saved</span><b>{items.length}</b></div><div className="plan-side-foot"><LockKeyhole size={12}/> Private by default</div></div><div className="settings-side-card timezone-card"><div className="timezone-card-icon"><Clock3 size={16}/></div><span className="plan-label">LOCAL TIME</span><h3>{new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit", timeZone: timezone }).format(new Date())}</h3><p>{timezone.replace("_", " ")}</p></div><div className="settings-help-card"><span><CircleHelp size={15}/></span><div><b>Need a hand?</b><small>Your privacy and data belong to you.</small><button onClick={onOpenContact}>Get in touch <ArrowRight size={13}/></button></div></div></aside></div></div>;
+  return <div className="settings-view"><div className="settings-intro settings-profile-hero"><div className="profile-hero-identity"><span className="profile-avatar-large account-avatar-large"><AccountAvatarContent user={avatarPreviewUser}/></span><div><span className="profile-hero-eyebrow">PERSONAL PROFILE</span><h2>{fullName || user.fullName}</h2><p>{user.email}</p><span className={`profile-account-badge ${user.demo ? "is-demo" : ""}`}><i/>{user.demo ? "Demo workspace" : "Active Persora account"}</span></div></div><div className="profile-hero-summary"><span className="profile-summary-label">ACCOUNT TIME ZONE</span><b>{timezone.replace(/_/g, " ")}</b><small>Changes to your profile are private.</small></div></div><div className="settings-layout"><div className="settings-main-column"><section className="settings-card"><div className="settings-card-header"><div><span className="settings-card-icon icon-soft-blue"><UserRound size={17}/></span><div><h3>Profile information</h3><p>Manage the identity and locale linked to your account.</p></div></div><span className="settings-card-status"><span/>PRIVATE PROFILE</span></div><div className="settings-profile-photo"><div className="settings-avatar-main"><span className="avatar settings-avatar-preview"><AccountAvatarContent user={avatarPreviewUser}/></span><span><b>Profile photo or emoji</b><small>Shown in your workspace navigation and saved with your profile.</small></span></div><div className="settings-avatar-actions"><label className="settings-avatar-upload"><UploadCloud size={14}/>{avatarProcessing ? "Preparing…" : "Upload photo"}<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void chooseAvatarPhoto(event)} disabled={avatarProcessing || saving}/></label><button type="button" className="settings-avatar-initials" onClick={() => { setAvatarUrl(""); setAvatarError(""); }}>Use initials</button></div><div className="settings-avatar-emoji-options" role="group" aria-label="Choose a profile emoji">{PROFILE_AVATAR_EMOJI.map((emoji) => <button type="button" key={emoji} className={avatarUrl === `emoji:${emoji}` ? "is-selected" : ""} onClick={() => { setAvatarUrl(`emoji:${emoji}`); setAvatarError(""); }} aria-label={`Choose profile emoji ${emoji}`} aria-pressed={avatarUrl === `emoji:${emoji}`}>{emoji}</button>)}</div><div className="settings-avatar-dicebear"><span className="settings-avatar-dicebear-label">DiceBear Adventurer</span><div className="settings-avatar-dicebear-options" role="group" aria-label="Choose a DiceBear Adventurer avatar">{PROFILE_AVATAR_DICEBEAR.map((avatar) => <button type="button" key={avatar.id} className={avatarUrl === avatar.image ? "is-selected" : ""} onClick={() => { setAvatarUrl(avatar.image); setAvatarError(""); }} aria-label={`Choose ${avatar.name} DiceBear Adventurer avatar`} aria-pressed={avatarUrl === avatar.image} title={avatar.name}><img src={avatar.image} alt="" referrerPolicy="no-referrer"/></button>)}</div></div>{avatarProcessing && <span className="settings-avatar-message" role="status">Preparing a small square profile photo…</span>}{avatarError && <span className="settings-avatar-error" role="alert">{avatarError}</span>}</div><div className="settings-form-grid profile-form-grid"><label className="field-label">Full name<input value={fullName} maxLength={100} onChange={(event) => setFullName(event.target.value)} /></label><label className="field-label">Email address<div className="settings-readonly">{user.email}<LockKeyhole size={13}/></div>{!user.demo && (user.emailVerified ? <span className="settings-email-verified">Verified</span> : <div className="settings-email-verification">{verificationRequested && <div className="settings-verification-code"><input aria-label="Email verification code" inputMode="numeric" maxLength={8} value={verificationCode} onChange={(event) => setVerificationCode(event.target.value.replace(/\D/g, "").slice(0, 8))} placeholder="Verification code"/><button type="button" className="settings-id-copy" onClick={() => void verifyEmail()} disabled={verificationBusy || verificationCode.length < 6}>Verify</button></div>}<button type="button" className="settings-id-copy" onClick={() => void requestEmailVerification()} disabled={verificationBusy}>{verificationBusy ? "Sending…" : verificationRequested ? "Resend code" : "Verify email"}</button></div>)}</label><label className="field-label">Persora ID<div className="settings-readonly settings-id-value"><strong>{user.userId || "Demo workspace"}</strong>{user.userId && <button type="button" className="settings-id-copy" onClick={() => void copyUserId()}>Copy</button>}</div></label><label className="field-label settings-timezone">Time zone<select value={timezone} onChange={(event) => setTimezone(event.target.value)}><option value="Asia/Dhaka">Asia/Dhaka · Bangladesh</option><option value="Asia/Kolkata">Asia/Kolkata · India</option><option value="Asia/Singapore">Asia/Singapore</option><option value="Europe/London">Europe/London</option><option value="UTC">UTC</option></select></label></div><div className="settings-card-footer"><span>Changes are private to your account.</span><button className="settings-save-button" onClick={() => void save()} disabled={saving || avatarProcessing}>{saving ? "Saving…" : <>Save changes <ArrowRight size={14}/></>}</button></div></section><section className="settings-card"><div className="settings-card-header"><div><span className="settings-card-icon icon-soft-blue"><ShieldCheck size={17}/></span><div><h3>Your account &amp; privacy</h3><p>How Persora keeps your space safe.</p></div></div></div><div className="security-rows"><div className="security-row"><span className="security-row-icon"><LockKeyhole size={15}/></span><div><b>Sign-in security</b><small>{user.demo ? "Local sample session" : "7-digit Persora ID · protected server session"}</small></div><span className="security-row-tag"><span/>ACTIVE</span></div><div className="security-row"><span className="security-row-icon"><Fingerprint size={15}/></span><div><b>Personal vault</b><small>{items.length} items across {new Set(items.map((item) => item.section)).size} spaces</small></div><span className="security-row-tag tag-blue-text"><span/>PRIVATE</span></div><div className="security-row"><span className="security-row-icon"><Activity size={15}/></span><div><b>Data access</b><small>Vault access is restricted to your signed-in account.</small></div><span className="security-row-tag">OWNER ONLY</span></div></div>{!user.demo && <form className="settings-password-form" onSubmit={(event) => void changePassword(event)}><h4>Change password</h4><div className="settings-password-grid"><label className="field-label">Current password<input type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} autoComplete="current-password" maxLength={72} required /></label><label className="field-label">New password<input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} autoComplete="new-password" minLength={12} maxLength={72} required /></label><label className="field-label">Confirm new password<input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" minLength={12} maxLength={72} required /></label></div><button className="settings-save-button" disabled={passwordSaving}>{passwordSaving ? "Updating…" : <>Update password <ArrowRight size={14}/></>}</button></form>}<div className="account-security-note"><ShieldCheck size={14}/><span>Persora never asks for or stores your other online account passwords.</span></div></section><section className="settings-card data-card"><div className="settings-card-header"><div><span className="settings-card-icon icon-soft-peach"><FileText size={17}/></span><div><h3>Your data, your call</h3><p>Export or restore your vault data.</p></div></div></div><div className="data-action-row"><div><b>Download a backup</b><small>Export all records; cloud backups also include attached files.</small></div><button className="outline-action-button" onClick={onExport}>Export data</button></div><label className="data-action-row import-row"><div><b>Import a backup</b><small>Restore a Persora JSON export in this account.</small></div><span className="outline-action-button">Choose file<input type="file" accept=".json,application/json" onChange={(event) => void importFile(event)}/></span></label></section><section className="settings-card danger-zone-card"><div className="settings-card-header"><div><span className="settings-card-icon icon-soft-red"><Trash2 size={17}/></span><div><h3>Delete your account</h3><p>Permanently remove this account and its personal data.</p></div></div></div>{!confirmDelete ? <div className="danger-action-row"><span>This can't be undone. Export a backup first.</span><button className="danger-outline-button" onClick={() => setConfirmDelete(true)}>Delete account</button></div> : <div className="delete-confirm-inline"><b>Are you sure? This permanently deletes your vault and files.</b><button className="danger-outline-button" onClick={() => void deleteAccount()}>Yes, delete account</button><button className="quiet-button" onClick={() => setConfirmDelete(false)}>Cancel</button></div>}</section></div><aside className="settings-side-column"><div className="settings-side-card plan-side-card"><div className="plan-sparkle"><Sparkles size={16}/></div><span className="plan-label">YOUR PERSONAL SPACE</span><h3>Calm looks good on you.</h3><p>Everything here is yours to organize, in your own time.</p><div className="plan-side-divider"/><div className="plan-stats"><span>Available spaces</span><b>{Object.keys(SECTION_BY_ID).length}</b></div><div className="plan-stats"><span>Items saved</span><b>{items.length}</b></div><div className="plan-side-foot"><LockKeyhole size={12}/> Private by default</div></div><div className="settings-side-card timezone-card"><div className="timezone-card-icon"><Clock3 size={16}/></div><span className="plan-label">LOCAL TIME</span><h3>{new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit", timeZone: timezone }).format(new Date())}</h3><p>{timezone.replace("_", " ")}</p></div><div className="settings-help-card"><span><CircleHelp size={15}/></span><div><b>Need a hand?</b><small>Your privacy and data belong to you.</small><button onClick={onOpenContact}>Get in touch <ArrowRight size={13}/></button></div></div></aside></div></div>;
 }
