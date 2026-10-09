@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { ArrowRight, Check, CircleAlert, Clock, ShieldCheck, Trash2, UserCheck, UsersRound, X } from "lucide-react";
+import { ArrowRight, Check, CircleAlert, Clock, ShieldCheck, Trash2, UserCheck, UsersRound } from "lucide-react";
+import ItemModalShell from "./ItemModalShell";
 import type { RecordShareEntry, SharedVaultEntry, SharePermission } from "../types";
 
 const RECENT_RECIPIENTS_STORAGE_KEY = "persora_recent_share_recipients";
@@ -130,27 +131,18 @@ export default function ShareRecordDialog({
   };
 
   return (
-    <div
-      className="modal-backdrop record-share-backdrop"
-      role="presentation"
-      onMouseDown={(event) => event.target === event.currentTarget && !busy && onClose()}
+    <ItemModalShell
+      labelledBy="record-share-title"
+      className="record-share-dialog"
+      backdropClassName="record-share-backdrop"
+      icon={<UsersRound size={19} />}
+      eyebrow="Share with Persora member"
+      title={`Share ${kind}`}
+      onClose={onClose}
+      closeDisabled={busy}
+      dismissable={!busy}
     >
-      <section className="record-share-dialog" role="dialog" aria-modal="true" aria-labelledby="record-share-title">
-        <header className="record-share-head">
-          <div className="record-share-head-left">
-            <span className="record-share-icon">
-              <UsersRound size={20} />
-            </span>
-            <div>
-              <small className="record-share-eyebrow">Share with Persora member</small>
-              <h2 id="record-share-title">Share {kind}</h2>
-            </div>
-          </div>
-          <button type="button" className="icon-button record-share-close" onClick={onClose} disabled={busy} aria-label="Close">
-            <X size={18} />
-          </button>
-        </header>
-
+      <div className="vault-modal-scroll record-share-body">
         <div className="record-share-target-banner">
           <span className="record-share-target-label">SELECTED RECORD</span>
           <p className="record-share-target-title">{title}</p>
@@ -293,7 +285,7 @@ export default function ShareRecordDialog({
             </div>
           </div>
         )}
-      </section>
-    </div>
+      </div>
+    </ItemModalShell>
   );
 }

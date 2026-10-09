@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ClipboardEvent as ReactClipboardEvent, type FormEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
-import { AlarmClock, ArrowRight, Clock, UserCheck, ArrowUpRight, BellRing, Bold, CalendarDays, Check, Copy, Download, FileImage, FileText, Italic, List, ListOrdered, ListTodo, LockKeyhole, MessageSquare, Music2, Paperclip, Pause, Play, RemoveFormatting, Send, Share2, ShieldCheck, Strikethrough, Trash2, Underline, UploadCloud, X } from "lucide-react";
+import { AlarmClock, ArrowUpRight, BellRing, Bold, CalendarDays, Check, Copy, Download, FileImage, FileText, Italic, List, ListOrdered, ListTodo, LockKeyhole, MessageSquare, Music2, Paperclip, Pause, Play, RemoveFormatting, Send, Share2, ShieldCheck, Strikethrough, Underline, UploadCloud, X } from "lucide-react";
 import { SECTION_BY_ID } from "../data";
+import ItemModalShell from "./ItemModalShell";
 import QRPreview from "./QRPreview";
 import ImagePreview from "./ImagePreview";
 import PdfPreview from "./PdfPreview";
 import { TransferProgressIndicator } from "./ProgressIndicator";
-import type { AddDocumentFlowDraft, AlarmRingtone, FieldDefinition, NotesRecordKind, SectionId, ShareComment, SharePermission, SharedItemAccess, SharedVaultEntry, SmartScanFieldDefinition, SmartScanResult, VaultFile, VaultFilePreview, VaultItem, TransferProgress } from "../types";
+import type { AddDocumentFlowDraft, AlarmRingtone, FieldDefinition, NotesRecordKind, SectionId, ShareComment, SharedItemAccess, SmartScanFieldDefinition, SmartScanResult, VaultFile, VaultFilePreview, VaultItem, TransferProgress } from "../types";
 import { daysUntil, formatDate, formatRelativeDate, humanSize, makeVCard, sanitizeNoteHtml } from "../lib/utils";
 import { alarmRingtoneAudioPath, fetchVaultFile, isPagesApiConfigured, loadAlarmRingtones, smartScanDocument } from "../lib/cloud";
 import { isSmartScanFileSizeAllowed, SmartScanActionPanel, SmartScanFieldNote, supportsSmartScanFile } from "./SmartScan";
@@ -26,7 +27,6 @@ interface ItemEditorDialogProps {
   maxUploadMb?: number;
   canUpload: boolean;
   onUpgrade?: () => void;
-  presentation?: "modal" | "panel";
   onClose: () => void;
   onSave: (value: Omit<VaultItem, "id" | "createdAt" | "updatedAt"> & { id?: string; fileUpload?: File | null }, onProgress?: (progress: TransferProgress) => void) => Promise<void>;
 }
@@ -71,7 +71,7 @@ function savedExpiry(month?: string, year?: string) {
 }
 
 
-export function ItemEditorDialog({ sectionId, item, initialMetadata, initialFile, initialScanResult, initialScanComplete = false, initialProtectedKeys = EMPTY_PROTECTED_KEYS, onChangeAddDocumentDestination, documentTypes = [], familyMembers = [], maxUploadMb = 25, canUpload, onUpgrade, presentation = "modal", onClose, onSave }: ItemEditorDialogProps) {
+export function ItemEditorDialog({ sectionId, item, initialMetadata, initialFile, initialScanResult, initialScanComplete = false, initialProtectedKeys = EMPTY_PROTECTED_KEYS, onChangeAddDocumentDestination, documentTypes = [], familyMembers = [], maxUploadMb = 25, canUpload, onUpgrade, onClose, onSave }: ItemEditorDialogProps) {
   const section = SECTION_BY_ID[sectionId];
   const [values, setValues] = useState<Record<string, string>>({});
   const [selectedFile, setSelectedFile] = useState<File | null>(initialFile || null);
@@ -324,25 +324,47 @@ export function ItemEditorDialog({ sectionId, item, initialMetadata, initialFile
     return <input {...common} type={type} placeholder={field.placeholder || ""} />;
   };
 
-  const content = <section className={`editor-dialog ${section.id === "notes" ? "notes-editor-drawer" : ""} ${presentation === "panel" ? "documents-editor-panel" : ""}`} role={presentation === "panel" ? "region" : "dialog"} aria-modal={presentation === "modal" ? true : undefined} aria-labelledby="editor-title">
-      <div className="editor-dialog-head"><div className={`editor-icon ${section.id}`}><section.icon size={19} /></div><div><span className="section-eyebrow">{isCv ? "Career profile" : isAdmission ? "Education record" : item ? "Edit your record" : `Add to ${section.label.toLowerCase()}`}</span><h2 id="editor-title">{isCv ? item ? "Update your CV / Resume." : "Add a CV / Resume." : isAdmission ? item ? "Update admission details." : "Add an admission record." : item ? "Make a quick update." : `Add a ${section.singular}.`}</h2></div>{initialFile && onChangeAddDocumentDestination && <button type="button" className="quiet-button" onClick={changeAddDocumentDestination} disabled={saving}>Change space / type</button>}<button className="icon-button" onClick={onClose} aria-label={presentation === "panel" ? "Close document panel" : "Close"} disabled={saving}><X size={18} /></button></div>
-      <p className="editor-intro">{isWalletCard ? "Add a card reference. The full card number is used only in this browser to detect the network and ending digits, then discarded." : sectionId === "accounts" && isBankAccount ? "Keep bank and branch details together. Do not store online banking passwords, PINs, CVVs, or one-time codes." : sectionId === "accounts" ? "Keep a useful index of online services and sign-in links. Never save passwords or one-time codes." : isCv ? "Add your career details and attach a current CV. Identity numbers and expiry dates aren't needed here." : isAdmission ? "Keep the admission, application and payment details together. Grade and passing-year fields are hidden for this record type." : "A few details now make it easier to find later. Everything you add is just for you."}</p>
+  const isNotesDrawer = section.id === "notes";
+  const useScrollWrap = section.id !== "notes";
+  const eyebrow = isCv ? "Career profile" : isAdmission ? "Education record" : item ? "Edit your record" : `Add to ${section.label.toLowerCase()}`;
+  const title = isCv ? item ? "Update your CV / Resume." : "Add a CV / Resume." : isAdmission ? item ? "Update admission details." : "Add an admission record." : item ? "Make a quick update." : `Add a ${section.singular}.`;
+
+  const formBody = <>
+    <p className="editor-intro">{isWalletCard ? "Add a card reference. The full card number is used only in this browser to detect the network and ending digits, then discarded." : sectionId === "accounts" && isBankAccount ? "Keep bank and branch details together. Do not store online banking passwords, PINs, CVVs, or one-time codes." : sectionId === "accounts" ? "Keep a useful index of online services and sign-in links. Never save passwords or one-time codes." : isCv ? "Add your career details and attach a current CV. Identity numbers and expiry dates aren't needed here." : isAdmission ? "Keep the admission, application and payment details together. Grade and passing-year fields are hidden for this record type." : "A few details now make it easier to find later. Everything you add is just for you."}</p>
+    <div className="editor-fields-grid">{fields.map((field) => <label key={field.key} className={`field-label ${field.wide || field.kind === "textarea" ? "field-wide" : ""}`} htmlFor={`field-${field.key}`}>{isCv && field.key === "title" ? "CV / Resume title" : sectionId === "accounts" && field.key === "title" ? isBankAccount ? "Account label" : "Service name" : field.label}{field.required && <span className="required-star">*</span>}{renderInput(field)}<SmartScanFieldNote field={scanResult?.fields[field.key]} currentValue={values[field.key] || ""} onApply={(value) => setUserValue(field.key, value)} allowApply={!initialFile}/></label>)}</div>
+    {initialFile && !isWalletCard && fields.every((field) => field.key !== "additionalData") && <label className="field-label field-wide" htmlFor="field-additional-data">Additional Data <small>Other extracted information that does not fit the fields above</small><textarea id="field-additional-data" value={values.additionalData || ""} onChange={(event) => setUserValue("additionalData", event.target.value)} rows={4} maxLength={5000} placeholder="Review or add other information from the file"/></label>}
+    {!isWalletCard && <div className="upload-field-block"><div className="upload-field-title"><span>Attach a file <small>Optional · PDF, photo or document</small></span><span className="upload-lock"><LockKeyhole size={12} /> Private</span></div>
+      {selectedFile ? <div className="upload-preview-row">{previewUrl ? <img src={previewUrl} alt="Selected file preview" className="upload-image-preview" /> : <span className="upload-file-icon"><FileText size={20} /></span>}<span className="upload-preview-name"><b>{selectedFile.name}</b><small>{humanSize(selectedFile.size)} · Ready to upload</small></span><button type="button" className="plain-icon upload-remove" onClick={() => { setSelectedFile(null); setScanResult(null); setScanError(""); }} aria-label="Remove selected file"><X size={16} /></button></div> : item?.file && !removeFile ? <div className="upload-preview-row existing-file-row"><span className="upload-file-icon">{item.file.type?.startsWith("image/") ? <FileImage size={19} /> : <FileText size={19} />}</span><span className="upload-preview-name"><b>{item.file.name}</b><small>{humanSize(item.file.size)} · Saved in your vault</small></span><button type="button" className="upload-replace" disabled={!canUpload} onClick={() => document.getElementById("vault-file-input")?.click()}>Replace</button><button type="button" className="plain-icon upload-remove" onClick={() => { setRemoveFile(true); setScanResult(null); setScanError(""); }} aria-label="Remove attachment"><X size={16} /></button></div> : canUpload ? <label htmlFor="vault-file-input" className={`file-dropzone ${dragging ? "file-dropzone-active" : ""}`} onDragOver={(event) => { event.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={(event) => { event.preventDefault(); setDragging(false); acceptFile(event.dataTransfer.files[0]); }}>
+        <span className="upload-circle"><UploadCloud size={19} /></span><span className="dropzone-copy"><b>Choose a file or drop it here</b><small>PDF, PNG, JPG or document · up to {maxUploadMb} MB</small></span><span className="browse-button">Browse files</span></label> : <div className="file-upload-locked"><LockKeyhole size={16}/><span>New attachments require an active paid plan. Records remain available on every plan.</span>{onUpgrade && <button type="button" onClick={onUpgrade}>View plans</button>}</div>}
+      <input className="hidden-file-input" id="vault-file-input" type="file" disabled={!canUpload} onChange={(event) => { acceptFile(event.target.files?.[0]); event.currentTarget.value = ""; }} accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.txt" />
+      {canScanAttachment && <SmartScanActionPanel fileName={selectedFile?.name || item?.file?.name || ""} canScan={canUpload && isPagesApiConfigured && scanSizeAllowed && Boolean(selectedFile || (item?.file?.key && !removeFile))} unavailableMessage={!canUpload ? "Smart Scan uploads require an active paid plan." : !isPagesApiConfigured ? "Smart Scan needs a connected Cloudflare Pages account." : !scanSizeAllowed ? "Smart Scan supports files up to 7 MB." : "Select this attachment again to scan it."} busy={scanBusy} error={scanError} result={scanResult} onScan={(retry) => void runSmartScan(retry)}/>}
+    </div>}
+    {isWalletCard && <div className="wallet-card-privacy-note"><ShieldCheck size={14}/><span><b>Sherlock Security System.</b> Card number is used in this browser only to detect the network and ending digits, then discarded on save. Only the last four digits are stored. CVV is never saved.</span></div>}
+    {uploadProgress && <TransferProgressIndicator progress={uploadProgress} label="Uploading file" detail={`${humanSize(uploadProgress.loaded)} of ${humanSize(uploadProgress.total)}`}/>}
+  </>;
+
+  return (
+    <ItemModalShell
+      labelledBy="editor-title"
+      className={`vault-modal-editor ${isNotesDrawer ? "notes-editor-drawer" : ""}`.trim()}
+      backdropClassName={isNotesDrawer ? "notes-editor-backdrop" : ""}
+      icon={<section.icon size={19} />}
+      iconClassName={`editor-icon ${section.id}`}
+      eyebrow={eyebrow}
+      title={title}
+      headerExtra={initialFile && onChangeAddDocumentDestination ? <button type="button" className="quiet-button vault-modal-extra" onClick={changeAddDocumentDestination} disabled={saving}>Change space / type</button> : undefined}
+      onClose={onClose}
+      closeDisabled={saving}
+      closeLabel="Close"
+      dismissable={!saving}
+    >
       <form className="editor-form" onSubmit={submit}>
-        <div className="editor-fields-grid">{fields.map((field) => <label key={field.key} className={`field-label ${field.wide || field.kind === "textarea" ? "field-wide" : ""}`} htmlFor={`field-${field.key}`}>{isCv && field.key === "title" ? "CV / Resume title" : sectionId === "accounts" && field.key === "title" ? isBankAccount ? "Account label" : "Service name" : field.label}{field.required && <span className="required-star">*</span>}{renderInput(field)}<SmartScanFieldNote field={scanResult?.fields[field.key]} currentValue={values[field.key] || ""} onApply={(value) => setUserValue(field.key, value)} allowApply={!initialFile}/></label>)}</div>
-        {initialFile && !isWalletCard && fields.every((field) => field.key !== "additionalData") && <label className="field-label field-wide" htmlFor="field-additional-data">Additional Data <small>Other extracted information that does not fit the fields above</small><textarea id="field-additional-data" value={values.additionalData || ""} onChange={(event) => setUserValue("additionalData", event.target.value)} rows={4} maxLength={5000} placeholder="Review or add other information from the file"/></label>}
-        {!isWalletCard && <div className="upload-field-block"><div className="upload-field-title"><span>Attach a file <small>Optional · PDF, photo or document</small></span><span className="upload-lock"><LockKeyhole size={12} /> Private</span></div>
-          {selectedFile ? <div className="upload-preview-row">{previewUrl ? <img src={previewUrl} alt="Selected file preview" className="upload-image-preview" /> : <span className="upload-file-icon"><FileText size={20} /></span>}<span className="upload-preview-name"><b>{selectedFile.name}</b><small>{humanSize(selectedFile.size)} · Ready to upload</small></span><button type="button" className="plain-icon upload-remove" onClick={() => { setSelectedFile(null); setScanResult(null); setScanError(""); }} aria-label="Remove selected file"><X size={16} /></button></div> : item?.file && !removeFile ? <div className="upload-preview-row existing-file-row"><span className="upload-file-icon">{item.file.type?.startsWith("image/") ? <FileImage size={19} /> : <FileText size={19} />}</span><span className="upload-preview-name"><b>{item.file.name}</b><small>{humanSize(item.file.size)} · Saved in your vault</small></span><button type="button" className="upload-replace" disabled={!canUpload} onClick={() => document.getElementById("vault-file-input")?.click()}>Replace</button><button type="button" className="plain-icon upload-remove" onClick={() => { setRemoveFile(true); setScanResult(null); setScanError(""); }} aria-label="Remove attachment"><X size={16} /></button></div> : canUpload ? <label htmlFor="vault-file-input" className={`file-dropzone ${dragging ? "file-dropzone-active" : ""}`} onDragOver={(event) => { event.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={(event) => { event.preventDefault(); setDragging(false); acceptFile(event.dataTransfer.files[0]); }}>
-            <span className="upload-circle"><UploadCloud size={19} /></span><span className="dropzone-copy"><b>Choose a file or drop it here</b><small>PDF, PNG, JPG or document · up to {maxUploadMb} MB</small></span><span className="browse-button">Browse files</span></label> : <div className="file-upload-locked"><LockKeyhole size={16}/><span>New attachments require an active paid plan. Records remain available on every plan.</span>{onUpgrade && <button type="button" onClick={onUpgrade}>View plans</button>}</div>}
-          <input className="hidden-file-input" id="vault-file-input" type="file" disabled={!canUpload} onChange={(event) => { acceptFile(event.target.files?.[0]); event.currentTarget.value = ""; }} accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.txt" />
-          {canScanAttachment && <SmartScanActionPanel fileName={selectedFile?.name || item?.file?.name || ""} canScan={canUpload && isPagesApiConfigured && scanSizeAllowed && Boolean(selectedFile || (item?.file?.key && !removeFile))} unavailableMessage={!canUpload ? "Smart Scan uploads require an active paid plan." : !isPagesApiConfigured ? "Smart Scan needs a connected Cloudflare Pages account." : !scanSizeAllowed ? "Smart Scan supports files up to 7 MB." : "Select this attachment again to scan it."} busy={scanBusy} error={scanError} result={scanResult} onScan={(retry) => void runSmartScan(retry)}/>}
-        </div>}
-        {isWalletCard && <div className="wallet-card-privacy-note"><ShieldCheck size={14}/><span><b>Sherlock Security System.</b> Card number is used in this browser only to detect the network and ending digits, then discarded on save. Only the last four digits are stored. CVV is never saved.</span></div>}
-        {uploadProgress && <TransferProgressIndicator progress={uploadProgress} label="Uploading file" detail={`${humanSize(uploadProgress.loaded)} of ${humanSize(uploadProgress.total)}`}/>}
+        {useScrollWrap ? <div className="vault-modal-scroll">{formBody}</div> : formBody}
         {error && <div className="form-alert error-alert editor-error" role="alert">{error}</div>}
-        <div className="editor-form-footer"><div className="editor-footnote"><ShieldCheck size={14} /><span>Private to your Persora account</span></div><div className="editor-actions"><button type="button" className="quiet-button" onClick={onClose} disabled={saving}>{presentation === "panel" ? "Back to documents" : "Cancel"}</button><button type="submit" className="editor-submit" disabled={saving}>{saving ? <><span className="spinner" /> Saving…</> : <>{item ? "Save changes" : "Save to vault"}<Check size={15} /></>}</button></div></div>
+        <div className="editor-form-footer"><div className="editor-footnote"><ShieldCheck size={14} /><span>Private to your Persora account</span></div><div className="editor-actions"><button type="button" className="quiet-button" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="editor-submit" disabled={saving}>{saving ? <><span className="spinner" /> Saving…</> : <>{item ? "Save changes" : "Save to vault"}<Check size={15} /></>}</button></div></div>
       </form>
-    </section>;
-  return presentation === "panel" ? content : <div className={`modal-backdrop ${section.id === "notes" ? "notes-editor-backdrop" : ""}`} role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !saving && onClose()}>{content}</div>;
+    </ItemModalShell>
+  );
 }
 
 function RingtonePreviewButton({ ringtoneId }: { ringtoneId: string }) {
@@ -467,11 +489,22 @@ export function TodoEditorDialog({ kind = "todo", item, canUpload, maxUploadMb =
     } catch (reason) { setError(reason instanceof Error ? reason.message : `Couldn't save this ${kind}.`); setSaving(false); }
   };
   const heading = kind === "todo" ? "task" : kind;
-  return <div className="modal-backdrop todo-editor-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !saving && onClose()}>
-    <section className="editor-dialog todo-editor-dialog schedule-editor-dialog todo-editor-drawer" role="dialog" aria-modal="true" aria-labelledby="todo-editor-title">
-      <div className="editor-dialog-head"><div className="editor-icon notes">{kind === "alarm" ? <AlarmClock size={19}/> : kind === "reminder" ? <BellRing size={19}/> : <Check size={19}/>}</div><div><span className="section-eyebrow">Tasks &amp; Notes</span><h2 id="todo-editor-title">{item ? `Update this ${heading}.` : `Add a ${heading}.`}</h2></div><button type="button" className="icon-button" onClick={onClose} aria-label="Close editor" disabled={saving}><X size={18}/></button></div>
-      <p className="editor-intro">{kind === "alarm" ? "Set a time to ring. Repeating alarms run on the selected days while Persora is open." : kind === "reminder" ? "Choose a date and time. Persora can alert you while you are using the app." : "Keep one next step clear. Tasks stay with your private notes."}</p>
+  return (
+    <ItemModalShell
+      labelledBy="todo-editor-title"
+      className="vault-modal-editor todo-editor-drawer"
+      backdropClassName="todo-editor-backdrop"
+      icon={kind === "alarm" ? <AlarmClock size={19}/> : kind === "reminder" ? <BellRing size={19}/> : <Check size={19}/>}
+      iconClassName="editor-icon notes"
+      eyebrow="Tasks & Notes"
+      title={item ? `Update this ${heading}.` : `Add a ${heading}.`}
+      onClose={onClose}
+      closeDisabled={saving}
+      closeLabel="Close editor"
+      dismissable={!saving}
+    >
       <form className="editor-form todo-editor-form" onSubmit={(event) => void submit(event)}>
+        <p className="editor-intro">{kind === "alarm" ? "Set a time to ring. Repeating alarms run on the selected days while Persora is open." : kind === "reminder" ? "Choose a date and time. Persora can alert you while you are using the app." : "Keep one next step clear. Tasks stay with your private notes."}</p>
         <label className="field-label" htmlFor="todo-title">{kind === "todo" ? "Task title" : kind === "alarm" ? "Alarm name" : "Reminder title"}<span className="required-star">*</span><input id="todo-title" value={title} onChange={(event) => setTitle(event.target.value)} maxLength={240} required placeholder={kind === "todo" ? "e.g. Send the application form" : kind === "alarm" ? "e.g. Morning alarm" : "e.g. Call the clinic"} autoFocus/></label>
         {kind === "todo" && <label className="field-label" htmlFor="todo-due-date">Due date <small>Optional</small><input id="todo-due-date" type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)}/></label>}
         {kind === "reminder" && <label className="field-label" htmlFor="reminder-at">Remind me at <span className="required-star">*</span><input id="reminder-at" type="datetime-local" value={reminderAt} onChange={(event) => setReminderAt(event.target.value)} required/></label>}
@@ -483,13 +516,13 @@ export function TodoEditorDialog({ kind = "todo", item, canUpload, maxUploadMb =
         <div className="upload-field-block"><div className="upload-field-title"><span>Attach a file <small>Optional · PDF or image for Smart Scan</small></span><span className="upload-lock"><LockKeyhole size={12}/> Private</span></div>
           {selectedFile ? <div className="upload-preview-row"><span className="upload-file-icon"><FileText size={20}/></span><span className="upload-preview-name"><b>{selectedFile.name}</b><small>{humanSize(selectedFile.size)} · Ready to upload</small></span><button type="button" className="plain-icon upload-remove" onClick={() => { setSelectedFile(null); setScanResult(null); setScanError(""); if (item?.file) setRemoveFile(false); }} aria-label="Remove selected file"><X size={16}/></button></div> : item?.file && !removeFile ? <div className="upload-preview-row existing-file-row"><span className="upload-file-icon">{item.file.type?.startsWith("image/") ? <FileImage size={19}/> : <FileText size={19}/>}</span><span className="upload-preview-name"><b>{item.file.name}</b><small>{humanSize(item.file.size)} · Saved in your vault</small></span><button type="button" className="upload-replace" disabled={!canUpload} onClick={() => document.getElementById("todo-attachment-input")?.click()}>Replace</button><button type="button" className="plain-icon upload-remove" onClick={() => { setRemoveFile(true); setScanResult(null); setScanError(""); }} aria-label="Remove attachment"><X size={16}/></button></div> : canUpload ? <label htmlFor="todo-attachment-input" className="file-dropzone" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); acceptFile(event.dataTransfer.files[0]); }}><span className="upload-circle"><UploadCloud size={19}/></span><span className="dropzone-copy"><b>Choose a file or drop it here</b><small>PDF, PNG, JPG, WebP · up to {maxUploadMb} MB</small></span><span className="browse-button">Browse files</span></label> : <div className="file-upload-locked"><LockKeyhole size={16}/><span>New attachments and Smart Scan require an active paid plan. Existing records remain available.</span>{onUpgrade && <button type="button" onClick={onUpgrade}>View plans</button>}</div>}
           <input className="hidden-file-input" id="todo-attachment-input" type="file" disabled={!canUpload} onChange={(event) => { acceptFile(event.target.files?.[0]); event.currentTarget.value = ""; }} accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.tif,.tiff,.bmp" />
-          {canScanAttachment && <SmartScanActionPanel fileName={selectedFile?.name || item?.file?.name || ""} canScan={canUpload && isPagesApiConfigured && scanSizeAllowed && Boolean(selectedFile || (item?.file?.key && !removeFile))} unavailableMessage={!canUpload ? "Smart Scan uploads require an active paid plan." : !isPagesApiConfigured ? "Smart Scan needs a connected Cloudflare Pages account." : !scanSizeAllowed ? "Smart Scan supports files up to 7 MB." : "Select the attachment again to scan it."} busy={scanBusy} error={scanError} result={scanResult} onScan={(retry) => void runSmartScan(retry)}/ >}
+          {canScanAttachment && <SmartScanActionPanel fileName={selectedFile?.name || item?.file?.name || ""} canScan={canUpload && isPagesApiConfigured && scanSizeAllowed && Boolean(selectedFile || (item?.file?.key && !removeFile))} unavailableMessage={!canUpload ? "Smart Scan uploads require an active paid plan." : !isPagesApiConfigured ? "Smart Scan needs a connected Cloudflare Pages account." : !scanSizeAllowed ? "Smart Scan supports files up to 7 MB." : "Select the attachment again to scan it."} busy={scanBusy} error={scanError} result={scanResult} onScan={(retry) => void runSmartScan(retry)}/>}
         </div>
         {error && <div className="form-alert error-alert" role="alert">{error}</div>}
         <div className="editor-form-footer"><div className="editor-footnote"><ShieldCheck size={14}/><span>Private to your Persora account</span></div><div className="editor-actions"><button type="button" className="quiet-button" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="editor-submit" disabled={saving}>{saving ? <><span className="spinner"/> Saving…</> : <>{item ? `Save ${heading}` : `Add ${heading}`}<Check size={15}/></>}</button></div></div>
       </form>
-    </section>
-  </div>;
+    </ItemModalShell>
+  );
 }
 
 function RichNoteEditor({ id, value, onChange }: { id: string; value: string; onChange: (value: string) => void }) {
@@ -522,7 +555,7 @@ function RichNoteEditor({ id, value, onChange }: { id: string; value: string; on
   };
   const insertTextAtSelection = (text: string) => {
     const selection = window.getSelection();
-    if (!selection?.rangeCount || !editorRef.current?.contains(selection.anchorNode)) return;
+    if (!selection || !selection.rangeCount || !editorRef.current?.contains(selection.anchorNode)) return;
     const range = selection.getRangeAt(0);
     range.deleteContents();
     const textNode = document.createTextNode(text);
@@ -561,7 +594,7 @@ function RichNoteEditor({ id, value, onChange }: { id: string; value: string; on
   </div>;
 }
 
-export function ItemDetailDialog({ item, familyMembers = [], filePreview, shareAccess, comments = [], presentation = "modal", onClose, onEdit, onDownloadFile, onManageSharing, onAddComment }: { item: VaultItem; familyMembers?: Pick<VaultItem, "id" | "title" | "metadata">[]; filePreview?: VaultFilePreview | null; shareAccess?: SharedItemAccess; comments?: ShareComment[]; presentation?: "modal" | "panel"; onClose: () => void; onEdit: () => void; onDownloadFile: () => void; onManageSharing?: () => void; onAddComment?: (body: string) => Promise<void> }) {
+export function ItemDetailDialog({ item, familyMembers = [], filePreview, shareAccess, comments = [], onClose, onEdit, onDownloadFile, onManageSharing, onAddComment }: { item: VaultItem; familyMembers?: Pick<VaultItem, "id" | "title" | "metadata">[]; filePreview?: VaultFilePreview | null; shareAccess?: SharedItemAccess; comments?: ShareComment[]; onClose: () => void; onEdit: () => void; onDownloadFile: () => void; onManageSharing?: () => void; onAddComment?: (body: string) => Promise<void> }) {
   const [commentDraft, setCommentDraft] = useState("");
   const [commentSending, setCommentSending] = useState(false);
   const [commentError, setCommentError] = useState("");
@@ -625,8 +658,18 @@ export function ItemDetailDialog({ item, familyMembers = [], filePreview, shareA
     catch (error) { setCommentError(error instanceof Error ? error.message : "Couldn't post this comment."); }
     finally { setCommentSending(false); }
   };
-  const content = <section className={`detail-dialog ${presentation === "panel" ? "documents-detail-panel" : ""}`} role={presentation === "panel" ? "region" : "dialog"} aria-modal={presentation === "modal" ? true : undefined} aria-labelledby="detail-title">
-      <div className="detail-banner"><div className="detail-banner-pattern"/><div className={`detail-icon ${detailColors[item.section]}`}><section.icon size={22} /></div><button className="icon-button detail-close" onClick={onClose} aria-label={presentation === "panel" ? "Close document panel" : "Close details"}><X size={18} /></button><div className="detail-banner-title"><span>{section.eyebrow}</span><h2 id="detail-title">{item.title}</h2></div><div className="detail-private-pill">{shareAccess ? <><Share2 size={12} /> {shareAccess.direction === "incoming" ? `SHARED BY ${shareAccess.owner.fullName}` : `SHARED WITH ${shareAccess.recipient.fullName}`}</> : <><LockKeyhole size={12} /> YOUR PRIVATE VAULT</>}</div></div>
+  return (
+    <ItemModalShell
+      labelledBy="detail-title"
+      className="vault-modal-detail"
+      icon={<section.icon size={19} />}
+      iconClassName={`detail-icon ${detailColors[item.section]}`}
+      eyebrow={section.eyebrow}
+      title={item.title}
+      headerMeta={<span className="detail-private-pill">{shareAccess ? <><Share2 size={12} /> {shareAccess.direction === "incoming" ? `SHARED BY ${shareAccess.owner.fullName}` : `SHARED WITH ${shareAccess.recipient.fullName}`}</> : <><LockKeyhole size={12} /> YOUR PRIVATE VAULT</>}</span>}
+      onClose={onClose}
+      closeLabel="Close details"
+    >
       <div className="detail-body"><div className="detail-meta-strip"><span><CalendarDays size={13} /> Added {formatDate(item.createdAt)}</span><span className="detail-updated">Updated {formatRelativeDate(item.updatedAt.slice(0, 10))}</span>{dateValue && <span className={`detail-date-status ${days !== null && days >= 0 && days <= 30 ? "detail-date-soon" : ""}`}><span />{days !== null && days >= 0 && days <= 30 ? `${days === 0 ? "Due today" : `Due in ${days} days`} · ` : ""}{formatDate(dateValue)}</span>}</div>
         {isTodoItem && <div className="detail-fields-grid"><div className="detail-field"><span>Status</span><b>{item.metadata.completed === "true" ? "Completed" : "Active"}</b></div>{item.metadata.dueDate && <div className="detail-field"><span>Due date</span><b>{formatDate(item.metadata.dueDate)}</b></div>}</div>}
         {displayEntries.length ? <div className="detail-fields-grid">{displayEntries.map(([key, value]) => {
@@ -641,75 +684,9 @@ export function ItemDetailDialog({ item, familyMembers = [], filePreview, shareA
           {!filePreview || filePreview.status === "loading" ? <div className="detail-preview-message"><span className="spinner dark-spinner"/><b>Opening private attachment…</b></div> : filePreview.status === "unavailable" || filePreview.status === "error" ? <div className="detail-preview-message"><FileText size={25}/><b>{filePreview.message || "This attachment could not be previewed."}</b></div> : filePreview.type?.startsWith("image/") && filePreview.src ? <ImagePreview src={filePreview.src} name={filePreview.name}/> : (filePreview.type === "application/pdf" || filePreview.name.toLowerCase().endsWith(".pdf")) && filePreview.src ? <PdfPreview src={filePreview.src} name={filePreview.name}/> : filePreview.type?.startsWith("video/") && filePreview.src ? <video className="detail-preview-media" src={filePreview.src} controls /> : filePreview.type?.startsWith("audio/") && filePreview.src ? <audio className="detail-preview-audio" src={filePreview.src} controls /> : <div className="detail-preview-message"><FileText size={25}/><b>Preview isn’t supported for this file type in your browser.</b><span>Use Download to open it with a compatible app. Your file remains private.</span></div>}
         </div></section>}
         {shareAccess && <section className="shared-comments"><div className="shared-comments-heading"><span><MessageSquare size={15}/></span><div><b>Comments</b><small>{shareAccess.direction === "incoming" ? `Shared by ${shareAccess.owner.fullName}` : `Shared with ${shareAccess.recipient.fullName}`} · {shareAccess.permission} access</small></div></div><div className="shared-comment-list">{comments.length ? comments.map((comment) => <article className="shared-comment" key={comment.id}><div><b>{comment.authorName}</b><time>{new Date(comment.createdAt).toLocaleString()}</time></div><p>{comment.body}</p></article>) : <p className="comments-empty">No comments yet.</p>}</div>{canComment && <form className="shared-comment-form" onSubmit={(event) => void submitComment(event)}><textarea value={commentDraft} onChange={(event) => setCommentDraft(event.target.value)} maxLength={5000} rows={2} placeholder="Add a comment…" required/><button className="editor-submit" disabled={commentSending || !commentDraft.trim()}>{commentSending ? "Posting…" : <>Comment <Send size={14}/></>}</button>{commentError && <span className="form-alert error-alert">{commentError}</span>}</form>}{!canComment && <p className="comments-view-only">Your View access allows you to read comments.</p>}</section>}
-      </div><div className="detail-footer"><span><ShieldCheck size={14} /> {shareAccess ? "Original owner's copy stays in their vault." : "Your data belongs to you."}</span><div><button className="quiet-button" onClick={onClose}>{presentation === "panel" ? "Back to documents" : "Close"}</button>{(!shareAccess || shareAccess.direction === "outgoing") && onManageSharing && <button className="quiet-button share-detail-button" onClick={onManageSharing}><Share2 size={14}/> Manage sharing</button>}{canEdit && <button className="editor-submit" onClick={onEdit}>Edit details <ArrowUpRight size={14} /></button>}</div></div>
-    </section>;
-  return presentation === "panel" ? content : <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>{content}</div>;
-}
-
-export function ShareManagementDialog({ item, shares, allRecentShares = [], available, onShare, onPermissionChange, onRevoke, onClose }: { item: VaultItem; shares: SharedVaultEntry[]; allRecentShares?: SharedVaultEntry[]; available: boolean; onShare: (recipient: string, permission: SharePermission) => Promise<void>; onPermissionChange: (shareId: string, permission: SharePermission) => Promise<void>; onRevoke: (shareId: string) => Promise<void>; onClose: () => void }) {
-  const [recipient, setRecipient] = useState("");
-  const [permission, setPermission] = useState<SharePermission>("view");
-  const [busy, setBusy] = useState(false);
-  const [busyShare, setBusyShare] = useState("");
-  const [error, setError] = useState("");
-
-  const recentRecipients = useMemo(() => {
-    const list: { userId?: string; name: string; email: string }[] = [];
-    const seen = new Set<string>();
-    const pool = [...shares, ...(allRecentShares || [])];
-    for (const entry of pool) {
-      if (entry?.recipient?.userId && !seen.has(entry.recipient.userId)) {
-        seen.add(entry.recipient.userId);
-        list.push({
-          userId: entry.recipient.userId,
-          name: entry.recipient.fullName,
-          email: entry.recipient.email,
-        });
-      }
-    }
-    return list.slice(0, 5);
-  }, [shares, allRecentShares]);
-
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!recipient.trim()) return;
-    setBusy(true); setError("");
-    try { await onShare(recipient.trim(), permission); setRecipient(""); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : "Couldn't share this document."); }
-    finally { setBusy(false); }
-  };
-  const update = async (shareId: string, action: () => Promise<void>) => {
-    setBusyShare(shareId); setError("");
-    try { await action(); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : "Couldn't update sharing access."); }
-    finally { setBusyShare(""); }
-  };
-  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !busy && onClose()}><section className="share-dialog" role="dialog" aria-modal="true" aria-labelledby="share-dialog-title">
-    <div className="share-dialog-head"><span className="share-dialog-icon"><Share2 size={19}/></span><div><span className="section-eyebrow">Document access</span><h2 id="share-dialog-title">Share “{item.title}”</h2></div><button className="icon-button" onClick={onClose} aria-label="Close share dialog"><X size={18}/></button></div>
-    <p className="share-dialog-intro">Invite a registered Persora member. The original file stays in your vault, even when someone edits it.</p>
-    {!available && <div className="share-backend-notice"><ShieldCheck size={16}/><span>Sharing needs a signed-in account with Persora's cloud API enabled.</span></div>}
-    <form className="share-invite-form" onSubmit={(event) => void submit(event)}>
-      <label className="field-label">Email address or seven-digit Persora ID<input value={recipient} onChange={(event) => setRecipient(event.target.value)} placeholder="name@example.com or 1234567" autoComplete="off" disabled={!available || busy}/></label>
-      {recentRecipients.length > 0 && (
-        <div className="record-share-recents" style={{margin: "4px 0 8px 0"}}>
-          <div className="record-share-recents-header"><Clock size={11}/><span>Recent members</span></div>
-          <div className="record-share-chips">
-            {recentRecipients.map((m, idx) => (
-              <button key={idx} type="button" className="record-share-chip" onClick={() => setRecipient(m.userId || m.email)} disabled={!available || busy} title={m.email}>
-                <UserCheck size={11}/>
-                <span>{m.name} ({m.userId})</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-      <label className="field-label">Permission<select value={permission} onChange={(event) => setPermission(event.target.value as SharePermission)} disabled={!available || busy}><option value="view">View · read and download</option><option value="comment">Comment · view and leave comments</option><option value="edit">Edit · update the original document</option></select></label>
-      <button className="editor-submit" disabled={!available || busy || !recipient.trim()}>{busy ? "Sharing…" : <>Share document <ArrowRight size={14}/></>}</button>
-    </form>
-    {error && <div className="form-alert error-alert share-modal-error" role="alert">{error}</div>}
-    <div className="share-access-list"><div className="share-access-list-heading"><b>People with access</b><span>{shares.length}</span></div>{shares.length ? shares.map((share) => <div className="share-access-row" key={share.shareId}><span className="share-person-avatar">{share.recipient.fullName.split(/\s+/).map((part) => part[0]).slice(0,2).join("").toUpperCase()}</span><span className="share-access-person"><b>{share.recipient.fullName}</b><small>{share.recipient.email} · ID {share.recipient.userId}</small></span><select aria-label={`Permission for ${share.recipient.fullName}`} value={share.permission} disabled={busyShare === share.shareId} onChange={(event) => void update(share.shareId, () => onPermissionChange(share.shareId, event.target.value as SharePermission))}><option value="view">View</option><option value="comment">Comment</option><option value="edit">Edit</option></select><button className="plain-icon share-revoke-icon" disabled={busyShare === share.shareId} onClick={() => void update(share.shareId, () => onRevoke(share.shareId))} aria-label={`Stop sharing with ${share.recipient.fullName}`} title="Stop sharing"><Trash2 size={15}/></button></div>) : <div className="share-no-access">Only you can see this document right now.</div>}</div>
-    <div className="share-dialog-footer"><ShieldCheck size={14}/> Access can be changed or removed at any time.</div>
-  </section></div>;
+      </div><div className="detail-footer"><span><ShieldCheck size={14} /> {shareAccess ? "Original owner's copy stays in their vault." : "Your data belongs to you."}</span><div><button className="quiet-button" onClick={onClose}>Close</button>{(!shareAccess || shareAccess.direction === "outgoing") && onManageSharing && <button className="quiet-button share-detail-button" onClick={onManageSharing}><Share2 size={14}/> Manage sharing</button>}{canEdit && <button className="editor-submit" onClick={onEdit}>Edit details <ArrowUpRight size={14} /></button>}</div></div>
+    </ItemModalShell>
+  );
 }
 
 export function ConfirmDialog({ title, children, confirmLabel = "Delete record", danger = true, onCancel, onConfirm }:  { title: string; children: ReactNode; confirmLabel?: string; danger?: boolean; onCancel: () => void; onConfirm: () => void }) {

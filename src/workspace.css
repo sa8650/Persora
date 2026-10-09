@@ -1020,10 +1020,10 @@
 
 /* Tasks, notes and reminders open as a right-side editing workspace. */
 .modal-backdrop.todo-editor-backdrop,.modal-backdrop.notes-editor-backdrop { display: flex; align-items: stretch; justify-content: flex-end; overflow: hidden; padding: 0; }
-.editor-dialog.todo-editor-drawer,.editor-dialog.notes-editor-drawer { display: flex; flex-direction: column; width: min(560px,100vw); height: 100dvh; max-height: 100dvh; overflow-x: hidden; overflow-y: auto; margin: 0 0 0 auto; border: 0; border-left: 1px solid var(--p-line); border-radius: 22px 0 0 22px; padding: 25px 25px 19px; background: linear-gradient(180deg,#fff 0%,var(--p-blue-pale) 100%); box-shadow: -18px 0 58px rgba(60,64,67,0.19); animation: editor-drawer-in .32s cubic-bezier(.2,.75,.25,1) both; scrollbar-width: thin; }
+.vault-modal.todo-editor-drawer,.vault-modal.notes-editor-drawer { display: flex; flex-direction: column; width: min(560px,100vw); height: 100dvh; max-height: 100dvh; overflow-x: hidden; overflow-y: auto; margin: 0 0 0 auto; border: 0; border-left: 1px solid var(--p-line); border-radius: 22px 0 0 22px; padding: 25px 25px 19px; background: linear-gradient(180deg,#fff 0%,var(--p-blue-pale) 100%); box-shadow: -18px 0 58px rgba(60,64,67,0.19); animation: editor-drawer-in .32s cubic-bezier(.2,.75,.25,1) both; scrollbar-width: thin; }
 @keyframes editor-drawer-in { from { opacity: .76; transform: translateX(34px); } to { opacity: 1; transform: translateX(0); } }
-.todo-editor-drawer .editor-dialog-head,.notes-editor-drawer .editor-dialog-head { position: sticky; z-index: 2; top: -25px; margin: -25px -25px 0; border-bottom: 1px solid var(--p-line); padding: 20px 25px 15px; background: rgba(255,255,255,.96); backdrop-filter: blur(12px); }
-.todo-editor-drawer .editor-dialog-head h2,.notes-editor-drawer .editor-dialog-head h2 { font-size: 25px; line-height: 1.13; }
+.todo-editor-drawer .vault-modal-header,.notes-editor-drawer .vault-modal-header { position: sticky; z-index: 2; top: -25px; margin: -25px -25px 0; border-bottom: 1px solid var(--p-line); padding: 20px 25px 15px; background: rgba(255,255,255,.96); backdrop-filter: blur(12px); }
+.todo-editor-drawer .vault-modal-header h2,.notes-editor-drawer .vault-modal-header h2 { font-size: 25px; line-height: 1.13; }
 .todo-editor-drawer .editor-intro,.notes-editor-drawer .editor-intro { margin: 15px 0 18px; color: var(--p-muted); font-size: 11px; line-height: 1.6; }
 .todo-editor-drawer .editor-form,.notes-editor-drawer .editor-form { gap: 13px; flex: 1 0 auto; }
 .todo-editor-drawer .field-label,.notes-editor-drawer .field-label { gap: 6px; color: var(--p-text); font-size: 11px; }
@@ -1033,13 +1033,14 @@
 .todo-editor-drawer .editor-footnote,.notes-editor-drawer .editor-footnote { font-size: 10px; }
 .todo-editor-drawer .editor-actions button,.notes-editor-drawer .editor-actions button { min-height: 39px; padding-inline: 13px; font-size: 11px; }
 .todo-editor-drawer .editor-submit,.notes-editor-drawer .editor-submit { min-height: 40px; padding-inline: 15px; font-size: 11px; }
-.todo-editor-drawer .editor-dialog-head > .icon-button,.notes-editor-drawer .editor-dialog-head > .icon-button { width: 36px; height: 36px; border-radius: 10px; }
+.todo-editor-drawer .vault-modal-header .vault-modal-close,.notes-editor-drawer .vault-modal-header .vault-modal-close { width: 36px; height: 36px; border-radius: 10px; }
+.todo-editor-drawer .editor-error,.notes-editor-drawer .editor-error { margin: 4px 0 0; }
 .todo-editor-drawer .ringtone-help-note { color: var(--p-muted); font-size: 10px; line-height: 1.55; }
 .todo-editor-drawer .schedule-repeat-days button { min-width: 39px; height: 35px; font-size: 10px; }
 @media (max-width: 620px) {
-  .editor-dialog.todo-editor-drawer,.editor-dialog.notes-editor-drawer { width: 100vw; border-radius: 0; padding: 19px 16px 15px; }
-  .todo-editor-drawer .editor-dialog-head,.notes-editor-drawer .editor-dialog-head { top: -19px; margin: -19px -16px 0; padding: 16px 16px 12px; }
-  .todo-editor-drawer .editor-dialog-head h2,.notes-editor-drawer .editor-dialog-head h2 { font-size: 22px; }
+  .vault-modal.todo-editor-drawer,.vault-modal.notes-editor-drawer { width: 100vw; border-radius: 0; padding: 19px 16px 15px; }
+  .todo-editor-drawer .vault-modal-header,.notes-editor-drawer .vault-modal-header { top: -19px; margin: -19px -16px 0; padding: 16px 16px 12px; }
+  .todo-editor-drawer .vault-modal-header h2,.notes-editor-drawer .vault-modal-header h2 { font-size: 22px; }
   .todo-editor-drawer .editor-form-footer,.notes-editor-drawer .editor-form-footer { bottom: -15px; margin: auto -16px -15px; padding: 11px 16px 13px; }
   .todo-editor-drawer .editor-footnote,.notes-editor-drawer .editor-footnote { display: none; }
 }

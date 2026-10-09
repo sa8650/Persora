@@ -34,7 +34,7 @@
 @keyframes beam-loop { to { left: 100%; } }
 
 /* Private workspace shell and navigation */
-.workspace-shell { position: relative; display: flex; width: 100%; height: 100vh; height: 100dvh; min-height: 0; overflow: hidden; color: var(--p-text); background: var(--p-bg); font-size: 14px; }
+.workspace-shell { position: relative; display: flex; gap: 0; align-items: stretch; width: 100%; height: 100vh; height: 100dvh; min-height: 0; margin: 0; overflow: hidden; color: var(--p-text); background: var(--p-bg); font-size: 14px; }
 .striped-pattern { position: absolute; inset: 0; display: block; width: 100%; height: 100%; pointer-events: none; stroke-width: .5; }
 .workspace-striped-pattern { z-index: 0!important; color: rgba(26,115,232,.18); opacity: .43; stroke-width: .55; -webkit-mask-image: radial-gradient(ellipse 72% 82% at 61% 39%,#000 0%,rgba(0,0,0,.64) 58%,transparent 100%); mask-image: radial-gradient(ellipse 72% 82% at 61% 39%,#000 0%,rgba(0,0,0,.64) 58%,transparent 100%); }
 .workspace-sidebar { z-index: 30; position: relative; display: flex; flex: 0 0 254px; flex-direction: column; width: 254px; min-width: 254px; height: 100%; border-right: 1px solid var(--p-line); background: transparent; }
@@ -538,8 +538,8 @@
 
 /* Modals and form controls */
 .modal-backdrop,.ringing-backdrop,.timeline-modal-backdrop,.medical-modal-backdrop { background: rgba(32,33,36,.30); backdrop-filter: blur(4px); }
-.editor-dialog,.detail-dialog,.confirm-dialog,.contact-editor-dialog,.contact-detail-dialog,.contacts-import-dialog,.contacts-duplicates-dialog,.business-card-editor-dialog,.business-card-confirm,.contacts-confirm-dialog,.medical-modal,.medical-detail-modal,.medical-delete-dialog,.timeline-modal,.public-card-report-dialog { border: 1px solid #dadce0; border-radius: 19px; background: #fff; box-shadow: 0 18px 55px rgba(32,33,36,.24); }
-.editor-dialog-head h2,.detail-banner-title h2,.confirm-dialog h2,.contact-modal-head h2,.business-card-editor-head h2,.medical-modal-header h2,.medical-delete-dialog h2,.timeline-modal h2,.public-card-report-head h2 { color: #202124; font-family: inherit; font-weight: 620; letter-spacing: -.04em; }
+.confirm-dialog,.contact-editor-dialog,.contact-detail-dialog,.contacts-import-dialog,.contacts-duplicates-dialog,.business-card-editor-dialog,.business-card-confirm,.contacts-confirm-dialog,.medical-modal,.medical-detail-modal,.medical-delete-dialog,.timeline-modal,.public-card-report-dialog { border: 1px solid #dadce0; border-radius: 19px; background: #fff; box-shadow: 0 18px 55px rgba(32,33,36,.24); }
+.confirm-dialog h2,.contact-modal-head h2,.business-card-editor-head h2,.medical-modal-header h2,.medical-delete-dialog h2,.timeline-modal h2,.public-card-report-head h2 { color: #202124; font-family: inherit; font-weight: 620; letter-spacing: -.04em; }
 .editor-icon,.contact-modal-icon,.business-card-editor-icon,.medical-modal-header > div:first-child > span { color: #1a73e8; background: #e8f0fe; border-color: #d2e3fc; }
 .editor-intro { color: #5f6368; font-size: 12px; }
 .editor-fields-grid .field-label,.auth-form .field-label { color: #3c4043; font-size: 11px; }
@@ -556,12 +556,7 @@
 .editor-actions .quiet-button { min-height: 37px; border-radius: 999px; font-size: 11px; }
 .editor-submit { min-height: 39px; border-color: #1a73e8; border-radius: 999px; color: #fff; background: #1a73e8; font-size: 11px; }
 .editor-submit:hover { background: #1765cc; }
-.detail-dialog { background: #fff; }
-.detail-banner { border-color: #e8eaed; background: linear-gradient(115deg,#f8fafd,#fff); }
-.detail-icon { color: #1a73e8; background: #fff; }
-.detail-banner-title > span,.detail-private-pill { color: #5f6368; font-size: 9px; }
-.detail-banner-title h2 { color: #202124; font-family: inherit; font-size: 25px; font-weight: 620; }
-.detail-banner-title p,.detail-meta-strip,.detail-field > span,.detail-date-status { color: #5f6368; font-size: 10px; }
+.detail-meta-strip,.detail-field > span,.detail-date-status { color: #5f6368; font-size: 10px; }
 .detail-field { border-color: #e8eaed; }
 .detail-field > b { color: #3c4043; font-size: 12px; font-weight: 570; }
 .detail-notes { border-color: #e8eaed; background: #f8fafd; }
@@ -897,22 +892,6 @@
 .error-alert { border-color: #f1c7c3; color: #a50e0e; background: #fce8e6; }
 .success-alert { border-color: #ceead6; color: #137333; background: #e6f4ea; }
 
-.share-dialog { border-color: #dadce0; border-radius: 18px; background: #fff; box-shadow: 0 18px 55px rgba(32,33,36,.22); }
-.share-dialog-head h2 { color: #202124; font-family: inherit; font-size: 20px; font-weight: 620; }
-.share-dialog-icon { border-color: #d2e3fc; color: #1a73e8; background: #e8f0fe; }
-.share-dialog-head > .icon-button { border-color: #e8eaed; }
-.share-dialog-intro { color: #5f6368; font-size: 11px; }
-.share-invite-form { border-color: #e8eaed; border-radius: 12px; background: #f8fafd; }
-.share-invite-form .field-label { color: #3c4043; }
-.share-invite-form input,.share-invite-form select,.share-access-row select { border-color: #dadce0; color: #3c4043; }
-.share-access-list-heading { color: #3c4043; font-size: 11px; }
-.share-access-list-heading span { color: #174ea6; background: #e8f0fe; }
-.share-access-row { border-color: #e8eaed; }
-.share-person-avatar { color: #174ea6; background: #d2e3fc; }
-.share-access-person b { color: #3c4043; }.share-access-person small { color: #80868b; }
-.share-revoke-icon { color: #d93025; }.share-revoke-icon:hover { color: #a50e0e; background: #fce8e6; }
-.share-no-access { border-color: #e8eaed; color: #5f6368; }
-.share-dialog-footer { border-color: #e8eaed; color: #5f6368; }.share-dialog-footer svg { color: var(--p-blue); }
 .shared-comments { border-color: #e8eaed; border-radius: 12px; background: #f8fafd; }
 .shared-comments-heading { border-color: #e8eaed; }.shared-comments-heading > span { color: #1a73e8; background: #e8f0fe; }
 .shared-comments-heading b { color: #3c4043; }.shared-comments-heading small { color: #80868b; }
@@ -2136,92 +2115,10 @@
   background: #e8f0fe !important;
   border-color: #1a73e8 !important;
 }
-/* Standalone Unified Persora Member Share Modal - Beautiful, Finished & Consistent */
-.record-share-backdrop {
-  position: fixed !important;
-  inset: 0 !important;
-  z-index: 180 !important;
-  display: grid !important;
-  place-items: center !important;
-  padding: 16px !important;
-  background: rgba(32, 33, 36, 0.45) !important;
-  backdrop-filter: blur(5px) !important;
-  overflow-y: auto !important;
-}
-
-.record-share-dialog {
-  width: 100% !important;
-  max-width: 520px !important;
-  background: #ffffff !important;
-  border: 1px solid #dadce0 !important;
-  border-radius: 20px !important;
-  box-shadow: 0 20px 60px rgba(32, 33, 36, 0.25) !important;
-  padding: 24px !important;
-  display: flex !important;
-  flex-direction: column !important;
-  gap: 16px !important;
-  animation: dialog-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) both !important;
-  box-sizing: border-box !important;
-}
-
-.record-share-head {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: space-between !important;
-  border-bottom: 1px solid #f1f3f4 !important;
-  padding-bottom: 14px !important;
-}
-
-.record-share-head-left {
-  display: flex !important;
-  align-items: center !important;
-  gap: 12px !important;
-}
-
-.record-share-icon {
-  display: grid !important;
-  place-items: center !important;
-  width: 40px !important;
-  height: 40px !important;
-  border-radius: 12px !important;
-  background: #e8f0fe !important;
-  color: #1a73e8 !important;
-  border: 1px solid #d2e3fc !important;
-}
-
-.record-share-eyebrow {
-  display: block !important;
-  font-size: 10px !important;
-  font-weight: 700 !important;
-  letter-spacing: 0.08em !important;
-  color: #1a73e8 !important;
-  text-transform: uppercase !important;
-  margin-bottom: 2px !important;
-}
-
-.record-share-head h2 {
-  font-size: 19px !important;
-  font-weight: 620 !important;
-  color: #202124 !important;
-  margin: 0 !important;
-  line-height: 1.2 !important;
-}
-
-.record-share-close {
-  display: grid !important;
-  place-items: center !important;
-  width: 32px !important;
-  height: 32px !important;
-  border-radius: 999px !important;
-  border: 1px solid #dadce0 !important;
-  background: transparent !important;
-  color: #5f6368 !important;
-  cursor: pointer !important;
-}
-.record-share-close:hover {
-  background: #f1f3f4 !important;
-  color: #202124 !important;
-}
+/* Centralized unified share modal — renders on the shared vault-modal shell
+   (ItemModalShell); only the stack order and dialog width live here. */
+.record-share-backdrop { z-index: 180; }
+.record-share-dialog { width: min(520px, 100%); }
 
 .record-share-target-banner {
   background: #f8fafd !important;
