@@ -109,7 +109,7 @@
 .confirm-actions { display: flex; justify-content: flex-end; gap: 7px; margin-top: 18px; border-top: 1px solid var(--p-line); padding-top: 12px; }
 .confirm-actions .quiet-button { padding: 8px 11px; font-size: 9.6px; }
 .confirm-danger-button { border: 1px solid var(--p-red-line); padding: 0 11px; color: #fff; font-size: 9.6px; font-weight: 690; cursor: pointer; }
-.toast-notice { z-index: 220; position: fixed; right: 24px; bottom: 22px; display: flex; align-items: center; gap: 9px; max-width: min(410px,calc(100vw - 28px)); min-height: 44px; border: 1px solid var(--p-line); border-radius: 11px; padding: 8px 10px; font-size: 9.6px; animation: toast-in .24s var(--p-ease) both; }
+.toast-notice { z-index: 20000; position: fixed; right: 24px; bottom: 22px; display: flex; align-items: center; gap: 9px; max-width: min(410px,calc(100vw - 28px)); min-height: 44px; border: 1px solid var(--p-line); border-radius: 11px; padding: 8px 10px; font-size: 9.6px; animation: toast-in .24s var(--p-ease) both; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 .toast-icon { display: grid; place-items: center; width: 24px; height: 24px; flex: 0 0 auto; border-radius: 8px; }
 .toast-notice > span:nth-child(2) { flex: 1; }

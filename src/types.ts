@@ -15,7 +15,7 @@ export type SectionId =
   | "notes"
   | "personal-finance";
 
-export type ViewId = "dashboard" | SectionId | "contacts" | "settings" | "billing" | "shared" | "timeline" | "medical-records";
+export type ViewId = "dashboard" | SectionId | "contacts" | "settings" | "billing" | "shared" | "timeline" | "medical-records" | "password-manager";
 export type NotesRecordKind = "todo" | "reminder" | "alarm";
 export const MEDICAL_RECORD_TYPES = ["Prescription", "Medical Report", "Lab Test", "Imaging / Scan", "Doctor Visit", "Hospital Record", "Vaccination", "Medical Certificate", "Discharge Summary", "Other"] as const;
 export type MedicalRecordType = typeof MEDICAL_RECORD_TYPES[number];
@@ -269,7 +269,7 @@ export interface SectionDefinition {
   dateKey?: string;
 }
 
-export type VaultFolderScope = SectionId | "contacts" | "business-cards" | "medical-records";
+export type VaultFolderScope = SectionId | "contacts" | "business-cards" | "medical-records" | "password-manager";
 export type VaultFolderColor = "blue" | "sky" | "teal" | "violet" | "amber" | "rose" | "slate" | "mint";
 export interface VaultFolder {
   id: string;
