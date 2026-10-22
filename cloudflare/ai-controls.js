@@ -11,6 +11,9 @@ export const DEFAULT_AI_CONTROLS = Object.freeze({
   smartScanOcr: true,
   /** Smart Scan field extraction (Cloudflare Workers AI). */
   smartScanExtraction: true,
+  /** Photo Studio cloud background removal (Cloudflare Images segment=foreground).
+   *  When off, Photo Studio uses its on-device model only. */
+  photoBackgroundRemoval: true,
 });
 
 /** Merge a stored platform_settings value over the defaults. Pure + testable. */

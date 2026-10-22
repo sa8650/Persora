@@ -42,6 +42,7 @@
 .trash-icon-medical_record { background: rgba(244,63,94,0.12); color: #f43f5e; }
 .trash-icon-timeline_event { background: rgba(139,92,246,0.12); color: #8b5cf6; }
 .trash-icon-password_entry { background: rgba(217,119,6,0.12); color: #d97706; }
+.trash-icon-photo_studio_photo { background: rgba(14,165,233,0.12); color: #0284c7; }
 
 .trash-row-copy { min-width: 0; }
 .trash-row-copy h3 { font-size: 0.88rem; font-weight: 650; line-height: 1.25; margin: 0 0 0.12rem; color: var(--text-strong, #0f172a); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

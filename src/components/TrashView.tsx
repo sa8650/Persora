@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ArchiveRestore, BriefcaseBusiness, CalendarClock, Clock3, Eye, FileText, FolderOpen, HeartPulse, KeyRound, Paperclip, RefreshCw, ShieldCheck, Trash2, UsersRound } from "lucide-react";
+import { ArchiveRestore, BriefcaseBusiness, Camera, CalendarClock, Clock3, Eye, FileText, FolderOpen, HeartPulse, KeyRound, Paperclip, RefreshCw, ShieldCheck, Trash2, UsersRound } from "lucide-react";
 import "./trash.css";
 import ModalPortal from "./ModalPortal";
 import ItemModalShell from "./ItemModalShell";
@@ -15,6 +15,7 @@ const KIND_ICONS: Record<TrashKind, typeof FileText> = {
   medical_record: HeartPulse,
   timeline_event: CalendarClock,
   password_entry: KeyRound,
+  photo_studio_photo: Camera,
 };
 
 const KIND_LABELS: Record<TrashKind, string> = {
@@ -24,6 +25,7 @@ const KIND_LABELS: Record<TrashKind, string> = {
   medical_record: "Medical record",
   timeline_event: "Timeline entry",
   password_entry: "Password",
+  photo_studio_photo: "Studio photo",
 };
 
 const SPACE_LABELS: Record<string, string> = {
@@ -32,6 +34,7 @@ const SPACE_LABELS: Record<string, string> = {
   "medical-records": "Medical Records",
   timeline: "Life Timeline",
   "password-manager": "Password Manager",
+  "photo-studio": "Photo Studio",
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;

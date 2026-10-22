@@ -108,8 +108,8 @@ export default function AdminConsole({ user, onBackToVault, onSignOut, notify }:
     void act(() => saveSmartScanAccess(scope, enabled, userId), scope === "global" ? `Smart Scan ${enabled ? "enabled" : "disabled"} globally.` : `Smart Scan ${enabled ? "enabled" : "disabled"} for this account.`);
   };
   const setAiControl = (key: keyof AiControls, enabled: boolean) => {
-    const current = snapshot?.aiControls || { passwordSuggestions: true, smartScanOcr: true, smartScanExtraction: true };
-    const labels: Record<keyof AiControls, string> = { passwordSuggestions: "AI password suggestions", smartScanOcr: "Smart Scan OCR", smartScanExtraction: "Smart Scan AI extraction" };
+    const current = { passwordSuggestions: true, smartScanOcr: true, smartScanExtraction: true, photoBackgroundRemoval: true, ...(snapshot?.aiControls || {}) };
+    const labels: Record<keyof AiControls, string> = { passwordSuggestions: "AI password suggestions", smartScanOcr: "Smart Scan OCR", smartScanExtraction: "Smart Scan AI extraction", photoBackgroundRemoval: "Photo Studio AI background removal" };
     void act(() => saveAiControls({ ...current, [key]: enabled }), `${labels[key]} ${enabled ? "enabled" : "disabled"}.`);
   };
   const saveEmailSettings = (event: FormEvent<HTMLFormElement>) => {
@@ -179,6 +179,7 @@ export default function AdminConsole({ user, onBackToVault, onSignOut, notify }:
           <label className="admin-toggle-row"><span><b>AI password suggestions</b><small>Password Manager generator → “AI ideas” tab. When off, members keep full local generation; final passwords are always composed on-device either way.</small></span><input type="checkbox" checked={snapshot.aiControls?.passwordSuggestions !== false} disabled={saving} onChange={(event) => setAiControl("passwordSuggestions", event.target.checked)} aria-label="Enable AI password suggestions"/></label>
           <label className="admin-toggle-row"><span><b>Smart Scan OCR reads</b><small>Azure AI Document Intelligence reads scan uploads before extraction. When off, new scans stop; already-cached scans keep working.</small></span><input type="checkbox" checked={snapshot.aiControls?.smartScanOcr !== false} disabled={saving} onChange={(event) => setAiControl("smartScanOcr", event.target.checked)} aria-label="Enable Smart Scan OCR"/></label>
           <label className="admin-toggle-row"><span><b>Smart Scan AI extraction</b><small>Cloudflare Workers AI maps OCR text into form fields. When off, scans cannot extract new fields; cached results stay available.</small></span><input type="checkbox" checked={snapshot.aiControls?.smartScanExtraction !== false} disabled={saving} onChange={(event) => setAiControl("smartScanExtraction", event.target.checked)} aria-label="Enable Smart Scan AI extraction"/></label>
+          <label className="admin-toggle-row"><span><b>Photo Studio AI background removal</b><small>Cloudflare Images (segment=foreground) removes photo backgrounds in memory — nothing is stored. When off, members still get on-device background removal in their browser.</small></span><input type="checkbox" checked={snapshot.aiControls?.photoBackgroundRemoval !== false} disabled={saving} onChange={(event) => setAiControl("photoBackgroundRemoval", event.target.checked)} aria-label="Enable Photo Studio AI background removal"/></label>
           <div className="admin-hint-box"><ShieldCheck size={15}/><span>These switches decide <b>where AI may be used</b>. The separate “AI document scan” tab still controls who can use Smart Scan overall (globally and per account).</span></div>
         </section>
         <section className="admin-card">

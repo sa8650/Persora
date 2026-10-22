@@ -3,6 +3,7 @@ import { SmartScanError, MAX_SMART_SCAN_FILE_BYTES, extractDocumentFields, runAz
 import { AIPasswordError, aiPasswordCandidates } from "./ai-password.js";
 import { DEFAULT_AI_CONTROLS, resolveAiControls } from "./ai-controls.js";
 import { handleProjects, PROJECTS_ROUTE_PREFIX } from "./projects.js";
+import { handlePhotoStudio, PHOTO_STUDIO_ROUTE_PREFIX } from "./photo-studio.js";
 
 const DEFAULT_SETTINGS = {
   billing: { currency: "BDT", manualInstructions: "Follow the account details shown for your selected payment method.", billingEnabled: false, minTermMonths: 1, maxTermMonths: 12 },
@@ -649,6 +650,27 @@ export default {
         }
         return await handleProjects(request, identity, env, origin);
       }
+      if (url.pathname === PHOTO_STUDIO_ROUTE_PREFIX || url.pathname.startsWith(PHOTO_STUDIO_ROUTE_PREFIX + "/")) {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required to open Photo Studio." }, 401, origin);
+        // The final Save is the only write that stores a file: it needs an
+        // active upload plan, the storage quota, and the admin upload size.
+        if (request.method === "POST" && url.pathname === PHOTO_STUDIO_ROUTE_PREFIX + "/photos") {
+          if (!(await hasActivePaidUploadPlan(identity.id, env))) throw uploadPlanRequiredError();
+          const settings = await loadSettings(env);
+          return await handlePhotoStudio(request, identity, env, origin, { storageUsage: userStorageUsage, maxUploadMb: settings.storage.maxUploadMb });
+        }
+        // Primary AI background removal (stateless). When it is disabled, not
+        // configured, or not in the member's plan, the response says so and the
+        // browser falls back to its on-device model automatically.
+        if (request.method === "POST" && url.pathname === PHOTO_STUDIO_ROUTE_PREFIX + "/background-removal") {
+          const settings = await loadSettings(env);
+          const aiEnabled = settings.aiControls.photoBackgroundRemoval !== false;
+          const planAllowed = aiEnabled ? await hasActivePaidUploadPlan(identity.id, env) : false;
+          return await handlePhotoStudio(request, identity, env, origin, { aiEnabled, planAllowed });
+        }
+        return await handlePhotoStudio(request, identity, env, origin);
+      }
       if (url.pathname === "/upload" && request.method === "POST") {
         const identity = await authorize(request, env);
         if (!identity) return json({ error: "Sign in is required to upload a private file." }, 401, origin);
@@ -988,7 +1010,7 @@ function randomLoginId() {
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
 const DUMMY_PASSWORD = "persora-login-timing-padding-never-use";
 const VALID_SECTIONS = new Set(["documents", "academics", "subscriptions", "family", "purchases", "accounts", "memberships", "wallet-cards", "study", "business-card", "urls", "notes", "personal-finance"]);
-const VALID_FOLDER_SCOPES = new Set([...VALID_SECTIONS, "contacts", "business-cards", "medical-records", "password-manager"]);
+const VALID_FOLDER_SCOPES = new Set([...VALID_SECTIONS, "contacts", "business-cards", "medical-records", "password-manager", "photo-studio"]);
 const VALID_FOLDER_COLORS = new Set(["blue", "sky", "teal", "violet", "amber", "rose", "slate", "mint"]);
 function validPasswordLength(password) { return typeof password === "string" && password.length >= 12 && new TextEncoder().encode(password).length <= 72; }
 function rpcValue(value) {
@@ -1616,15 +1638,17 @@ async function deleteTrashFileIfUnreferenced(userId, key, env) {
   const encoded = encodeURIComponent(key);
   const owner = encodeURIComponent(userId);
   const stillTrashed = encodeURIComponent(`["${key}"]`);
-  const [items, medical, contacts, cardsByPhoto, cardsByLogo, otherTrash] = await Promise.all([
+  const photoStudioKey = key.startsWith(`${userId}/photo-studio/`);
+  const [items, medical, contacts, cardsByPhoto, cardsByLogo, otherTrash, studioPhotos] = await Promise.all([
     restRows(`vault_items?user_id=eq.${owner}&file_key=eq.${encoded}&select=id&limit=1`, env),
     restRows(`medical_records?user_id=eq.${owner}&file_key=eq.${encoded}&select=id&limit=1`, env),
     restRows(`contacts?user_id=eq.${owner}&photo_key=eq.${encoded}&select=id&limit=1`, env),
     restRows(`business_cards?user_id=eq.${owner}&profile_photo_key=eq.${encoded}&select=id&limit=1`, env),
     restRows(`business_cards?user_id=eq.${owner}&business_logo_key=eq.${encoded}&select=id&limit=1`, env),
     restRows(`trash_items?owner_id=eq.${owner}&file_keys=cs.${stillTrashed}&status=in.(active,restoring)&select=id&limit=1`, env),
+    photoStudioKey ? restRows(`photo_studio_photos?user_id=eq.${owner}&file_key=eq.${encoded}&select=id&limit=1`, env) : Promise.resolve([]),
   ]);
-  if (items.length || medical.length || contacts.length || cardsByPhoto.length || cardsByLogo.length || otherTrash.length) return;
+  if (items.length || medical.length || contacts.length || cardsByPhoto.length || cardsByLogo.length || otherTrash.length || studioPhotos.length) return;
   const object = await env.VAULT_FILES.head(key);
   if (!object) return;
   if (object.customMetadata?.ownerId && object.customMetadata.ownerId !== userId) {
@@ -1669,6 +1693,10 @@ async function purgeClaimedTrashRows(rows, env, { strict = false } = {}) {
 }
 
 async function restoreTrashEntry(identity, id, env) {
+  // Photo Studio entries are restored by their own RPC (202610220006); every
+  // other kind keeps using the original global restore function unchanged.
+  const rows = await restRows(`trash_items?id=eq.${encodeURIComponent(id)}&owner_id=eq.${encodeURIComponent(identity.id)}&select=kind&limit=1`, env);
+  if (rows[0]?.kind === "photo_studio_photo") return callTrashRpc("persora_photo_studio_trash_restore", { p_owner: identity.id, p_trash_id: id }, env);
   return callTrashRpc("persora_trash_restore", { p_owner: identity.id, p_trash_id: id }, env);
 }
 

@@ -5,20 +5,20 @@ const { resolveAiControls, allAiDisabled, DEFAULT_AI_CONTROLS, AI_CONTROLS_SETTI
 const { sanitizeProjectInput, sanitizeFieldPayload, ProjectError } = await import('../cloudflare/projects.js');
 
 test('resolveAiControls defaults every AI surface to enabled', () => {
-  assert.deepEqual(resolveAiControls(undefined), { passwordSuggestions: true, smartScanOcr: true, smartScanExtraction: true });
+  assert.deepEqual(resolveAiControls(undefined), { passwordSuggestions: true, smartScanOcr: true, smartScanExtraction: true, photoBackgroundRemoval: true });
   assert.deepEqual(resolveAiControls(null), DEFAULT_AI_CONTROLS);
   assert.equal(AI_CONTROLS_SETTING_KEY, 'ai_controls');
 });
 
 test('resolveAiControls merges stored booleans and ignores junk', () => {
   const out = resolveAiControls({ passwordSuggestions: false, smartScanOcr: 'no', extra: true });
-  assert.deepEqual(out, { passwordSuggestions: false, smartScanOcr: true, smartScanExtraction: true });
+  assert.deepEqual(out, { passwordSuggestions: false, smartScanOcr: true, smartScanExtraction: true, photoBackgroundRemoval: true });
   assert.deepEqual(resolveAiControls([]), DEFAULT_AI_CONTROLS);
   assert.equal(resolveAiControls('nope').smartScanExtraction, true);
 });
 
 test('allAiDisabled only true when every switch is off', () => {
-  assert.equal(allAiDisabled({ passwordSuggestions: false, smartScanOcr: false, smartScanExtraction: false }), true);
+  assert.equal(allAiDisabled({ passwordSuggestions: false, smartScanOcr: false, smartScanExtraction: false, photoBackgroundRemoval: false }), true);
   assert.equal(allAiDisabled(resolveAiControls({ smartScanOcr: false })), false);
 });
 

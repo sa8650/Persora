@@ -17,9 +17,11 @@ interface Props {
   onSelectFolder: (id: string) => void;
   onFoldersChange: (folders: VaultFolder[]) => void;
   notify: (message: string, kind?: "success" | "error") => void;
+  /** Optional: change to reload folders created elsewhere on the page (e.g. Photo Studio's save modal). */
+  reloadToken?: number;
 }
 
-export default function VaultFolderShelf({ userId, scope, pageLabel, demoMode, totalCount, folderCounts, selectedFolderId, onSelectFolder, onFoldersChange, notify }: Props) {
+export default function VaultFolderShelf({ userId, scope, pageLabel, demoMode, totalCount, folderCounts, selectedFolderId, onSelectFolder, onFoldersChange, notify, reloadToken = 0 }: Props) {
   const [folders, setFolders] = useState<VaultFolder[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -39,7 +41,7 @@ export default function VaultFolderShelf({ userId, scope, pageLabel, demoMode, t
       if (active) notify(error instanceof Error ? error.message : `Couldn't load ${pageLabel.toLowerCase()} folders.`, "error");
     }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [userId, scope, demoMode]);
+  }, [userId, scope, demoMode, reloadToken]);
 
   const openNewFolder = () => { setFolderDialog(null); setFolderName(""); setFolderColor("blue"); };
   const openEditFolder = (folder: VaultFolder) => { setFolderDialog(folder); setFolderName(folder.name); setFolderColor(folder.color); };

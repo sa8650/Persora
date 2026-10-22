@@ -15,13 +15,13 @@ export type SectionId =
   | "notes"
   | "personal-finance";
 
-export type ViewId = "dashboard" | SectionId | "contacts" | "settings" | "billing" | "shared" | "timeline" | "medical-records" | "password-manager" | "trash" | "projects";
+export type ViewId = "dashboard" | SectionId | "contacts" | "settings" | "billing" | "shared" | "timeline" | "medical-records" | "password-manager" | "trash" | "projects" | "photo-studio";
 
 /** Content families that flow through the global Trash. */
-export type TrashKind = "vault_item" | "contact" | "business_card" | "medical_record" | "timeline_event" | "password_entry";
+export type TrashKind = "vault_item" | "contact" | "business_card" | "medical_record" | "timeline_event" | "password_entry" | "photo_studio_photo";
 
 /** Space keys used by Trash entries: vault section ids plus whole-app spaces. */
-export type TrashSpace = SectionId | "contacts" | "business-cards" | "medical-records" | "timeline" | "password-manager";
+export type TrashSpace = SectionId | "contacts" | "business-cards" | "medical-records" | "timeline" | "password-manager" | "photo-studio";
 
 export interface TrashEntry {
   /** Stable id of the original record (restoration re-uses it). */
@@ -297,7 +297,7 @@ export interface SectionDefinition {
   dateKey?: string;
 }
 
-export type VaultFolderScope = SectionId | "contacts" | "business-cards" | "medical-records" | "password-manager";
+export type VaultFolderScope = SectionId | "contacts" | "business-cards" | "medical-records" | "password-manager" | "photo-studio";
 export type VaultFolderColor = "blue" | "sky" | "teal" | "violet" | "amber" | "rose" | "slate" | "mint";
 export interface VaultFolder {
   id: string;
@@ -401,7 +401,7 @@ export interface PaymentRecord {
 export interface StorageUsage { bytesUsed: number; fileBytes: number; databaseBytes: number; databaseRecordCount: number; objectCount: number; storageLimitBytes: number; storageLimitGb: number; planName: string }
 export interface SmartScanUsage { enabled: boolean; scans: number; ocrRuns: number; aiExtractions: number; lastScannedAt: string | null }
 export interface SmartScanAdminSnapshot { enabled: boolean; usageAvailable: boolean; totals: { scans: number; ocrRuns: number; aiExtractions: number }; byUser: Record<string, SmartScanUsage> }
-export interface AiControls { passwordSuggestions: boolean; smartScanOcr: boolean; smartScanExtraction: boolean }
+export interface AiControls { passwordSuggestions: boolean; smartScanOcr: boolean; smartScanExtraction: boolean; photoBackgroundRemoval: boolean }
 export interface AiProvidersSnapshot { workersAiConfigured: boolean; azureDocumentIntelligenceConfigured: boolean }
 export interface AdminConsoleSnapshot {
   metrics: AdminMetrics;
@@ -490,3 +490,43 @@ export interface ProjectDetail {
   people?: Record<string, ProjectPerson>;
 }
 export interface ProjectPerson { name: string; avatarUrl: string }
+
+// ---------------------------------------------------------------------------
+// Photo Studio (2026-10-22)
+// ---------------------------------------------------------------------------
+export type PhotoCategory = "passport" | "stamp" | "visa" | "id-card" | "job-application" | "other";
+
+/** A saved official photograph (one R2 object + one database row). */
+export interface PhotoStudioPhoto {
+  id: string;
+  folderId: string | null;
+  /** The saved photo this version was edited from (originals are never modified). */
+  sourcePhotoId: string | null;
+  title: string;
+  category: PhotoCategory;
+  notes: string;
+  fileName: string;
+  fileSize: number;
+  fileType: "image/jpeg" | "image/png" | "image/webp";
+  width: number;
+  height: number;
+  dpi: number | null;
+  metadata: Record<string, unknown>;
+  editSettings: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Organise-form fields shared by Upload & Organize and Save & Organize. */
+export interface PhotoStudioSaveInput {
+  title: string;
+  category: PhotoCategory;
+  notes: string;
+  folderId: string | null;
+  newFolder: { name: string; color: VaultFolderColor } | null;
+  sourcePhotoId: string | null;
+  dpi: number | null;
+  fileName: string;
+  metadata: Record<string, unknown>;
+  editSettings: Record<string, unknown>;
+}

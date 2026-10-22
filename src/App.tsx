@@ -74,7 +74,7 @@ type EditorDraft = Omit<VaultItem, "id" | "createdAt" | "updatedAt"> & { id?: st
 type AppPath = "/" | "/admin" | "/privacy" | "/terms" | "/contact";
 type PublicPage = "privacy" | "terms" | "contact";
 const PUBLIC_PATHS: Record<string, PublicPage> = { "/privacy": "privacy", "/terms": "terms", "/contact": "contact" };
-const TRASH_SPACE_ALIASES: Record<string, TrashSpace> = { contacts: "contacts", business_cards: "business-cards", medical_records: "medical-records", timeline: "timeline" };
+const TRASH_SPACE_ALIASES: Record<string, TrashSpace> = { contacts: "contacts", business_cards: "business-cards", medical_records: "medical-records", timeline: "timeline", photo_studio: "photo-studio" };
 const baseDocumentTypes = SECTION_BY_ID.documents.fields.find((field) => field.key === "type")?.options || [];
 const normalizePath = (path: string) => path.replace(/\/+$/, "") || "/";
 

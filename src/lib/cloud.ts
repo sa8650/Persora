@@ -1,4 +1,4 @@
-import type { AdminConsoleSnapshot, AdminMetrics, AiControls, AlarmRingtone, BillingSnapshot, BusinessCardDraft, BusinessSocialLink, DigitalBusinessCard, DocumentTypeOption, MedicalRecord, MedicalRecordDraft, MedicalRecordFile, MedicalRecordLink, PersoraContact, PaymentRecord, ProjectDetail, ProjectField, ProjectFieldAttachment, ProjectSubtask, ProjectFieldComment, ProjectFieldRequest, ProjectFolder, ProjectFolderColor, ProjectFieldStatus, ProjectKind, ProjectMemberRole, ProjectRecord, ProjectSummary, ProjectNotification, ProjectNotificationPreferences, PublicDigitalBusinessCard, ShareComment, ShareNotification, SharePermission, SharedDirection, SharedVaultEntry, RecordShareEntry, SiteContent, SmartScanFieldDefinition, SmartScanResult, SubscriptionPlan, TimelineAttachment, TimelineDraft, TimelineEvent, TransferProgress, VaultFile, VaultFolder, VaultFolderDraft, VaultFolderScope, VaultItem } from "../types";
+import type { PhotoStudioPhoto, PhotoStudioSaveInput, AdminConsoleSnapshot, AdminMetrics, AiControls, AlarmRingtone, BillingSnapshot, BusinessCardDraft, BusinessSocialLink, DigitalBusinessCard, DocumentTypeOption, MedicalRecord, MedicalRecordDraft, MedicalRecordFile, MedicalRecordLink, PersoraContact, PaymentRecord, ProjectDetail, ProjectField, ProjectFieldAttachment, ProjectSubtask, ProjectFieldComment, ProjectFieldRequest, ProjectFolder, ProjectFolderColor, ProjectFieldStatus, ProjectKind, ProjectMemberRole, ProjectRecord, ProjectSummary, ProjectNotification, ProjectNotificationPreferences, PublicDigitalBusinessCard, ShareComment, ShareNotification, SharePermission, SharedDirection, SharedVaultEntry, RecordShareEntry, SiteContent, SmartScanFieldDefinition, SmartScanResult, SubscriptionPlan, TimelineAttachment, TimelineDraft, TimelineEvent, TransferProgress, VaultFile, VaultFolder, VaultFolderDraft, VaultFolderScope, VaultItem } from "../types";
 import { DEFAULT_SITE_CONTENT } from "../data/siteContent";
 
 // Cloudflare Pages always serves the authenticated Functions API from /api in production.
@@ -584,7 +584,7 @@ export async function loadAdminConsole(): Promise<AdminConsoleSnapshot> {
     siteContent: { ...DEFAULT_SITE_CONTENT, ...(snapshot.siteContent || {}) },
     emailSettings: snapshot.emailSettings || { verificationEnabled: true, senderName: "Persora", senderEmail: "", replyToEmail: "", replyToName: "Persora Support" },
     smartScan: snapshot.smartScan || { enabled: true, usageAvailable: false, totals: { scans: 0, ocrRuns: 0, aiExtractions: 0 }, byUser: {} },
-    aiControls: snapshot.aiControls || { passwordSuggestions: true, smartScanOcr: true, smartScanExtraction: true },
+    aiControls: { passwordSuggestions: true, smartScanOcr: true, smartScanExtraction: true, photoBackgroundRemoval: true, ...(snapshot.aiControls || {}) },
     aiProviders: snapshot.aiProviders || { workersAiConfigured: false, azureDocumentIntelligenceConfigured: false },
   };
 }
@@ -860,4 +860,77 @@ export async function loadProjectNotificationPreferences(): Promise<ProjectNotif
 }
 export async function saveProjectNotificationPreferences(preferences: ProjectNotificationPreferences): Promise<ProjectNotificationPreferences> {
   return patchJson<ProjectNotificationPreferences>("/projects/notification-preferences", preferences);
+}
+
+// ---------------------------------------------------------------------------
+// Photo Studio API (2026-10-22). The only write that stores a file is
+// savePhotoStudioPhoto(), called from the final Save of the organise modal.
+// ---------------------------------------------------------------------------
+function photoFromRow(row: Record<string, unknown>): PhotoStudioPhoto {
+  const object = (value: unknown) => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  return {
+    id: String(row.id),
+    folderId: typeof row.folder_id === "string" ? row.folder_id : null,
+    sourcePhotoId: typeof row.source_photo_id === "string" ? row.source_photo_id : null,
+    title: String(row.title || "Untitled photo"),
+    category: (typeof row.category === "string" ? row.category : "other") as PhotoStudioPhoto["category"],
+    notes: typeof row.notes === "string" ? row.notes : "",
+    fileName: String(row.file_name || "photo.jpg"),
+    fileSize: Number(row.file_size) || 0,
+    fileType: (typeof row.file_type === "string" ? row.file_type : "image/jpeg") as PhotoStudioPhoto["fileType"],
+    width: Number(row.width_px) || 0,
+    height: Number(row.height_px) || 0,
+    dpi: row.dpi === null || row.dpi === undefined ? null : Number(row.dpi),
+    metadata: object(row.metadata),
+    editSettings: object(row.edit_settings),
+    createdAt: String(row.created_at || ""),
+    updatedAt: String(row.updated_at || row.created_at || ""),
+  };
+}
+
+function folderFromRow(row: Record<string, unknown>): VaultFolder {
+  return {
+    id: String(row.id),
+    scope: "photo-studio",
+    name: String(row.name || "Folder"),
+    color: (typeof row.color === "string" ? row.color : "blue") as VaultFolder["color"],
+    pinned: Boolean(row.pinned),
+    createdAt: String(row.created_at || ""),
+    updatedAt: String(row.updated_at || ""),
+  };
+}
+
+export async function listPhotoStudioPhotos(): Promise<PhotoStudioPhoto[]> {
+  const data = await pagesApiJson<{ photos?: Record<string, unknown>[] }>("/photo-studio/photos");
+  return Array.isArray(data.photos) ? data.photos.map(photoFromRow) : [];
+}
+
+export async function savePhotoStudioPhoto(file: Blob, fileName: string, input: PhotoStudioSaveInput): Promise<{ photo: PhotoStudioPhoto; folder: VaultFolder | null; createdFolder: boolean }> {
+  const form = new FormData();
+  form.append("file", file, fileName);
+  form.append("meta", JSON.stringify(input));
+  const response = await pagesApiRequest("/photo-studio/photos", { method: "POST", body: form });
+  const data = await response.json() as { photo: Record<string, unknown>; folder?: Record<string, unknown> | null; createdFolder?: boolean };
+  return { photo: photoFromRow(data.photo), folder: data.folder ? folderFromRow(data.folder) : null, createdFolder: Boolean(data.createdFolder) };
+}
+
+export async function updatePhotoStudioPhoto(id: string, patch: Partial<Pick<PhotoStudioSaveInput, "title" | "category" | "notes" | "folderId">>): Promise<PhotoStudioPhoto> {
+  const data = await patchJson<{ photo: Record<string, unknown> }>(`/photo-studio/photos/${encodeURIComponent(id)}`, patch);
+  return photoFromRow(data.photo);
+}
+
+export async function deletePhotoStudioPhoto(id: string): Promise<void> {
+  await deleteJson(`/photo-studio/photos/${encodeURIComponent(id)}`);
+}
+
+export async function loadPhotoStudioFile(id: string, signal?: AbortSignal): Promise<Blob> {
+  return (await pagesApiRequest(`/photo-studio/photos/${encodeURIComponent(id)}/file`, { signal })).blob();
+}
+
+/** Raw response so the caller can read the failure reason and fall back locally. */
+export async function requestCloudBackgroundRemoval(image: Blob, signal?: AbortSignal): Promise<Response> {
+  if (!apiBase) throw new Error("Persora's Pages Functions API is not enabled.");
+  const form = new FormData();
+  form.append("file", image, image.type === "image/png" ? "portrait.png" : "portrait.jpg");
+  return fetch(`${apiBase}/photo-studio/background-removal`, { method: "POST", body: form, credentials: "same-origin", cache: "no-store", signal });
 }
