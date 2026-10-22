@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { NAV_GROUPS, SECTION_BY_ID, SECTION_DEFINITIONS } from "../data";
 import { ADD_DOCUMENT_DESTINATION_EVENT, ADD_DOCUMENT_HANDOFF_EVENT, CONTACT_CATEGORIES, MEDICAL_RECORD_TYPES } from "../types";
-import type { ActiveScheduleAlert, AddDocumentFlowDraft, AppUser, BusinessCardDraft, BusinessSocialPlatform, ContactCategory, ContactDraft, ContactImportProgress, DigitalBusinessCard, MedicalRecord, MedicalRecordDraft, MedicalRecordType, NotesRecordKind, PersoraContact, SectionDefinition, SectionId, ShareNotification, SharePermission, SharedVaultEntry, RecordShareEntry, TimelineDraft, TimelineEvent, TrashEntry, TransferProgress, SmartScanFieldDefinition, SmartScanResult, VaultFolder, VaultItem, ViewId } from "../types";
+import type { ActiveScheduleAlert, AddDocumentFlowDraft, AppUser, BusinessCardDraft, BusinessSocialPlatform, ContactCategory, ContactDraft, ContactImportProgress, DigitalBusinessCard, MedicalRecord, MedicalRecordDraft, MedicalRecordType, NotesRecordKind, PersoraContact, SectionDefinition, SectionId, ShareNotification, SharePermission, SharedVaultEntry, RecordShareEntry, RecordShareType, SharedPhotoRecord, TimelineDraft, TimelineEvent, TrashEntry, TransferProgress, SmartScanFieldDefinition, SmartScanResult, VaultFolder, VaultItem, ViewId } from "../types";
 import { daysUntil, formatDate, humanSize, initials, notePlainText } from "../lib/utils";
 import { BlurFade, MagicCard } from "./magic-ui";
 import ModalPortal from "./ModalPortal";
@@ -21,7 +21,7 @@ import ContactsView from "./ContactsView";
 import BusinessCardsView from "./BusinessCardsView";
 import TimelineView from "./TimelineView";
 import SocialBrandIcon from "./SocialBrandIcon";
-import { alarmRingtoneAudioPath, isPagesApiConfigured, smartScanDocument } from "../lib/cloud";
+import { alarmRingtoneAudioPath, isPagesApiConfigured, loadSharedPhotoFile, smartScanDocument } from "../lib/cloud";
 import { editorFieldsFor, matchDocumentTypeSuggestion } from "../lib/editorFields";
 import { isSmartScanFileSizeAllowed, SMART_SCAN_MAX_FILE_BYTES, supportsSmartScanFile } from "./SmartScan";
 import ImagePreview from "./ImagePreview";
@@ -95,7 +95,7 @@ interface WorkspaceProps {
   onOpenSharedEntry: (entry: SharedVaultEntry) => void;
   onChangeSharePermission: (shareId: string, permission: SharePermission) => Promise<void>;
   onRevokeShare: (shareId: string) => Promise<void>;
-  onShareRecord: (resourceType: "contact" | "business_card", resourceId: string, recipient: string) => Promise<void>;
+  onShareRecord: (resourceType: RecordShareType, resourceId: string, recipient: string) => Promise<void>;
   onRevokeRecordShare: (shareId: string) => Promise<void>;
   onMarkNotificationsRead: () => void;
   onMarkNotificationRead: (notificationId: string) => void;
@@ -470,13 +470,13 @@ export default function Workspace({ user, items, sharedByMe, sharedWithMe, recor
         <div className="sidebar-group sidebar-primary-group"><div className="nav-group-label">Workspace</div>{sidebarLink("dashboard", "Overview", Home)}</div>
         <div className="sidebar-group"><div className="nav-group-label">Health &amp; history</div>{sidebarLink("timeline", "Life Timeline", CalendarClock)}{sidebarLink("medical-records", "Medical Records", HeartPulse, medicalRecords.length || undefined)}</div>
         <div className="sidebar-group"><div className="nav-group-label">People &amp; sharing</div>{sidebarLink("contacts", "Contacts", UsersRound, contacts.length)}{sidebarLink("shared", "Shared documents", Share2, sharedWithMe.length || undefined)}</div>
-        {NAV_GROUPS.map((group) => <div className="sidebar-group" key={group.label}><div className="nav-group-label">{group.label}</div>{group.label === "Knowledge & identity" ? <>{sidebarLink("password-manager", "Password Manager", KeyRound)}{sidebarLink("projects", "Projects", FolderKanban)}{sidebarLink("photo-studio", "Photo Studio", Camera)}</> : null}{group.ids.map((id) => { const def = SECTION_BY_ID[id]; const count = id === "documents" ? items.filter((item) => item.section === id).length : undefined; return sidebarLink(id, def.label, def.icon, count); })}</div>)}
+        {NAV_GROUPS.map((group) => <div className="sidebar-group" key={group.label}><div className="nav-group-label">{group.label}</div>{group.label === "Knowledge & identity" ? <>{sidebarLink("password-manager", "Password Manager", KeyRound)}{sidebarLink("projects", "Projects", FolderKanban)}</> : null}{group.ids.map((id) => { const def = SECTION_BY_ID[id]; const count = id === "documents" ? items.filter((item) => item.section === id).length : undefined; return sidebarLink(id, def.label, def.icon, count); })}{group.label === "Personal life" ? sidebarLink("photo-studio", "Photo Studio", Camera) : null}</div>)}
         <div className="sidebar-group sidebar-account-group"><div className="nav-group-label">Account</div>{sidebarLink("trash", "Trash", Trash2, trashEntries.length || undefined)}{sidebarLink("billing", "Plans & billing", CreditCard)}{sidebarLink("settings", "Settings", Settings)}{user.role === "admin" && <button className="sidebar-link admin-link" onClick={onOpenAdmin}><ShieldCheck size={17}/><span>Administrator</span><span className="admin-nav-dot"/></button>}</div>
       </nav>
       <div className="sidebar-bottom"><div className="sidebar-secure-card"><span className="secure-card-icon"><ShieldCheck size={16}/></span><div><b>Your vault is private</b><small>Only you have access</small></div><span className="secure-mini-check"><Check size={11}/></span></div><div className="sidebar-profile-wrap">{profileMenu && <div className="user-popover"><div className="user-popover-header"><span className="avatar avatar-small"><AccountAvatarContent user={user}/></span><div><strong>{user.fullName}</strong><small>{user.email}</small></div></div>{user.role === "admin" && <button onClick={onOpenAdmin}><ShieldCheck size={15}/> Administrator console</button>}<button onClick={() => updateView("billing")}><CreditCard size={15}/> Plans &amp; billing</button><button onClick={() => updateView("settings")}><Settings size={15}/> Account settings</button><button className="popover-logout" onClick={onSignOut}><LogOut size={15}/> Sign out</button></div>}<button className="sidebar-profile" onClick={() => setProfileMenu((open) => !open)}><span className="avatar"><AccountAvatarContent user={user}/></span><span className="profile-copy"><b>{user.fullName}</b><small>{user.role === "admin" ? "Administrator" : "Personal account"}</small></span><MoreHorizontal size={19}/></button></div></div>
     </aside>
     <div className="workspace-main relative"><StripedPattern className="workspace-striped-pattern pointer-events-none" /><header className="workspace-topbar"><button className="mobile-menu-button" onClick={() => setSidebarOpen(true)} aria-label="Open workspace sections" aria-expanded={sidebarOpen}>Sections</button><div className={`breadcrumb-area ${section ? "breadcrumb-section-hidden" : ""}`}><span className="breadcrumb-overline">{titleInfo.eyebrow}</span><div className="breadcrumb-title"><h1>{titleInfo.title}</h1>{view === "dashboard" && <span className="live-pill"><span/>Private workspace</span>}</div></div><div className="topbar-actions"><button type="button" className="workspace-add-document" onClick={() => openAddDocument()} aria-haspopup="dialog" aria-expanded={addDocumentOpen} aria-controls="add-document-drawer"><Plus size={15}/><span>Add document</span></button><button type="button" className="global-search-trigger" onClick={() => setSearchModalOpen(true)} aria-label="Search your vault" aria-haspopup="dialog" aria-expanded={searchModalOpen}><Search size={16}/><span>Search your vault…</span><kbd>Ctrl/⌘ K</kbd></button><div className="notification-wrap"><button className={`notification-button icon-button ${notificationOpen ? "button-pressed" : ""}`} onClick={() => setNotificationOpen((open) => !open)} aria-label={`Notifications${unreadNotificationCount ? `, ${unreadNotificationCount} unread updates` : ""}`} aria-expanded={notificationOpen}><Bell size={17}/>{unreadNotificationCount > 0 && <span className="notification-dot">{unreadNotificationCount > 99 ? "99+" : unreadNotificationCount}</span>}</button>{notificationOpen && <div className="notification-popover"><div className="notification-head"><div><b>Notifications</b><span>Project updates, sharing, and reminders</span></div><div className="notification-head-actions">{unreadNotificationCount > 0 && <button type="button" className="notification-mark-all" onClick={onMarkNotificationsRead}>Mark all read</button>}{notificationPermission === "default" && <button className="notification-enable" onClick={async () => { try { const permission = await Notification.requestPermission(); setNotificationPermission(permission); if (permission === "granted") notify("Desktop notifications are enabled."); } catch { notify("Browser notifications are unavailable here.", "error"); } }}>Enable alerts</button>}<button className="plain-icon" onClick={() => setNotificationOpen(false)} aria-label="Close notifications">×</button></div></div>{notifications.length ? notifications.slice(0, 20).map((notification) => { const isProject = notification.kind === "project" || notification.kind === "access_removed"; return <button className={`notification-row ${!notification.readAt ? "is-unread" : ""}`} key={notification.id} onClick={() => { if (isProject) { onMarkNotificationRead(notification.id); openProjectNotification(notification); } else { const scheduleItem = notification.kind === "reminder" || notification.kind === "alarm" ? items.find((item) => notification.id.startsWith(`schedule:${item.id}:`)) : undefined; if (scheduleItem) onOpenItem(scheduleItem); else if (notification.kind === "reminder" || notification.kind === "alarm") updateView("notes"); else updateView("shared"); } setNotificationOpen(false); }}><span className={`notification-icon ${notification.kind === "reminder" ? "tag-orange" : notification.kind === "alarm" ? "tag-violet" : isProject ? "tag-project" : "tag-blue"}`}>{notification.kind === "reminder" ? <BellRing size={14}/> : notification.kind === "alarm" ? <AlarmClock size={14}/> : isProject ? <FolderKanban size={14}/> : <Share2 size={14}/>}</span><span><b>{notification.projectName || notification.actorName}</b><small>{notification.message}</small></span><span className="notification-time">{new Date(notification.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span></button>; }) : <div className="notification-empty">You're all caught up.</div>}{(notificationPermission === "unsupported" || notificationPermission === "denied") && <div className="notification-footnote">{notificationPermission === "denied" ? "Desktop alerts are blocked by your browser settings. In-app reminders still work while Persora is open." : "Desktop alerts aren’t supported in this browser. In-app reminders still work while Persora is open."}</div>}</div>}</div><button className="topbar-avatar avatar" onClick={() => updateView("settings")} aria-label="Open account settings"><AccountAvatarContent user={user}/></button></div></header>
-      <main className={`workspace-content `}>{view === "projects" && <Suspense fallback={<div className="medical-loading">Loading your projects…</div>}><ProjectsView user={user} maxUploadMb={maxUploadMb} notify={notify}/></Suspense>} {view === "photo-studio" && <Suspense fallback={<div className="medical-loading">Loading Photo Studio…</div>}><PhotoStudioView user={user} canUpload={canUpload} maxUploadMb={maxUploadMb} onUpgrade={!user.demo ? () => updateView("billing") : undefined} onTrashChanged={() => { void onTrashRefresh().catch(() => undefined); }} notify={notify}/></Suspense>} {view === "password-manager" && <PasswordManagerView userId={user.id} demoMode={user.demo || false} notify={notify}/>} {view === "dashboard" && <DashboardView user={user} items={items} onNavigate={updateView} onOpenItem={onOpenItem} onAdd={onAdd} onAddDocument={() => openAddDocument()} onToggleFavorite={onToggleFavorite}/>} {view === "timeline" && <TimelineView events={timelineEvents} items={items} online={timelineOnline} canPost={!user.demo && sharingAvailable} canUpload={canUpload} onUpgrade={!user.demo ? () => updateView("billing") : undefined} saving={timelineSaving} onSave={onSaveTimelineEvent} onDelete={onDeleteTimelineEvent} onOpenItem={onOpenItem} onOpenAttachment={onOpenTimelineAttachment} notify={notify}/>} {view === "medical-records" && <Suspense fallback={<div className="medical-loading">Loading your private health archive…</div>}><MedicalRecordsView userId={user.id} records={medicalRecords} contacts={contacts} items={items} demoMode={user.demo || false} connected={sharingAvailable} maxUploadMb={maxUploadMb} canUpload={canUpload} onUpgrade={!user.demo ? () => updateView("billing") : undefined} initialAddType={pendingMedicalAdd} initialAddFile={pendingMedicalFile} initialAddTitle={pendingMedicalTitle} initialAddAdditionalData={pendingMedicalAdditionalData} initialAddScanResult={pendingMedicalScanResult} initialAddScanComplete={pendingMedicalScanComplete} initialAddValues={pendingMedicalValues} initialAddProtectedKeys={pendingMedicalProtectedKeys} onAddRequestHandled={() => { setPendingMedicalAdd(null); setPendingMedicalFile(null); setPendingMedicalTitle(""); setPendingMedicalAdditionalData(""); setPendingMedicalScanResult(null); setPendingMedicalScanComplete(false); setPendingMedicalValues(null); setPendingMedicalProtectedKeys([]); }} onChangeAddDocumentDestination={(draft) => window.dispatchEvent(new CustomEvent(ADD_DOCUMENT_DESTINATION_EVENT, { detail: draft }))} onRefresh={onRefreshMedicalRecords} onSave={onSaveMedicalRecord} onDelete={onDeleteMedicalRecord} onOpenFile={onOpenMedicalRecordFile} onPreviewFile={onPreviewMedicalRecordFile} notify={notify}/></Suspense>} {view === "personal-finance" && <PersonalFinanceView items={items} contacts={contacts} onSave={onSaveItem} onOpenItem={onOpenItem} onDeleteItem={onDeleteItem} onNavigate={updateView}/>} {documentWorkspace} {view === "shared" && <SharedDocumentsView userId={user.id} outgoing={sharedByMe} incoming={sharedWithMe} recordOutgoing={recordSharesByMe} recordIncoming={recordSharesWithMe} publicCards={businessCards.filter((card) => card.isPublic)} available={sharingAvailable} onOpen={onOpenSharedEntry} onPermissionChange={onChangeSharePermission} onRevoke={onRevokeShare} onRevokeRecord={onRevokeRecordShare}/>} {view === "contacts" && <ContactsView userId={user.id} contacts={contacts} demoMode={user.demo || false} connected={sharingAvailable} canUpload={canUpload} onUpgrade={!user.demo ? () => updateView("billing") : undefined} initialAddCategory={pendingContactAdd} onAddRequestHandled={() => setPendingContactAdd(null)} onSave={onSaveContact} onDelete={onDeleteContact} onShare={(contact, recipient) => onShareRecord("contact", contact.id, recipient)} onMerge={onMergeContacts} onImport={onImportContacts} onRefresh={onRefreshContacts} notify={notify}/>} {view === "business-card" && <BusinessCardsView userId={user.id} cards={businessCards} demoMode={user.demo || false} connected={sharingAvailable} canUpload={canUpload} onUpgrade={!user.demo ? () => updateView("billing") : undefined} initialCreateRequestId={pendingBusinessCardCreate} onAddRequestHandled={() => setPendingBusinessCardCreate(0)} onSave={onSaveBusinessCard} onDelete={onDeleteBusinessCard} onShare={(card, recipient) => onShareRecord("business_card", card.id, recipient)} onRefresh={onRefreshBusinessCards} notify={notify}/>} {view === "trash" && <TrashView entries={trashEntries} busy={trashBusy} onRefresh={onTrashRefresh} onRestore={onTrashRestore} onDeleteForever={onTrashDeleteForever} onEmptyTrash={onTrashEmpty} notify={notify}/>} {view === "billing" && <BillingView initialPlanId={pendingPlanId} notify={notify}/>} {view === "settings" && <SettingsView user={user} items={items} onProfileSave={onProfileSave} onSendVerificationCode={onSendVerificationCode} onVerifyEmailCode={onVerifyEmailCode} onPasswordChange={onPasswordChange} onExport={onExport} onImport={onImport} onDeleteAccount={onDeleteAccount} onOpenContact={onOpenContact} notify={notify}/>}</main>
+      <main className={`workspace-content `}>{view === "projects" && <Suspense fallback={<div className="medical-loading">Loading your projects…</div>}><ProjectsView user={user} maxUploadMb={maxUploadMb} notify={notify}/></Suspense>} {view === "photo-studio" && <Suspense fallback={<div className="medical-loading">Loading Photo Studio…</div>}><PhotoStudioView user={user} canUpload={canUpload} maxUploadMb={maxUploadMb} canShare={sharingAvailable} onShare={(photo, recipient) => onShareRecord("photo_studio_photo", photo.id, recipient)} onUpgrade={!user.demo ? () => updateView("billing") : undefined} onTrashChanged={() => { void onTrashRefresh().catch(() => undefined); }} notify={notify}/></Suspense>} {view === "password-manager" && <PasswordManagerView userId={user.id} demoMode={user.demo || false} notify={notify}/>} {view === "dashboard" && <DashboardView user={user} items={items} onNavigate={updateView} onOpenItem={onOpenItem} onAdd={onAdd} onAddDocument={() => openAddDocument()} onToggleFavorite={onToggleFavorite}/>} {view === "timeline" && <TimelineView events={timelineEvents} items={items} online={timelineOnline} canPost={!user.demo && sharingAvailable} canUpload={canUpload} onUpgrade={!user.demo ? () => updateView("billing") : undefined} saving={timelineSaving} onSave={onSaveTimelineEvent} onDelete={onDeleteTimelineEvent} onOpenItem={onOpenItem} onOpenAttachment={onOpenTimelineAttachment} notify={notify}/>} {view === "medical-records" && <Suspense fallback={<div className="medical-loading">Loading your private health archive…</div>}><MedicalRecordsView userId={user.id} records={medicalRecords} contacts={contacts} items={items} demoMode={user.demo || false} connected={sharingAvailable} maxUploadMb={maxUploadMb} canUpload={canUpload} onUpgrade={!user.demo ? () => updateView("billing") : undefined} initialAddType={pendingMedicalAdd} initialAddFile={pendingMedicalFile} initialAddTitle={pendingMedicalTitle} initialAddAdditionalData={pendingMedicalAdditionalData} initialAddScanResult={pendingMedicalScanResult} initialAddScanComplete={pendingMedicalScanComplete} initialAddValues={pendingMedicalValues} initialAddProtectedKeys={pendingMedicalProtectedKeys} onAddRequestHandled={() => { setPendingMedicalAdd(null); setPendingMedicalFile(null); setPendingMedicalTitle(""); setPendingMedicalAdditionalData(""); setPendingMedicalScanResult(null); setPendingMedicalScanComplete(false); setPendingMedicalValues(null); setPendingMedicalProtectedKeys([]); }} onChangeAddDocumentDestination={(draft) => window.dispatchEvent(new CustomEvent(ADD_DOCUMENT_DESTINATION_EVENT, { detail: draft }))} onRefresh={onRefreshMedicalRecords} onSave={onSaveMedicalRecord} onDelete={onDeleteMedicalRecord} onOpenFile={onOpenMedicalRecordFile} onPreviewFile={onPreviewMedicalRecordFile} notify={notify}/></Suspense>} {view === "personal-finance" && <PersonalFinanceView items={items} contacts={contacts} onSave={onSaveItem} onOpenItem={onOpenItem} onDeleteItem={onDeleteItem} onNavigate={updateView}/>} {documentWorkspace} {view === "shared" && <SharedDocumentsView userId={user.id} outgoing={sharedByMe} incoming={sharedWithMe} recordOutgoing={recordSharesByMe} recordIncoming={recordSharesWithMe} publicCards={businessCards.filter((card) => card.isPublic)} available={sharingAvailable} onOpen={onOpenSharedEntry} onPermissionChange={onChangeSharePermission} onRevoke={onRevokeShare} onRevokeRecord={onRevokeRecordShare}/>} {view === "contacts" && <ContactsView userId={user.id} contacts={contacts} demoMode={user.demo || false} connected={sharingAvailable} canUpload={canUpload} onUpgrade={!user.demo ? () => updateView("billing") : undefined} initialAddCategory={pendingContactAdd} onAddRequestHandled={() => setPendingContactAdd(null)} onSave={onSaveContact} onDelete={onDeleteContact} onShare={(contact, recipient) => onShareRecord("contact", contact.id, recipient)} onMerge={onMergeContacts} onImport={onImportContacts} onRefresh={onRefreshContacts} notify={notify}/>} {view === "business-card" && <BusinessCardsView userId={user.id} cards={businessCards} demoMode={user.demo || false} connected={sharingAvailable} canUpload={canUpload} onUpgrade={!user.demo ? () => updateView("billing") : undefined} initialCreateRequestId={pendingBusinessCardCreate} onAddRequestHandled={() => setPendingBusinessCardCreate(0)} onSave={onSaveBusinessCard} onDelete={onDeleteBusinessCard} onShare={(card, recipient) => onShareRecord("business_card", card.id, recipient)} onRefresh={onRefreshBusinessCards} notify={notify}/>} {view === "trash" && <TrashView entries={trashEntries} busy={trashBusy} onRefresh={onTrashRefresh} onRestore={onTrashRestore} onDeleteForever={onTrashDeleteForever} onEmptyTrash={onTrashEmpty} notify={notify}/>} {view === "billing" && <BillingView initialPlanId={pendingPlanId} notify={notify}/>} {view === "settings" && <SettingsView user={user} items={items} onProfileSave={onProfileSave} onSendVerificationCode={onSendVerificationCode} onVerifyEmailCode={onVerifyEmailCode} onPasswordChange={onPasswordChange} onExport={onExport} onImport={onImport} onDeleteAccount={onDeleteAccount} onOpenContact={onOpenContact} notify={notify}/>}</main>
       <footer className="workspace-footer"><span className="workspace-footer-brand">Persora</span><span>Powered by Dexter Studio</span><span className="workspace-footer-security"><ShieldCheck size={13}/> Sherlock Security System</span><nav aria-label="Legal and contact"><button onClick={() => onOpenPublicPage("/privacy")}>Privacy</button><button onClick={() => onOpenPublicPage("/terms")}>Terms</button><button onClick={onOpenContact}>Contact</button></nav></footer>
     </div>
     <ModalPortal><SearchModal modal open={searchModalOpen} onOpenChange={(open) => { setSearchModalOpen(open); if (!open) onSearch(""); }} hotkey="k" placeholder="Search records, people, files…" tags={searchTags} results={searchResults} quickActions={searchQuickActions} files={searchFiles} defaultQuery={search} onQueryChange={onSearch} onSelectResult={(result) => searchEntries.find((entry) => entry.result.href === result.href)?.select()} overlayClassName="z-[100]"/></ModalPortal>
@@ -910,8 +910,55 @@ function SharedDocumentsView({ userId, outgoing, incoming, recordOutgoing, recor
     try { await action(); } catch (reason) { setError(reason instanceof Error ? reason.message : "The sharing change could not be saved."); }
     finally { setBusyId(""); }
   };
-  const recordName = (entry: RecordShareEntry) => entry.resourceType === "contact" ? (entry.record as PersoraContact).name : (entry.record as DigitalBusinessCard).fullName;
-  const recordMeta = (entry: RecordShareEntry) => entry.resourceType === "contact" ? [((entry.record as PersoraContact).phoneNumbers[0]?.number), (entry.record as PersoraContact).email].filter(Boolean).join(" · ") || "Contact details shared" : [[(entry.record as DigitalBusinessCard).jobTitle, (entry.record as DigitalBusinessCard).company].filter(Boolean).join(" · "), (entry.record as DigitalBusinessCard).email].filter(Boolean).join(" · ") || "Business card details shared";
+  const contactCardEntries = recordEntries.filter((entry) => entry.resourceType !== "photo_studio_photo");
+  const photoEntries = recordEntries.filter((entry) => entry.resourceType === "photo_studio_photo");
+  const recordName = (entry: RecordShareEntry) => entry.resourceType === "contact" ? (entry.record as PersoraContact).name : entry.resourceType === "photo_studio_photo" ? (entry.record as SharedPhotoRecord).title : (entry.record as DigitalBusinessCard).fullName;
+  const recordMeta = (entry: RecordShareEntry) => entry.resourceType === "photo_studio_photo" ? sharedPhotoMeta(entry.record as SharedPhotoRecord) : entry.resourceType === "contact" ? [((entry.record as PersoraContact).phoneNumbers[0]?.number), (entry.record as PersoraContact).email].filter(Boolean).join(" · ") || "Contact details shared" : [[(entry.record as DigitalBusinessCard).jobTitle, (entry.record as DigitalBusinessCard).company].filter(Boolean).join(" · "), (entry.record as DigitalBusinessCard).email].filter(Boolean).join(" · ") || "Business card details shared";
+  const renderRecordShare = (entry: RecordShareEntry) => {
+                const isContact = entry.resourceType === "contact";
+                const isPhoto = entry.resourceType === "photo_studio_photo";
+                const person = tab === "outgoing" ? entry.recipient : entry.owner;
+                return (
+                  <MagicCard className="shared-record-shell" key={entry.shareId}>
+                    <article className="shared-record">
+                      <div className="shared-record-main">
+                        <span className={`shared-record-icon ${isContact || isPhoto ? "tag-blue" : "tag-slate"}`}>{isPhoto ? <Camera size={20}/> : isContact ? <ContactRound size={20}/> : <BriefcaseBusiness size={20}/>}</span>
+                        <div className="shared-record-copy">
+                          <div className="shared-record-title-row">
+                            <b onClick={() => setSelectedRecord(entry)} style={{cursor:"pointer"}}>{recordName(entry)}</b>
+                            <span className="shared-type-chip">{isPhoto ? "Photo" : isContact ? "Contact" : "Business card"}</span>
+                          </div>
+                          <small>{recordMeta(entry)}</small>
+                        </div>
+                        <div className="shared-record-main-action">
+                          <button type="button" className="shared-open-button" onClick={() => setSelectedRecord(entry)}>{isPhoto ? "View" : "Details"} <ArrowUpRight size={13}/></button>
+                        </div>
+                      </div>
+                      <div className="shared-record-meta">
+                        <div className="shared-person">
+                          <small>{tab === "outgoing" ? "SHARED WITH" : "SHARED BY"}</small>
+                          <b>{person.fullName}</b>
+                          <span>{person.email} · ID {person.userId}</span>
+                        </div>
+                        <span className="permission-badge permission-view">Can view</span>
+                      </div>
+                      <div className="shared-record-controls">
+                        {tab === "outgoing" ? (
+                          <>
+                            <span className="shared-permission-note">{isPhoto ? "Photo shared privately" : "Selective detail share"}</span>
+                            <button type="button" className="share-stop-button" disabled={busyId === entry.shareId} onClick={() => void run(entry.shareId, () => onRevokeRecord(entry.shareId))}>{busyId === entry.shareId ? "Removing…" : "Revoke share"}</button>
+                          </>
+                        ) : (
+                          <>
+                            <span className="shared-permission-note">Shared privately with your account</span>
+                            <button type="button" className="shared-open-button" onClick={() => setSelectedRecord(entry)}>{isPhoto ? "View photo" : "View details"} <ArrowRight size={13}/></button>
+                          </>
+                        )}
+                      </div>
+                    </article>
+                  </MagicCard>
+                );
+  };
   return <div className="shared-view">
     <div className="shared-page-hero"><div className="shared-page-hero-copy"><span className="section-eyebrow">Persora sharing</span><h2>Your connections,<br/>shared thoughtfully.</h2><p>Manage documents and selected contacts shared with Persora members, and review the cards you have published publicly.</p></div><div className="shared-hero-art" aria-hidden="true"><Share2 size={36}/><span>{incoming.length + outgoing.length + recordOutgoing.length + recordIncoming.length + publicCards.length}</span><small>SHARES &amp; PUBLIC CARDS</small></div></div>
     <div className="shared-controls-row"><div className="shared-tabs" role="tablist" aria-label="Shared documents"><button role="tab" aria-selected={tab === "outgoing"} className={tab === "outgoing" ? "active" : ""} onClick={() => { setTab("outgoing"); setError(""); }}>Shared by me <span>{outgoing.length + recordOutgoing.length}</span></button><button role="tab" aria-selected={tab === "incoming"} className={tab === "incoming" ? "active" : ""} onClick={() => { setTab("incoming"); setError(""); }}>Shared with me <span>{incoming.length + recordIncoming.length}</span></button><button role="tab" aria-selected={tab === "public"} className={tab === "public" ? "active" : ""} onClick={() => { setTab("public"); setError(""); }}>Shared in Public <span>{publicCards.length}</span></button></div><ViewModeToggle mode={viewMode} onChange={setViewMode} label="Shared documents layout"/></div>
@@ -1006,68 +1053,72 @@ function SharedDocumentsView({ userId, outgoing, incoming, recordOutgoing, recor
           </div>
         )}
 
-        {recordEntries.length > 0 && (
+        {contactCardEntries.length > 0 && (
           <div className="shared-category-group" style={{marginTop:"18px"}}>
-            <div className="shared-category-header"><span className="shared-category-title">CONTACTS &amp; CARDS</span><span className="shared-category-count">{recordEntries.length}</span></div>
+            <div className="shared-category-header"><span className="shared-category-title">CONTACTS &amp; CARDS</span><span className="shared-category-count">{contactCardEntries.length}</span></div>
             <div className={`shared-record-list shared-record-list-structured ${viewMode === "cards" ? "shared-card-layout" : "shared-list-layout"}`}>
-              {recordEntries.map((entry) => {
-                const isContact = entry.resourceType === "contact";
-                const person = tab === "outgoing" ? entry.recipient : entry.owner;
-                return (
-                  <MagicCard className="shared-record-shell" key={entry.shareId}>
-                    <article className="shared-record">
-                      <div className="shared-record-main">
-                        <span className={`shared-record-icon ${isContact ? "tag-blue" : "tag-slate"}`}>{isContact ? <ContactRound size={20}/> : <BriefcaseBusiness size={20}/>}</span>
-                        <div className="shared-record-copy">
-                          <div className="shared-record-title-row">
-                            <b onClick={() => setSelectedRecord(entry)} style={{cursor:"pointer"}}>{recordName(entry)}</b>
-                            <span className="shared-type-chip">{isContact ? "Contact" : "Business card"}</span>
-                          </div>
-                          <small>{recordMeta(entry)}</small>
-                        </div>
-                        <div className="shared-record-main-action">
-                          <button type="button" className="shared-open-button" onClick={() => setSelectedRecord(entry)}>Details <ArrowUpRight size={13}/></button>
-                        </div>
-                      </div>
-                      <div className="shared-record-meta">
-                        <div className="shared-person">
-                          <small>{tab === "outgoing" ? "SHARED WITH" : "SHARED BY"}</small>
-                          <b>{person.fullName}</b>
-                          <span>{person.email} · ID {person.userId}</span>
-                        </div>
-                        <span className="permission-badge permission-view">Can view</span>
-                      </div>
-                      <div className="shared-record-controls">
-                        {tab === "outgoing" ? (
-                          <>
-                            <span className="shared-permission-note">Selective detail share</span>
-                            <button type="button" className="share-stop-button" disabled={busyId === entry.shareId} onClick={() => void run(entry.shareId, () => onRevokeRecord(entry.shareId))}>{busyId === entry.shareId ? "Removing…" : "Revoke share"}</button>
-                          </>
-                        ) : (
-                          <>
-                            <span className="shared-permission-note">Shared privately with your account</span>
-                            <button type="button" className="shared-open-button" onClick={() => setSelectedRecord(entry)}>View details <ArrowRight size={13}/></button>
-                          </>
-                        )}
-                      </div>
-                    </article>
-                  </MagicCard>
-                );
-              })}
+              {contactCardEntries.map(renderRecordShare)}
             </div>
           </div>
         )}
 
-        {!entries.length && !recordEntries.length && <div className="shared-empty"><span><Share2 size={22}/></span><h3>{tab === "outgoing" ? "Nothing shared yet" : "No one has shared with you yet"}</h3><p>{tab === "outgoing" ? "Use Share on a document, contact, or business card to give another Persora member access." : "Documents, contacts, and business cards shared with your account will appear here."}</p></div>}
+        {photoEntries.length > 0 && (
+          <div className="shared-category-group" style={{marginTop:"18px"}}>
+            <div className="shared-category-header"><span className="shared-category-title">PHOTOS</span><span className="shared-category-count">{photoEntries.length}</span></div>
+            <div className={`shared-record-list shared-record-list-structured ${viewMode === "cards" ? "shared-card-layout" : "shared-list-layout"}`}>
+              {photoEntries.map(renderRecordShare)}
+            </div>
+          </div>
+        )}
+
+        {!entries.length && !recordEntries.length && <div className="shared-empty"><span><Share2 size={22}/></span><h3>{tab === "outgoing" ? "Nothing shared yet" : "No one has shared with you yet"}</h3><p>{tab === "outgoing" ? "Use Share on a document, contact, business card or photo to give another Persora member access." : "Documents, contacts, business cards and photos shared with your account will appear here."}</p></div>}
       </>
     )}
     {selectedRecord && <ModalPortal><SharedRecordDetailsDialog entry={selectedRecord} onClose={() => setSelectedRecord(null)}/></ModalPortal>}
   </div>;
 }
 
+const SHARED_PHOTO_CATEGORY_LABELS: Record<string, string> = { passport: "Passport", stamp: "Stamp size", visa: "Visa", "id-card": "ID card", "job-application": "Job application", other: "Other" };
+function sharedPhotoMeta(photo: SharedPhotoRecord): string {
+  return [SHARED_PHOTO_CATEGORY_LABELS[photo.category] || "Photo", photo.fileSize ? humanSize(photo.fileSize) : ""].filter(Boolean).join(" · ") || "Photo shared";
+}
+
+/** Loads a shared photo through the record-share file route (owner or recipient only). */
+function SharedPhotoImage({ shareId, title }: { shareId: string; title: string }) {
+  const [url, setUrl] = useState("");
+  const [blob, setBlob] = useState<Blob | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    const controller = new AbortController();
+    let objectUrl = "";
+    loadSharedPhotoFile(shareId, controller.signal)
+      .then((file) => { objectUrl = URL.createObjectURL(file); setBlob(file); setUrl(objectUrl); })
+      .catch((reason) => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "This photo couldn't be loaded."); });
+    return () => { controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [shareId]);
+  const download = () => {
+    if (!blob) return;
+    const link = document.createElement("a");
+    const extension = blob.type === "image/png" ? "png" : blob.type === "image/webp" ? "webp" : "jpg";
+    link.href = URL.createObjectURL(blob); link.download = `${title.replace(/[^\w() -]+/g, "_").trim() || "photo"}.${extension}`; link.rel = "noopener";
+    document.body.appendChild(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  };
+  return <figure className="shared-photo-preview">
+    {url ? <img src={url} alt={title}/> : error ? <figcaption role="alert">{error}</figcaption> : <span className="shared-photo-loading" role="status" aria-label="Loading photo"/>}
+    {blob && <button type="button" className="shared-open-button" onClick={download}>Download <ArrowUpRight size={13}/></button>}
+  </figure>;
+}
+
 function SharedRecordDetailsDialog({ entry, onClose }: { entry: RecordShareEntry; onClose: () => void }) {
   const rows: [string, string][] = [];
-  if (entry.resourceType === "contact") {
+  if (entry.resourceType === "photo_studio_photo") {
+    const photo = entry.record as SharedPhotoRecord;
+    rows.push(["Category", SHARED_PHOTO_CATEGORY_LABELS[photo.category] || "Photo"]);
+    if (photo.width && photo.height) rows.push(["Dimensions", `${photo.width} × ${photo.height} px`]);
+    if (photo.dpi) rows.push(["Resolution", `${Math.round(photo.dpi)} DPI`]);
+    rows.push(["Format", `${photo.fileType.replace("image/", "").toUpperCase()}${photo.fileSize ? ` · ${humanSize(photo.fileSize)}` : ""}`]);
+  } else if (entry.resourceType === "contact") {
     const contact = entry.record as PersoraContact;
     if (contact.phoneNumbers.length) rows.push(["Phone numbers", contact.phoneNumbers.map((phone) => `${phone.label}: ${phone.number}`).join(" · ")]);
     if (contact.email) rows.push(["Email", contact.email]);
@@ -1089,8 +1140,9 @@ function SharedRecordDetailsDialog({ entry, onClose }: { entry: RecordShareEntry
     if (card.socialLinks.length) rows.push(["Social", card.socialLinks.map((link) => `${link.platform}: ${link.url}`).join(" · ")]);
     if (card.customLinks.length) rows.push(["Other links", card.customLinks.map((link) => `${link.label}: ${link.url}`).join(" · ")]);
   }
-  const title = entry.resourceType === "contact" ? (entry.record as PersoraContact).name : (entry.record as DigitalBusinessCard).fullName;
-  return <div className="modal-backdrop record-share-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="record-share-details" role="dialog" aria-modal="true" aria-labelledby="shared-record-title"><button className="icon-button" onClick={onClose} aria-label="Close"><X size={18}/></button><span className="section-eyebrow">{entry.resourceType === "contact" ? "Shared contact" : "Shared business card"}</span><h2 id="shared-record-title">{title}</h2><p>Shared {entry.direction === "incoming" ? `with you by ${entry.owner.fullName}` : `with ${entry.recipient.fullName}`} · {formatDate(entry.createdAt)}</p>{rows.length ? <div>{rows.map(([label, value]) => <section key={label}><small>{label}</small><span>{value}</span></section>)}</div> : <p>No additional details were included.</p>}<button className="shared-open-button" onClick={onClose}>Close</button></section></div>;
+  const isPhoto = entry.resourceType === "photo_studio_photo";
+  const title = entry.resourceType === "contact" ? (entry.record as PersoraContact).name : isPhoto ? (entry.record as SharedPhotoRecord).title : (entry.record as DigitalBusinessCard).fullName;
+  return <div className="modal-backdrop record-share-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className={`record-share-details ${isPhoto ? "record-share-details-photo" : ""}`} role="dialog" aria-modal="true" aria-labelledby="shared-record-title"><button className="icon-button" onClick={onClose} aria-label="Close"><X size={18}/></button><span className="section-eyebrow">{entry.resourceType === "contact" ? "Shared contact" : isPhoto ? "Shared photo" : "Shared business card"}</span><h2 id="shared-record-title">{title}</h2><p>Shared {entry.direction === "incoming" ? `with you by ${entry.owner.fullName}` : `with ${entry.recipient.fullName}`} · {formatDate(entry.createdAt)}</p>{isPhoto && <SharedPhotoImage shareId={entry.shareId} title={title}/>}{rows.length ? <div>{rows.map(([label, value]) => <section key={label}><small>{label}</small><span>{value}</span></section>)}</div> : <p>No additional details were included.</p>}<button className="shared-open-button" onClick={onClose}>Close</button></section></div>;
 }
 
 function SettingsView({ user, items, onProfileSave, onSendVerificationCode, onVerifyEmailCode, onPasswordChange, onExport, onImport, onDeleteAccount, onOpenContact, notify }: { user: AppUser; items: VaultItem[]; onProfileSave: (values: { fullName: string; timezone: string; avatarUrl: string }) => Promise<void>; onSendVerificationCode: () => Promise<{ ok: boolean; alreadyVerified?: boolean; expiresInSeconds?: number }>; onVerifyEmailCode: (code: string) => Promise<void>; onPasswordChange: (currentPassword: string, newPassword: string) => Promise<void>; onExport: () => void; onImport: (file: File) => Promise<void>; onDeleteAccount: () => Promise<void>; onOpenContact: () => void; notify: (message: string, kind?: "success" | "error") => void }) {

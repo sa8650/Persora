@@ -11,7 +11,7 @@ import PublicInfoPage from "./components/PublicInfoPage";
 import { ConfirmDialog, ItemDetailDialog, ItemEditorDialog, TodoEditorDialog, ToastNotice } from "./components/VaultDialogs";
 import ShareRecordDialog from "./components/ShareRecordDialog";
 import { ADD_DOCUMENT_DESTINATION_EVENT, ADD_DOCUMENT_HANDOFF_EVENT } from "./types";
-import type { ActiveScheduleAlert, AddDocumentFlowDraft, AppUser, BusinessCardDraft, ContactDraft, ContactImportProgress, DigitalBusinessCard, DocumentTypeOption, MedicalRecord, MedicalRecordDraft, MedicalRecordFile, NotesRecordKind, PersoraContact, SectionId, ShareComment, ShareNotification, SharePermission, SharedVaultEntry, RecordShareEntry, SiteContent, SubscriptionPlan, TimelineDraft, TimelineEvent, TrashEntry, TrashSpace, TransferProgress, SmartScanResult, VaultFilePreview, VaultItem, ViewId } from "./types";
+import type { ActiveScheduleAlert, AddDocumentFlowDraft, AppUser, BusinessCardDraft, ContactDraft, ContactImportProgress, DigitalBusinessCard, DocumentTypeOption, MedicalRecord, MedicalRecordDraft, MedicalRecordFile, NotesRecordKind, PersoraContact, SectionId, ShareComment, ShareNotification, SharePermission, SharedVaultEntry, RecordShareEntry, RecordShareType, SiteContent, SubscriptionPlan, TimelineDraft, TimelineEvent, TrashEntry, TrashSpace, TransferProgress, SmartScanResult, VaultFilePreview, VaultItem, ViewId } from "./types";
 import { DEFAULT_SITE_CONTENT } from "./data/siteContent";
 import PersoraBootScreen from "./components/PersoraBootScreen";
 import {
@@ -1085,11 +1085,11 @@ commitContacts(getLocalContacts(DEMO_USER.id));
     if (user?.demo || !isPagesApiConfigured) { notify("Sharing requires a signed-in Persora account with the cloud API enabled.", "error"); return; }
     setShareTarget(item);
   };
-  const handleShareRecord = async (resourceType: "contact" | "business_card", resourceId: string, recipient: string) => {
+  const handleShareRecord = async (resourceType: RecordShareType, resourceId: string, recipient: string) => {
     if (user?.demo || !isPagesApiConfigured) throw new Error("Sharing requires a signed-in Persora cloud account.");
     await createRecordShare(resourceType, resourceId, recipient);
     await refreshSharing();
-    notify(`${resourceType === "contact" ? "Contact" : "Business card"} shared successfully.`);
+    notify(`${resourceType === "contact" ? "Contact" : resourceType === "photo_studio_photo" ? "Photo" : "Business card"} shared successfully.`);
   };
   const handleRevokeRecordShare = async (shareId: string) => {
     await revokeRecordShare(shareId);

@@ -9,8 +9,9 @@
 //     failed save leaves no orphan file and no partial row.
 //   * Edited versions are new rows (source_photo_id → original); originals are
 //     never modified. Deleting moves the row into the global Trash.
-//   * The primary AI background-removal route is stateless: the image is
-//     processed in memory by Cloudflare Images and returned; nothing is stored.
+//   * The primary AI background-removal route is stateless on Persora's side:
+//     the image goes to Workers AI (bria/remove-background) and the cut-out is
+//     returned to the browser; nothing is written to R2 or the database.
 import { PHOTO_SAVE_TYPES, aspectRatio, matchPreset, readImageInfo, MAX_PHOTO_DIMENSION } from "./photo-metadata.js";
 
 export const PHOTO_STUDIO_ROUTE_PREFIX = "/photo-studio";
@@ -18,7 +19,7 @@ export const PHOTO_STUDIO_CATEGORIES = Object.freeze(["passport", "stamp", "visa
 const FOLDER_COLORS = new Set(["blue", "sky", "teal", "violet", "amber", "rose", "slate", "mint"]);
 const PHOTO_MAX_BYTES_CAP = 30 * 1024 * 1024;
 const BACKGROUND_MAX_BYTES = 12 * 1024 * 1024;
-const BACKGROUND_TIMEOUT_MS = 30_000;
+const BACKGROUND_TIMEOUT_MS = 25_000;
 const PHOTO_COLUMNS = "id,user_id,folder_id,source_photo_id,title,category,notes,file_name,file_size,file_type,width_px,height_px,dpi,metadata,edit_settings,created_at,updated_at";
 
 export class PhotoStudioError extends Error {
@@ -302,15 +303,15 @@ async function updatePhoto(request, identity, photoId, env) {
   return { photo: photoView(rows[0]) };
 }
 
-async function downloadPhoto(identity, photoId, env, origin, download) {
+async function servePhotoFile(ownerId, photoId, env, origin, download) {
   if (!env.VAULT_FILES) throw new PhotoStudioError("Private photo storage is not configured.", 503);
-  const rows = await listRows(`photo_studio_photos?id=eq.${encodeURIComponent(photoId)}&user_id=eq.${encodeURIComponent(identity.id)}&select=file_key,file_name,file_type,title&limit=1`, env);
+  const rows = await listRows(`photo_studio_photos?id=eq.${encodeURIComponent(photoId)}&user_id=eq.${encodeURIComponent(ownerId)}&select=file_key,file_name,file_type,title&limit=1`, env);
   const row = rows[0];
   const key = row?.file_key || "";
-  if (!row || !key.startsWith(`${identity.id}/photo-studio/`) || key.includes("..") || key.includes("\\")) throw new PhotoStudioError("That photo is not available.", 404);
+  if (!row || !key.startsWith(`${ownerId}/photo-studio/`) || key.includes("..") || key.includes("\\")) throw new PhotoStudioError("That photo is not available.", 404);
   const object = await env.VAULT_FILES.get(key);
   const metadata = object?.customMetadata || {};
-  if (!object || metadata.ownerId !== identity.id || metadata.photoStudio !== "true") throw new PhotoStudioError("That private photo is unavailable.", 404);
+  if (!object || metadata.ownerId !== ownerId || metadata.photoStudio !== "true") throw new PhotoStudioError("That private photo is unavailable.", 404);
   const type = PHOTO_SAVE_TYPES[row.file_type] ? row.file_type : "image/jpeg";
   const fileName = photoFileName(row.title || row.file_name, type);
   const fallbackName = fileName.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_");
@@ -326,25 +327,192 @@ async function downloadPhoto(identity, photoId, env, origin, download) {
   }) });
 }
 
-function withTimeout(promise, ms) {
-  let timer;
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => { timer = setTimeout(() => reject(new PhotoStudioError("The AI background service timed out.", 504, { reason: "timeout", fallback: true })), ms); }),
-  ]).finally(() => clearTimeout(timer));
+async function downloadPhoto(identity, photoId, env, origin, download) {
+  return servePhotoFile(identity.id, photoId, env, origin, download);
 }
 
 /**
- * Primary AI background removal via the Cloudflare Images binding
- * (`segment: "foreground"`, BiRefNet on Workers AI). Stateless: the image is
- * never written to storage or the database. Every failure answers with
- * `fallback: true` so the browser switches to its local model.
+ * Streams a photo shared through Persora's record sharing (record_shares,
+ * resource_type 'photo_studio_photo'). Only the share's recipient or its
+ * owner may read it, and only while the owner still has the photo.
+ */
+export async function handleSharedPhotoFile(identity, shareId, env, origin, download = false) {
+  try {
+    if (!isUuid(shareId)) throw new PhotoStudioError("That shared photo is not available.", 404);
+    const shares = await listRows(`record_shares?id=eq.${encodeURIComponent(shareId)}&resource_type=eq.photo_studio_photo&select=owner_id,recipient_id,resource_id&limit=1`, env);
+    const share = shares[0];
+    if (!share || (share.recipient_id !== identity.id && share.owner_id !== identity.id) || !isUuid(share.resource_id)) throw new PhotoStudioError("That shared photo is not available.", 404);
+    return await servePhotoFile(share.owner_id, share.resource_id, env, origin, download);
+  } catch (error) {
+    if (error instanceof PhotoStudioError) return json({ error: error.message, ...error.extra }, error.status, origin);
+    console.error("Persora shared photo request failed", error instanceof Error ? error.message : "unknown error");
+    return json({ error: "The shared photo couldn't be opened. Please try again." }, 500, origin);
+  }
+}
+
+function withTimeout(promise, ms, controller) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => { timer = setTimeout(() => { controller?.abort(); reject(new PhotoStudioError("The AI background service timed out.", 504, { reason: "timeout", fallback: true })); }, ms); }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+/** Workers AI model used for cloud background removal (Bria RMBG 2.0). */
+export const BACKGROUND_AI_MODEL = "bria/remove-background";
+const BACKGROUND_RESULT_MAX_BYTES = 40 * 1024 * 1024;
+
+/**
+ * Which cloud background services this deployment can use. Cloudflare Pages
+ * Functions support the Workers AI binding (`AI`) but NOT an Images binding,
+ * so `AI` is the primary path; `IMAGES` is only used when present (e.g. when
+ * the API runs as a standalone Worker).
+ */
+export function backgroundProviders(env) {
+  const providers = [];
+  if (env?.AI && typeof env.AI.run === "function") providers.push("workers-ai");
+  if (env?.IMAGES && typeof env.IMAGES.input === "function") providers.push("cloudflare-images");
+  return providers;
+}
+
+function base64FromBytes(bytes) {
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += 0x8000) binary += String.fromCharCode.apply(null, bytes.subarray(index, index + 0x8000));
+  return btoa(binary);
+}
+
+/**
+ * Normalises the Workers AI response of `bria/remove-background`. The binding
+ * answers `{ image: "<url>" }`; the REST shape wraps it as
+ * `{ result: { image } }`. Inline data URIs / raw bytes are accepted too.
+ * Returns `{ url }`, `{ bytes }` or null.
+ */
+export function readBriaResult(result) {
+  if (!result) return null;
+  if (result instanceof Uint8Array) return { bytes: result };
+  if (result instanceof ArrayBuffer) return { bytes: new Uint8Array(result) };
+  const value = typeof result === "string" ? result : typeof result === "object" ? (result.image ?? result.result?.image ?? result.output?.image ?? null) : null;
+  if (typeof value !== "string" || !value) return null;
+  const dataUri = /^data:image\/png;base64,([A-Za-z0-9+/=\s]+)$/i.exec(value);
+  if (dataUri) {
+    const binary = atob(dataUri[1].replace(/\s+/g, ""));
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+    return { bytes };
+  }
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" ? { url: url.toString() } : null;
+  } catch { return null; }
+}
+
+/** True when the PNG declares an alpha channel (colour type 4/6 or tRNS). */
+export function pngHasAlpha(bytes) {
+  if (!bytes || bytes.length < 33) return false;
+  const colorType = bytes[25];
+  if (colorType === 4 || colorType === 6) return true;
+  for (let offset = 8; offset + 8 <= bytes.length;) {
+    const length = ((bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3]) >>> 0;
+    const type = String.fromCharCode(bytes[offset + 4], bytes[offset + 5], bytes[offset + 6], bytes[offset + 7]);
+    if (type === "tRNS") return true;
+    if (type === "IDAT" || type === "IEND") return false;
+    offset += 12 + length;
+  }
+  return false;
+}
+
+/** Errors from the provider are logged server-side and mapped to a clear, safe message. */
+function providerFailure(error, provider) {
+  const detail = error instanceof Error ? error.message.slice(0, 300) : String(error || "unknown error").slice(0, 300);
+  console.error("Photo Studio AI background removal failed", { provider, model: provider === "workers-ai" ? BACKGROUND_AI_MODEL : "segment=foreground", error: detail });
+  if (/gateway|unified billing|credit|billing|payment|insufficient|quota|balance/i.test(detail)) {
+    return new PhotoStudioError("Persora AI background removal isn't fully set up on this server yet (the Workers AI model needs AI Gateway credits).", 503, { reason: "setup", fallback: true });
+  }
+  if (/not found|unknown model|no such model|invalid model/i.test(detail)) {
+    return new PhotoStudioError("The AI background model isn't available to this server's Workers AI account.", 503, { reason: "setup", fallback: true });
+  }
+  if (/rate|too many|capacity|429|overloaded/i.test(detail)) {
+    return new PhotoStudioError("The AI background service is busy right now. Try again in a moment.", 503, { reason: "busy", fallback: true });
+  }
+  if (/moderat|nsfw|policy/i.test(detail)) {
+    return new PhotoStudioError("The AI background service declined this photo.", 422, { reason: "rejected", fallback: true });
+  }
+  return new PhotoStudioError("The AI background service couldn't process this photo.", 502, { reason: "failed", fallback: true });
+}
+
+async function runWorkersAi(env, bytes, info) {
+  const controller = new AbortController();
+  const options = { gateway: { id: String(env.PHOTO_STUDIO_AI_GATEWAY || env.AI_GATEWAY_ID || "default").trim() || "default" } };
+  let result;
+  try {
+    result = await withTimeout(env.AI.run(BACKGROUND_AI_MODEL, { image: `data:${info.mime};base64,${base64FromBytes(bytes)}` }, options), BACKGROUND_TIMEOUT_MS, controller);
+  } catch (error) {
+    if (error instanceof PhotoStudioError) throw error;
+    throw providerFailure(error, "workers-ai");
+  }
+  const parsed = readBriaResult(result);
+  if (!parsed) {
+    console.error("Photo Studio AI background removal returned no image", { provider: "workers-ai", responseType: typeof result, keys: result && typeof result === "object" ? Object.keys(result).slice(0, 8) : [] });
+    throw new PhotoStudioError("The AI background service returned no image.", 502, { reason: "unusable", fallback: true });
+  }
+  if (parsed.bytes) return parsed.bytes;
+  // The model hosts the PNG cut-out temporarily; download it right away so
+  // the browser only ever talks to Persora.
+  let response;
+  try {
+    response = await withTimeout(fetch(parsed.url, { signal: controller.signal, redirect: "follow", headers: { Accept: "image/png" } }), BACKGROUND_TIMEOUT_MS, controller);
+  } catch (error) {
+    if (error instanceof PhotoStudioError) throw error;
+    throw providerFailure(error, "workers-ai-result");
+  }
+  if (!response.ok) throw providerFailure(new Error(`Result download failed (${response.status}).`), "workers-ai-result");
+  const declared = Number(response.headers.get("content-length") || 0);
+  if (declared > BACKGROUND_RESULT_MAX_BYTES) throw new PhotoStudioError("The AI background service returned an unusable image.", 502, { reason: "unusable", fallback: true });
+  const output = new Uint8Array(await withTimeout(response.arrayBuffer(), BACKGROUND_TIMEOUT_MS, controller));
+  if (output.byteLength > BACKGROUND_RESULT_MAX_BYTES) throw new PhotoStudioError("The AI background service returned an unusable image.", 502, { reason: "unusable", fallback: true });
+  return output;
+}
+
+async function runCloudflareImages(env, bytes) {
+  try {
+    const result = await withTimeout(
+      env.IMAGES.input(new Blob([bytes]).stream()).transform({ segment: "foreground" }).output({ format: "image/png" }),
+      BACKGROUND_TIMEOUT_MS,
+    );
+    const response = typeof result?.response === "function" ? result.response() : null;
+    if (!response) throw new Error("The Images binding returned no image.");
+    return new Uint8Array(await withTimeout(response.arrayBuffer(), BACKGROUND_TIMEOUT_MS));
+  } catch (error) {
+    if (error instanceof PhotoStudioError) throw error;
+    throw providerFailure(error, "cloudflare-images");
+  }
+}
+
+/** Validates a cut-out: a real PNG with transparency and the input's proportions. */
+function verifyCutout(output, info) {
+  const outputInfo = readImageInfo(output);
+  if (!outputInfo || outputInfo.mime !== "image/png" || !outputInfo.width || !outputInfo.height || !pngHasAlpha(output)) {
+    throw new PhotoStudioError("The AI background service returned an unusable image.", 502, { reason: "unusable", fallback: true });
+  }
+  if (info.width && info.height) {
+    const drift = Math.abs(outputInfo.width / outputInfo.height - info.width / info.height) / (info.width / info.height);
+    if (drift > 0.03) throw new PhotoStudioError("The AI background service returned a cut-out with different proportions.", 502, { reason: "unusable", fallback: true });
+  }
+}
+
+/**
+ * Primary AI background removal. Stateless on Persora's side: the image is
+ * never written to R2 or the database. Workers AI (`bria/remove-background`,
+ * through the AI Gateway) is used when the `AI` binding exists; an Images
+ * binding is tried as a secondary when available. Every failure answers with
+ * `fallback: true` so the browser switches to its on-device model — nothing
+ * is ever reported as removed unless a valid transparent cut-out came back.
  */
 async function removeBackground(request, env, services) {
   if (services?.aiEnabled === false) throw new PhotoStudioError("AI background removal is turned off by an administrator.", 503, { reason: "disabled", fallback: true });
   if (services?.planAllowed === false) throw new PhotoStudioError("Cloud AI background removal is included with paid plans.", 403, { reason: "plan", fallback: true });
-  const images = env.IMAGES;
-  if (!images || typeof images.input !== "function") throw new PhotoStudioError("The AI background service isn't configured on this server.", 503, { reason: "unavailable", fallback: true });
+  const providers = backgroundProviders(env);
+  if (!providers.length) throw new PhotoStudioError("The AI background service isn't connected on this server (the Workers AI binding \"AI\" is missing).", 503, { reason: "unavailable", fallback: true });
   const length = Number(request.headers.get("content-length") || 0);
   if (length > BACKGROUND_MAX_BYTES + 512 * 1024) throw new PhotoStudioError("Images for AI background removal must be 12 MB or smaller.", 413, { reason: "too-large", fallback: true });
   let form;
@@ -354,26 +522,19 @@ async function removeBackground(request, env, services) {
   if (file.size > BACKGROUND_MAX_BYTES) throw new PhotoStudioError("Images for AI background removal must be 12 MB or smaller.", 413, { reason: "too-large", fallback: true });
   const bytes = new Uint8Array(await file.arrayBuffer());
   const info = readImageInfo(bytes);
-  if (!info || !PHOTO_SAVE_TYPES[info.mime]) throw new PhotoStudioError("AI background removal supports JPEG, PNG or WebP images.", 415, { reason: "invalid", fallback: true });
-  let output;
-  try {
-    const result = await withTimeout(
-      images.input(new Blob([bytes]).stream()).transform({ segment: "foreground" }).output({ format: "image/png" }),
-      BACKGROUND_TIMEOUT_MS,
-    );
-    const response = typeof result?.response === "function" ? result.response() : null;
-    if (!response) throw new Error("The Images binding returned no image.");
-    output = new Uint8Array(await withTimeout(response.arrayBuffer(), BACKGROUND_TIMEOUT_MS));
-  } catch (error) {
-    if (error instanceof PhotoStudioError) throw error;
-    console.error("Photo Studio AI background removal failed", error instanceof Error ? error.message : "unknown error");
-    throw new PhotoStudioError("The AI background service couldn't process this photo.", 502, { reason: "failed", fallback: true });
+  // Bria accepts JPEG/PNG; the browser always sends JPEG.
+  if (!info || (info.mime !== "image/jpeg" && info.mime !== "image/png")) throw new PhotoStudioError("AI background removal supports JPEG or PNG images.", 415, { reason: "invalid", fallback: true });
+  let lastError = null;
+  for (const provider of providers) {
+    try {
+      const output = provider === "workers-ai" ? await runWorkersAi(env, bytes, info) : await runCloudflareImages(env, bytes);
+      verifyCutout(output, info);
+      return { output, provider };
+    } catch (error) {
+      lastError = error instanceof PhotoStudioError ? error : providerFailure(error, provider);
+    }
   }
-  const outputInfo = readImageInfo(output);
-  if (!outputInfo || outputInfo.mime !== "image/png" || !outputInfo.width || !outputInfo.height) {
-    throw new PhotoStudioError("The AI background service returned an unusable image.", 502, { reason: "unusable", fallback: true });
-  }
-  return output;
+  throw lastError;
 }
 
 // ---------------------------------------------------------------------------
@@ -387,8 +548,8 @@ export async function handlePhotoStudio(request, identity, env, origin, services
   try {
     if (segments[0] === "background-removal" && segments.length === 1) {
       if (request.method !== "POST") return json({ error: "Method not allowed." }, 405, origin);
-      const output = await removeBackground(request, env, services);
-      return new Response(output, { status: 200, headers: headersFor(origin, { "Content-Type": "image/png", "Content-Length": String(output.byteLength), "X-Persora-Background-Source": "cloudflare-images" }) });
+      const { output, provider } = await removeBackground(request, env, services);
+      return new Response(output, { status: 200, headers: headersFor(origin, { "Content-Type": "image/png", "Content-Length": String(output.byteLength), "X-Persora-Background-Source": provider === "workers-ai" ? "workers-ai-bria" : "cloudflare-images" }) });
     }
     if (segments[0] !== "photos") return json({ error: "That Photo Studio route is not available." }, 404, origin);
     if (segments.length === 1) {

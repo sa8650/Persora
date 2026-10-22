@@ -69,8 +69,8 @@ Set production values in **Cloudflare Pages → Settings → Variables and Secre
 | `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT` | Encrypted Cloudflare Pages secret | Server-side Smart Scan OCR endpoint. |
 | `AZURE_DOCUMENT_INTELLIGENCE_KEY` | Encrypted Cloudflare Pages secret | Server-side Azure OCR credential; never expose it to the frontend. |
 | `AI` | Cloudflare Workers AI binding | Server-side Smart Scan extraction; this is a binding, not a frontend API key. |
-| `IMAGES` | Optional Cloudflare Images binding | Photo Studio's primary AI background removal (`segment: "foreground"`). If it's missing, the browser uses its on-device model. |
-| `VITE_PHOTO_STUDIO_MODEL_URL`, `VITE_PHOTO_STUDIO_ORT_WASM_BASE` | Optional Pages build variables | Self-host the on-device background-removal model and runtime (defaults: Hugging Face and jsDelivr). See [`PHOTO_STUDIO.md`](./PHOTO_STUDIO.md). |
+| `PHOTO_STUDIO_AI_GATEWAY` | Optional Pages variable | AI Gateway id for Photo Studio's primary background removal (Workers AI `bria/remove-background` through the `AI` binding; default gateway `default`, needs Unified Billing credits). Without it working, the browser uses its on-device model. |
+| `VITE_PHOTO_STUDIO_MODEL_BASE`, `VITE_PHOTO_STUDIO_ORT_WASM_BASE` | Optional Pages build variables | Self-host the on-device background-removal model and runtime (defaults: Hugging Face and jsDelivr). See [`PHOTO_STUDIO.md`](./PHOTO_STUDIO.md). |
 
 Use [`DEPLOYMENT.md`](./DEPLOYMENT.md) for full setup, secret placement, email configuration, Smart Scan OCR setup, R2 binding, first-admin bootstrap and deployment verification. Use [`SMART_SCAN_SETUP.md`](./SMART_SCAN_SETUP.md) for Smart Scan-specific setup. In particular, configure `BREVO_API_KEY` and both Azure values as encrypted Cloudflare Pages secrets; never paste them into the website or an ordinary admin setting.
 

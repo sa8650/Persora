@@ -3,7 +3,7 @@ import { SmartScanError, MAX_SMART_SCAN_FILE_BYTES, extractDocumentFields, runAz
 import { AIPasswordError, aiPasswordCandidates } from "./ai-password.js";
 import { DEFAULT_AI_CONTROLS, resolveAiControls } from "./ai-controls.js";
 import { handleProjects, PROJECTS_ROUTE_PREFIX } from "./projects.js";
-import { handlePhotoStudio, PHOTO_STUDIO_ROUTE_PREFIX } from "./photo-studio.js";
+import { handlePhotoStudio, handleSharedPhotoFile, backgroundProviders, PHOTO_STUDIO_ROUTE_PREFIX } from "./photo-studio.js";
 
 const DEFAULT_SETTINGS = {
   billing: { currency: "BDT", manualInstructions: "Follow the account details shown for your selected payment method.", billingEnabled: false, minTermMonths: 1, maxTermMonths: 12 },
@@ -403,6 +403,12 @@ export default {
         return json(payment, 201, origin);
       }
 
+      const sharedPhotoFile = /^\/record-shares\/([0-9a-f-]{36})\/file$/i.exec(url.pathname);
+      if (sharedPhotoFile && request.method === "GET") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required." }, 401, origin);
+        return await handleSharedPhotoFile(identity, sharedPhotoFile[1], env, origin, url.searchParams.get("download") === "1");
+      }
       if (url.pathname === "/record-shares" && request.method === "GET") {
         const identity = await authorize(request, env);
         if (!identity) return json({ error: "Sign in is required." }, 401, origin);
@@ -1983,21 +1989,29 @@ async function listRecordShares(identity, direction, env) {
   if (!rows.length) return [];
   const contactIds = [...new Set(rows.filter((row) => row.resource_type === "contact").map((row) => row.resource_id).filter(isUuid))];
   const cardIds = [...new Set(rows.filter((row) => row.resource_type === "business_card").map((row) => row.resource_id).filter(isUuid))];
+  const photoIds = [...new Set(rows.filter((row) => row.resource_type === "photo_studio_photo").map((row) => row.resource_id).filter(isUuid))];
   const userIds = [...new Set(rows.flatMap((row) => [row.owner_id, row.recipient_id]).filter(isUuid))];
-  const [contactRows, cardRows, profileRows] = await Promise.all([
+  const [contactRows, cardRows, photoRows, profileRows] = await Promise.all([
     contactIds.length ? restRows(`contacts?id=in.(${contactIds.join(",")})&select=*`, env) : Promise.resolve([]),
     cardIds.length ? restRows(`business_cards?id=in.(${cardIds.join(",")})&select=*`, env) : Promise.resolve([]),
+    photoIds.length ? restRows(`photo_studio_photos?id=in.(${photoIds.join(",")})&select=id,user_id,title,category,file_type,file_size,width_px,height_px,dpi,created_at,updated_at`, env) : Promise.resolve([]),
     profilesByIds(userIds, env),
   ]);
   const contacts = new Map(contactRows.map((row) => [row.id, row]));
   const cards = new Map(cardRows.map((row) => [row.id, row]));
+  const photos = new Map(photoRows.map((row) => [row.id, row]));
   const profiles = new Map(profileRows.map((row) => [row.id, shareProfile(row)]));
   return rows.flatMap((share) => {
     const owner = profiles.get(share.owner_id), recipient = profiles.get(share.recipient_id);
     if (!owner || !recipient) return [];
-    const source = share.resource_type === "contact" ? contacts.get(share.resource_id) : cards.get(share.resource_id);
+    const source = share.resource_type === "contact" ? contacts.get(share.resource_id) : share.resource_type === "photo_studio_photo" ? photos.get(share.resource_id) : cards.get(share.resource_id);
     if (!source || source.user_id !== share.owner_id) return [];
-    const record = share.resource_type === "contact" ? {
+    // Photos expose display metadata only; the file itself is streamed through
+    // GET /record-shares/:shareId/file (never the storage key).
+    const record = share.resource_type === "photo_studio_photo" ? {
+      id: source.id, title: source.title, category: source.category, file_type: source.file_type, file_size: source.file_size,
+      width_px: source.width_px, height_px: source.height_px, dpi: source.dpi, created_at: source.created_at, updated_at: source.updated_at,
+    } : share.resource_type === "contact" ? {
       id: source.id, full_name: source.full_name, phone_numbers: source.phone_numbers, email: source.email,
       company: source.company, job_title: source.job_title, address: source.address, birthday: source.birthday,
       notes: source.notes, category: source.category, favorite: source.favorite,
@@ -2027,11 +2041,11 @@ async function resolveShareRecipient(rawRecipient, ownerId, env) {
   return recipient;
 }
 async function createRecordShare(identity, body, env) {
-  const resourceType = body.resourceType === "business_card" ? "business_card" : body.resourceType === "contact" ? "contact" : "";
+  const resourceType = body.resourceType === "business_card" ? "business_card" : body.resourceType === "contact" ? "contact" : body.resourceType === "photo_studio_photo" ? "photo_studio_photo" : "";
   const resourceId = typeof body.resourceId === "string" ? body.resourceId : "";
-  if (!resourceType || !isUuid(resourceId)) throw new HttpError("Choose a valid contact or business card to share.");
-  const table = resourceType === "contact" ? "contacts" : "business_cards";
-  const titleField = resourceType === "contact" ? "full_name" : "full_name";
+  if (!resourceType || !isUuid(resourceId)) throw new HttpError("Choose a valid contact, business card or photo to share.");
+  const table = resourceType === "contact" ? "contacts" : resourceType === "photo_studio_photo" ? "photo_studio_photos" : "business_cards";
+  const titleField = resourceType === "photo_studio_photo" ? "title" : "full_name";
   const recordRows = await restRows(`${table}?id=eq.${encodeURIComponent(resourceId)}&user_id=eq.${encodeURIComponent(identity.id)}&select=id,${titleField}`, env);
   if (!recordRows[0]) throw new HttpError("That record isn't available in your account.", 404);
   const recipient = await resolveShareRecipient(body.recipient, identity.id, env);
@@ -2040,8 +2054,9 @@ async function createRecordShare(identity, body, env) {
   const response = await supabaseAdminFetch("/rest/v1/record_shares", env, { method: "POST", headers: { "Content-Type": "application/json", Prefer: "return=representation" }, body: JSON.stringify({ resource_type: resourceType, resource_id: resourceId, owner_id: identity.id, recipient_id: recipient.id }) });
   if (!response.ok) throw new HttpError("The record share could not be saved.", response.status >= 400 ? response.status : 502);
   const result = await response.json(); const share = Array.isArray(result) ? result[0] : result;
-  const title = recordRows[0].full_name || (resourceType === "contact" ? "a contact" : "a business card");
-  await writeShareNotification(recipient.id, identity.id, identity.full_name, title, "shared", `${identity.full_name} shared ${resourceType === "contact" ? "a contact" : "a business card"} with you.`, env);
+  const kindLabel = resourceType === "contact" ? "a contact" : resourceType === "photo_studio_photo" ? "a photo" : "a business card";
+  const title = recordRows[0][titleField] || kindLabel;
+  await writeShareNotification(recipient.id, identity.id, identity.full_name, title, "shared", `${identity.full_name} shared ${kindLabel} with you.`, env);
   return { shareId: share.id, resourceType, resourceId, recipient: shareProfile(recipient) };
 }
 async function revokeRecordShare(identity, body, env) {
@@ -2054,7 +2069,7 @@ async function revokeRecordShare(identity, body, env) {
   if (!response.ok) throw new HttpError("The record share could not be removed.", response.status >= 400 ? response.status : 502);
   const recipients = await profilesByIds([share.recipient_id], env);
   if (recipients[0]) {
-    const label = share.resource_type === "contact" ? "contact" : "business card";
+    const label = share.resource_type === "contact" ? "contact" : share.resource_type === "photo_studio_photo" ? "photo" : "business card";
     await writeShareNotification(share.recipient_id, identity.id, identity.full_name, `a shared ${label}`, "unshared", `${identity.full_name} stopped sharing a ${label} with you.`, env);
   }
   return { ok: true };
@@ -3203,6 +3218,7 @@ async function loadAdminConsole(env) {
     aiControls: settings.aiControls,
     aiProviders: {
       workersAiConfigured: Boolean(env.AI),
+      photoBackgroundProviders: backgroundProviders(env),
       azureDocumentIntelligenceConfigured: Boolean(
         (typeof env.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT === "string" && env.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT.trim())
         && (typeof env.AZURE_DOCUMENT_INTELLIGENCE_KEY === "string" && env.AZURE_DOCUMENT_INTELLIGENCE_KEY.trim()),

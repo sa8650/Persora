@@ -90,11 +90,28 @@ export interface SharedVaultEntry {
   direction: SharedDirection;
 }
 
+/** Resource types shared through Persora's record sharing (record_shares). */
+export type RecordShareType = "contact" | "business_card" | "photo_studio_photo";
+
+/** Display metadata of a Photo Studio photo shared with a member (no storage key). */
+export interface SharedPhotoRecord {
+  id: string;
+  title: string;
+  category: string;
+  fileType: string;
+  fileSize: number;
+  width: number;
+  height: number;
+  dpi: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface RecordShareEntry {
   shareId: string;
-  resourceType: "contact" | "business_card";
+  resourceType: RecordShareType;
   resourceId: string;
-  record: PersoraContact | DigitalBusinessCard;
+  record: PersoraContact | DigitalBusinessCard | SharedPhotoRecord;
   owner: ShareUser;
   recipient: ShareUser;
   direction: SharedDirection;
@@ -402,7 +419,7 @@ export interface StorageUsage { bytesUsed: number; fileBytes: number; databaseBy
 export interface SmartScanUsage { enabled: boolean; scans: number; ocrRuns: number; aiExtractions: number; lastScannedAt: string | null }
 export interface SmartScanAdminSnapshot { enabled: boolean; usageAvailable: boolean; totals: { scans: number; ocrRuns: number; aiExtractions: number }; byUser: Record<string, SmartScanUsage> }
 export interface AiControls { passwordSuggestions: boolean; smartScanOcr: boolean; smartScanExtraction: boolean; photoBackgroundRemoval: boolean }
-export interface AiProvidersSnapshot { workersAiConfigured: boolean; azureDocumentIntelligenceConfigured: boolean }
+export interface AiProvidersSnapshot { workersAiConfigured: boolean; azureDocumentIntelligenceConfigured: boolean; photoBackgroundProviders?: string[] }
 export interface AdminConsoleSnapshot {
   metrics: AdminMetrics;
   smartScan: SmartScanAdminSnapshot;

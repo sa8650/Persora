@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { handlePhotoStudio, sanitizePhotoInput, verifyPhotoBytes, photoFileName } from '../cloudflare/photo-studio.js';
+import { handlePhotoStudio, handleSharedPhotoFile, sanitizePhotoInput, verifyPhotoBytes, photoFileName, readBriaResult, pngHasAlpha, backgroundProviders, BACKGROUND_AI_MODEL } from '../cloudflare/photo-studio.js';
 import { makeJpeg, makePng } from './photo-fixtures.mjs';
 
 const OWNER = '4a1b2c3d-4e5f-4678-8a9b-0c1d2e3f4a5b';
@@ -181,6 +181,94 @@ test('cloud background removal returns a PNG cut-out without storing anything', 
   assert.deepEqual(e.IMAGES.calls[1], ['transform', { segment: 'foreground' }]);
   assert.equal(e.VAULT_FILES.log.length, 0);
   assert.equal(calls.length, 0);
+});
+
+function aiBinding(respond) {
+  const calls = [];
+  return { calls, async run(model, input, options) { calls.push({ model, input, options }); return respond(model, input, options); } };
+}
+const BRIA_URL = 'https://files.bria.example/result/cutout.png';
+/** A PNG header that declares RGB without transparency (as a failed cut-out would). */
+const opaquePng = (w, h) => { const bytes = makePng(w, h); bytes[25] = 2; return bytes; };
+
+test('Pages: Workers AI (Bria RMBG 2.0) is the primary cloud path, through the AI Gateway', async () => {
+  const cutout = makePng(64, 64, { alpha: (x) => (x < 32 ? 0 : 255) });
+  const calls = mockDatabase();
+  const realFetch = globalThis.fetch;
+  const downloads = [];
+  globalThis.fetch = async (input, init) => {
+    if (String(input) === BRIA_URL) { downloads.push(String(input)); return new Response(cutout, { headers: { 'Content-Type': 'image/png' } }); }
+    return realFetch(input, init);
+  };
+  const e = env({ AI: aiBinding(() => ({ image: BRIA_URL })), PHOTO_STUDIO_AI_GATEWAY: 'persora' });
+  const response = await handlePhotoStudio(bgRequest(makeJpeg(64, 64)), { id: OWNER }, e, ORIGIN, { aiEnabled: true, planAllowed: true });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('X-Persora-Background-Source'), 'workers-ai-bria');
+  assert.deepEqual(new Uint8Array(await response.arrayBuffer()), cutout);
+  assert.equal(e.AI.calls.length, 1);
+  assert.equal(e.AI.calls[0].model, BACKGROUND_AI_MODEL);
+  assert.match(e.AI.calls[0].input.image, /^data:image\/jpeg;base64,/);
+  assert.deepEqual(e.AI.calls[0].options, { gateway: { id: 'persora' } });
+  assert.deepEqual(downloads, [BRIA_URL]);
+  assert.equal(e.VAULT_FILES.log.length, 0, 'nothing stored in R2');
+  assert.equal(calls.length, 0, 'nothing recorded in the database');
+  // Default gateway id when none is configured.
+  const e2 = env({ AI: aiBinding(() => ({ result: { image: `data:image/png;base64,${Buffer.from(cutout).toString('base64')}` } })) });
+  const inline = await handlePhotoStudio(bgRequest(makeJpeg(64, 64)), { id: OWNER }, e2, ORIGIN, { aiEnabled: true, planAllowed: true });
+  assert.equal(inline.status, 200);
+  assert.deepEqual(e2.AI.calls[0].options, { gateway: { id: 'default' } });
+});
+
+test('Workers AI failures never count as success and always ask the browser to fall back', async () => {
+  mockDatabase();
+  const cases = [
+    [() => { throw new Error('AiError: 7003: Unified Billing credits required for this gateway'); }, 503, /AI Gateway credits/],
+    [() => { throw new Error('5007: No such model bria/remove-background'); }, 503, /isn't available/],
+    [() => ({ image: 'http://insecure.example/x.png' }), 502, /returned no image/],
+    [() => ({}), 502, /returned no image/],
+    [() => ({ image: `data:image/png;base64,${Buffer.from(opaquePng(64, 64)).toString('base64')}` }), 502, /unusable/], // no alpha → background not removed
+    [() => ({ image: `data:image/png;base64,${Buffer.from(makePng(64, 20, { alpha: () => 0 })).toString('base64')}` }), 502, /different proportions/],
+  ];
+  for (const [respond, status, message] of cases) {
+    const response = await handlePhotoStudio(bgRequest(makeJpeg(64, 64)), { id: OWNER }, env({ AI: aiBinding(respond) }), ORIGIN, { aiEnabled: true, planAllowed: true });
+    const body = await response.json();
+    assert.equal(response.status, status, body.error);
+    assert.equal(body.fallback, true);
+    assert.match(body.error, message);
+  }
+});
+
+test('Bria result parsing and PNG transparency detection', () => {
+  assert.deepEqual(readBriaResult({ image: BRIA_URL }), { url: BRIA_URL });
+  assert.deepEqual(readBriaResult({ result: { image: BRIA_URL } }), { url: BRIA_URL });
+  assert.equal(readBriaResult({ image: 'javascript:alert(1)' }), null);
+  assert.equal(readBriaResult(null), null);
+  assert.equal(readBriaResult({ image: 'data:image/png;base64,iVBORw0K' }).bytes[0], 0x89);
+  assert.equal(pngHasAlpha(makePng(4, 4, { alpha: () => 0 })), true);
+  assert.equal(pngHasAlpha(opaquePng(4, 4)), false);
+  assert.deepEqual(backgroundProviders({ AI: { run() {} } }), ['workers-ai']);
+  assert.deepEqual(backgroundProviders({}), []);
+});
+
+test('shared photos are served only to the share recipient or owner', async () => {
+  const SHARE = '2d3e4f5a-6b7c-4d8e-9f0a-1b2c3d4e5f6a';
+  const RECIPIENT = '3e4f5a6b-7c8d-4e9f-8a0b-1c2d3e4f5a6b';
+  const e = env();
+  const key = `${OWNER}/photo-studio/x.jpg`;
+  await e.VAULT_FILES.put(key, makeJpeg(4, 4), { customMetadata: { ownerId: OWNER, photoStudio: 'true' } });
+  const calls = mockDatabase({
+    record_shares: () => Response.json([{ owner_id: OWNER, recipient_id: RECIPIENT, resource_id: PHOTO }]),
+    photo_studio_photos: () => Response.json([{ file_key: key, file_name: 'passport.jpg', file_type: 'image/jpeg', title: 'Passport' }]),
+  });
+  const ok = await handleSharedPhotoFile({ id: RECIPIENT }, SHARE, e, ORIGIN);
+  assert.equal(ok.status, 200);
+  assert.equal(ok.headers.get('Content-Type'), 'image/jpeg');
+  assert.match(calls[0].url.search, /resource_type=eq\.photo_studio_photo/);
+  assert.match(calls[1].url.search, new RegExp(`user_id=eq\\.${OWNER}`));
+  const stranger = await handleSharedPhotoFile({ id: OTHER }, SHARE, e, ORIGIN);
+  assert.equal(stranger.status, 404);
+  const bad = await handleSharedPhotoFile({ id: RECIPIENT }, 'not-a-uuid', e, ORIGIN);
+  assert.equal(bad.status, 404);
 });
 
 test('input sanitising and file naming helpers', () => {

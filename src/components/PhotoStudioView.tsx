@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ChangeEvent } from "react";
-import { AlertTriangle, ArrowDownUp, Camera, Download, Eye, FolderOpen, GitBranch, ImagePlus, ImageIcon, Loader2, Lock, Pencil, RefreshCw, Search, ShieldCheck, Trash2, Upload, Wand2 } from "lucide-react";
+import { AlertTriangle, ArrowDownUp, Camera, Download, Eye, FolderOpen, GitBranch, ImagePlus, ImageIcon, Loader2, Lock, Pencil, RefreshCw, Search, Share2, ShieldCheck, Trash2, Upload, Wand2 } from "lucide-react";
 import type { AppUser, PhotoCategory, PhotoStudioPhoto, PhotoStudioSaveInput, VaultFolder } from "../types";
 import { deletePhotoStudioPhoto, isPagesApiConfigured, listPhotoStudioPhotos, loadPhotoStudioFile, savePhotoStudioPhoto, updatePhotoStudioPhoto } from "../lib/cloud";
 import {
-  PHOTO_CATEGORIES, PHOTO_EDITOR_ACCEPT, PHOTO_UPLOAD_ACCEPT, SAVEABLE_PHOTO_TYPES, analysisMetadata, analyzePhoto, categoryLabel, defaultTitleFromFileName, editedFileName,
+  PHOTO_CATEGORIES, PHOTO_EDITOR_ACCEPT, aspectRatio, PHOTO_UPLOAD_ACCEPT, SAVEABLE_PHOTO_TYPES, analysisMetadata, analyzePhoto, categoryLabel, defaultTitleFromFileName, editedFileName,
   filterPhotos, folderCounts, formatBytes, formatDimensions, isPhotoCategory, printSizeLabel, type PhotoAnalysis, type PhotoSort,
 } from "../lib/photo-studio";
 import { decodeImage } from "../lib/photo-studio-render";
@@ -14,6 +14,7 @@ import ItemModalShell from "./ItemModalShell";
 import { ConfirmDialog } from "./VaultDialogs";
 import PhotoOrganizeModal, { type OrganizeDefaults } from "./PhotoOrganizeModal";
 import PhotoEditorModal, { type EditedPhoto, type EditorSource } from "./PhotoEditorModal";
+import ShareRecordDialog from "./ShareRecordDialog";
 import "./photo-studio.css";
 
 interface Props {
@@ -22,6 +23,10 @@ interface Props {
   maxUploadMb: number;
   onUpgrade?: () => void;
   onTrashChanged?: () => void;
+  /** Persora member sharing (record shares) is available for this account. */
+  canShare?: boolean;
+  /** Shares a photo with a Persora member through the existing record-sharing flow. */
+  onShare?: (photo: PhotoStudioPhoto, recipient: string) => Promise<void>;
   notify: (message: string, kind?: "success" | "error") => void;
 }
 
@@ -112,7 +117,7 @@ function downloadBlob(blob: Blob, fileName: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export default function PhotoStudioView({ user, canUpload, maxUploadMb, onUpgrade, onTrashChanged, notify }: Props) {
+export default function PhotoStudioView({ user, canUpload, maxUploadMb, onUpgrade, onTrashChanged, canShare = false, onShare, notify }: Props) {
   const available = !user.demo && isPagesApiConfigured;
   const [photos, setPhotos] = useState<PhotoStudioPhoto[]>([]);
   const [loading, setLoading] = useState(available);
@@ -131,6 +136,7 @@ export default function PhotoStudioView({ user, canUpload, maxUploadMb, onUpgrad
   const [detailsFor, setDetailsFor] = useState<PhotoStudioPhoto | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<PhotoStudioPhoto | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [shareTarget, setShareTarget] = useState<PhotoStudioPhoto | null>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const { urls, failed, getBlob, retry } = usePhotoFiles(photos);
 
@@ -253,6 +259,11 @@ export default function PhotoStudioView({ user, canUpload, maxUploadMb, onUpgrad
     catch (error) { notify(error instanceof Error ? error.message : "The photo couldn't be downloaded.", "error"); }
   };
 
+  const startShare = (photo: PhotoStudioPhoto) => {
+    if (!canShare || !onShare) { notify("Sharing requires a signed-in Persora account with the cloud API enabled.", "error"); return; }
+    setShareTarget(photo);
+  };
+
   const confirmDelete = async () => {
     if (!deleteTarget || deleting) return;
     setDeleting(true);
@@ -302,7 +313,7 @@ export default function PhotoStudioView({ user, canUpload, maxUploadMb, onUpgrad
       const source = photo.sourcePhotoId ? photoById.get(photo.sourcePhotoId) : null;
       const print = printSizeLabel(photo.width, photo.height, photo.dpi);
       return <article key={photo.id} className="ps-card">
-        <button type="button" className="ps-card-media ps-checker" onClick={() => setViewing(photo)} aria-label={`View ${photo.title}`}>
+        <button type="button" className="ps-card-media" onClick={() => setViewing(photo)} aria-label={`View ${photo.title}`}>
           {urls[photo.id] ? <img src={urls[photo.id]} alt="" loading="lazy"/> : failed[photo.id] ? <span className="ps-thumb-failed"><ImageIcon size={20}/><small>Preview unavailable</small></span> : <span className="ps-thumb-loading" aria-label="Loading preview"/>}
           {photo.sourcePhotoId && <span className="ps-edited-badge"><GitBranch size={11}/> Edited</span>}
         </button>
@@ -312,13 +323,14 @@ export default function PhotoStudioView({ user, canUpload, maxUploadMb, onUpgrad
               { label: "View photo", icon: Eye, onSelect: () => setViewing(photo) },
               { label: "Edit a copy", icon: Wand2, onSelect: () => void openEditorWithPhoto(photo) },
               { label: "Download", icon: Download, onSelect: () => void downloadPhoto(photo) },
+              { label: "Share", icon: Share2, onSelect: () => startShare(photo) },
               { label: "Edit details", icon: Pencil, onSelect: () => setDetailsFor(photo) },
               { label: "Delete photo", icon: Trash2, danger: true, onSelect: () => setDeleteTarget(photo) },
             ]}/>
           </div>
           <div className="ps-card-chips"><span className={`ps-chip ps-chip-${photo.category}`}>{categoryLabel(photo.category)}</span>{photo.folderId && folderName(photo.folderId) && <span className="ps-chip ps-chip-folder"><FolderOpen size={10}/>{folderName(photo.folderId)}</span>}</div>
-          <p className="ps-card-meta">{formatDimensions(photo.width, photo.height)}{print ? ` · ${print}` : ""}</p>
-          <p className="ps-card-sub">{photo.fileType.replace("image/", "").toUpperCase()} · {formatBytes(photo.fileSize)}{photo.dpi ? ` · ${Math.round(photo.dpi)} DPI` : ""}{photo.sourcePhotoId ? ` · from ${source ? `“${source.title}”` : "a deleted original"}` : ""}</p>
+          {print && <p className="ps-card-meta">{print}</p>}
+          <p className="ps-card-sub">{formatBytes(photo.fileSize)}{photo.sourcePhotoId ? ` · from ${source ? `“${source.title}”` : "a deleted original"}` : ""}</p>
           {failed[photo.id] && <button type="button" className="ps-link-button" onClick={() => retry(photo.id)}><RefreshCw size={12}/> Retry preview</button>}
         </div>
       </article>;
@@ -358,6 +370,7 @@ export default function PhotoStudioView({ user, canUpload, maxUploadMb, onUpgrad
       onSave={saveDetails}
     />}
     {viewing && <PhotoViewer photo={viewing} url={urls[viewing.id] || null} source={viewing.sourcePhotoId ? photoById.get(viewing.sourcePhotoId) || null : null} versions={photos.filter((photo) => photo.sourcePhotoId === viewing.id)} folder={folderName(viewing.folderId)} onClose={() => setViewing(null)} onOpen={(photo) => setViewing(photo)} onDownload={() => void downloadPhoto(viewing)} onEdit={() => void openEditorWithPhoto(viewing)} onDetails={() => setDetailsFor(viewing)} onDelete={() => setDeleteTarget(viewing)}/>}
+    {shareTarget && onShare && <ModalPortal><ShareRecordDialog kind="photo" title={shareTarget.title} onClose={() => setShareTarget(null)} onShare={(recipient) => onShare(shareTarget, recipient)}/></ModalPortal>}
     {deleteTarget && <ModalPortal><ConfirmDialog title={`Delete “${deleteTarget.title}”?`} confirmLabel={deleting ? "Deleting…" : "Move to Trash"} onCancel={() => !deleting && setDeleteTarget(null)} onConfirm={() => void confirmDelete()}><p>The photo moves to the Trash and can be restored for 7 days. {photos.some((photo) => photo.sourcePhotoId === deleteTarget.id) ? "Edited versions made from it are kept." : ""}</p></ConfirmDialog></ModalPortal>}
   </div>;
 }
@@ -391,8 +404,8 @@ function CreateChooser({ photos, urls, preparing, onClose, onFile, onPhoto, noti
         {photos.length ? <>
           <label className="ps-search ps-chooser-search"><Search size={15}/><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search saved photos…" aria-label="Search saved photos"/></label>
           <div className="ps-chooser-grid">{list.map((photo) => <button key={photo.id} type="button" className="ps-chooser-item" onClick={() => onPhoto(photo)} disabled={preparing}>
-            <span className="ps-checker">{urls[photo.id] ? <img src={urls[photo.id]} alt=""/> : <span className="ps-thumb-loading"/>}</span>
-            <b>{photo.title}</b><small>{categoryLabel(photo.category)} · {formatDimensions(photo.width, photo.height)}</small>
+            <span>{urls[photo.id] ? <img src={urls[photo.id]} alt=""/> : <span className="ps-thumb-loading"/>}</span>
+            <b>{photo.title}</b><small>{categoryLabel(photo.category)}</small>
           </button>)}</div>
           {!list.length && <p className="ps-muted-note">No saved photos match “{search}”.</p>}
         </> : <p className="ps-muted-note">You haven't saved any photos yet.</p>}
@@ -415,7 +428,7 @@ function PhotoViewer({ photo, url, source, versions, folder, onClose, onOpen, on
     ["Category", categoryLabel(photo.category)],
     ["Folder", folder || "No folder"],
     ["Dimensions", formatDimensions(photo.width, photo.height)],
-    ["Aspect ratio", String(photo.metadata.aspectRatio || "—")],
+    ["Aspect ratio", String(photo.metadata.aspectRatio || (photo.width && photo.height ? aspectRatio(photo.width, photo.height).label : "") || "—")],
     ["Resolution", photo.dpi ? `${Math.round(photo.dpi)} DPI` : "Not stored"],
     ["Print size", print || "—"],
     ["Format", `${photo.fileType.replace("image/", "").toUpperCase()} · ${formatBytes(photo.fileSize)}`],

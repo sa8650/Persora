@@ -29,7 +29,7 @@
 .ps-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(190px,1fr)); gap: 14px; margin-top: 12px; }
 .ps-card { display: flex; flex-direction: column; min-width: 0; overflow: hidden; border: 1px solid var(--p-line); border-radius: var(--p-radius-md); background: #fff; box-shadow: 0 1px 2px rgba(60,64,67,.05); transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
 .ps-card:hover { border-color: var(--p-blue-line); box-shadow: 0 6px 18px rgba(60,64,67,.1); transform: translateY(-1px); }
-.ps-card-media { position: relative; display: flex; align-items: center; justify-content: center; height: 210px; overflow: hidden; width: 100%; border: 0; border-bottom: 1px solid var(--p-line); padding: 14px; cursor: zoom-in; }
+.ps-card-media { position: relative; display: flex; align-items: center; justify-content: center; height: 210px; overflow: hidden; width: 100%; border: 0; border-bottom: 1px solid var(--p-line); padding: 14px; background: #f6f7f9; cursor: zoom-in; }
 .ps-card-media img { display: block; max-width: 100%; max-height: 182px; width: auto; height: auto; object-fit: contain; border-radius: 3px; box-shadow: 0 2px 10px rgba(32,33,36,.16); }
 .ps-card-media .ps-thumb-loading { width: 62%; height: 80%; border-radius: 4px; }
 .ps-thumb-failed { display: grid; justify-items: center; gap: 4px; color: var(--p-soft); font-size: 10px; }
@@ -119,7 +119,7 @@
 .ps-chooser-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 9px; }
 .ps-chooser-item { display: flex; flex-direction: column; gap: 3px; min-width: 0; border: 1px solid var(--p-line); border-radius: 11px; padding: 7px; text-align: left; background: #fff; cursor: pointer; transition: border-color .15s ease, box-shadow .15s ease; }
 .ps-chooser-item:hover { border-color: var(--p-blue); box-shadow: 0 3px 10px rgba(26,115,232,.12); }
-.ps-chooser-item > span { display: grid; place-items: center; height: 110px; overflow: hidden; border-radius: 7px; }
+.ps-chooser-item > span { display: grid; place-items: center; height: 110px; overflow: hidden; border-radius: 7px; background: #f6f7f9; }
 .ps-chooser-item img { max-width: 100%; max-height: 104px; object-fit: contain; }
 .ps-chooser-item b { overflow: hidden; color: var(--p-ink); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .ps-chooser-item small { overflow: hidden; color: var(--p-muted); font-size: 9.5px; text-overflow: ellipsis; white-space: nowrap; }
@@ -178,17 +178,27 @@
 .ps-button-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
 .ps-button-row .quiet-button { min-height: 32px; gap: 4px; padding: 0 6px; font-size: 10.5px; }
 .ps-button-row .quiet-button.is-on { border-color: var(--p-blue-line); color: var(--p-blue-dark); background: var(--p-blue-pale); }
-.ps-bg-intro { display: flex; flex-direction: column; gap: 9px; }
-.ps-bg-intro p { margin: 0; color: var(--p-text); font-size: 11px; line-height: 1.5; }
-.ps-bg-intro small { display: flex; align-items: flex-start; gap: 5px; color: var(--p-muted); font-size: 10px; line-height: 1.45; }
-.ps-bg-intro small svg { flex: 0 0 auto; margin-top: 1px; color: var(--p-green); }
-.ps-wide { justify-content: center; width: 100%; }
+/* Remove Background card — always visible at the top of the tools panel. */
+.ps-remove-card { display: flex; flex-direction: column; gap: 9px; border: 1px solid var(--p-blue-line); border-radius: 12px; padding: 12px; background: var(--p-blue-pale); }
+.ps-remove-card.is-done { border-color: var(--p-line); background: #fff; }
+.ps-remove-card > small { display: flex; align-items: flex-start; gap: 5px; color: var(--p-muted); font-size: 10px; line-height: 1.45; }
+.ps-remove-card > small svg { flex: 0 0 auto; margin-top: 1px; color: var(--p-green); }
+.editor-submit.ps-remove-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; width: 100%; min-height: 42px; font-size: 13px; }
+.ps-remove-status { display: flex; flex-direction: column; gap: 4px; }
+.ps-remove-status small { color: var(--p-muted); font-size: 10px; line-height: 1.45; }
+.ps-remove-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.ps-remove-card .quiet-button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 32px; padding: 0 8px; font-size: 11px; }
+.ps-remove-card .quiet-button.is-on { border-color: var(--p-blue-line); color: var(--p-blue-dark); background: var(--p-blue-pale); }
+.ps-remove-again { display: flex; flex-direction: column; gap: 5px; border-top: 1px dashed var(--p-line); padding-top: 8px; }
+.ps-remove-again > span { color: var(--p-muted); font-size: 10.5px; font-weight: 600; }
+.ps-remove-again > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.ps-bg-error-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.ps-bg-tab-note { font-size: 10.5px; }
+.ps-compare-tag { position: absolute; top: 8px; left: 8px; z-index: 1; border-radius: 999px; padding: 3px 9px; color: #fff; background: rgba(32,33,36,.72); font-size: 10px; font-weight: 650; pointer-events: none; }
 .ps-bg-error { display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--p-red-line); border-radius: 10px; padding: 10px; color: var(--p-text); background: var(--p-red-pale); font-size: 10.5px; line-height: 1.45; }
 .ps-bg-error b { display: inline-flex; align-items: center; gap: 5px; color: #a50e0e; font-size: 11.5px; }
 .ps-bg-error p { margin: 3px 0; }
 .ps-bg-error .quiet-button { align-self: flex-start; min-height: 32px; padding: 0 12px; font-size: 11px; }
-.ps-bg-done { display: flex; flex-direction: column; gap: 4px; }
-.ps-bg-done small { color: var(--p-muted); font-size: 10px; line-height: 1.45; }
 .ps-bg-badge { display: inline-flex; align-items: center; align-self: flex-start; gap: 5px; border-radius: 999px; padding: 4px 10px; color: #0d652d; background: var(--p-green-pale); font-size: 10.5px; font-weight: 650; }
 .ps-bg-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 .ps-bg-option { position: relative; display: flex; flex-direction: column; align-items: center; gap: 5px; min-width: 0; border: 1px solid var(--p-line-strong); border-radius: 10px; padding: 8px 4px; color: var(--p-text); background: #fff; font-size: 10.5px; font-weight: 580; cursor: pointer; }

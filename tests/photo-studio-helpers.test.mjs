@@ -14,26 +14,28 @@ const STUBS = {
   './local-matting': `export const runLocalMatting = (...args) => globalThis.__ps.local(...args);`,
   './photo-studio-render': `
     export const encodeForCloud = async () => new Blob([new Uint8Array([1])], { type: 'image/jpeg' });
-    export const decodeImage = async (blob) => ({ blob });
-    export const toWorkingCanvas = () => ({ kind: 'mask', rgba: globalThis.__ps.cloudMask });
-    export const applyMask = (source, mask) => ({ kind: 'cutout', rgba: mask.rgba });
+    export const decodeImage = async () => ({ kind: 'mask', rgba: globalThis.__ps.cloudMask });
+    export const buildCutout = (source, mask) => ({ kind: 'cutout', rgba: mask.rgba });
+    export const createCanvas = () => ({ kind: 'canvas' });
     export const releaseCanvas = (canvas) => { globalThis.__ps.released.push(canvas?.kind); };
     export const sampleRgba = (canvas) => canvas.rgba;`,
 };
 const stubPlugin = {
   name: 'photo-stubs',
   setup(build) {
-    build.onResolve({ filter: /^\.\/(cloud|local-matting|photo-studio-render)$/ }, (args) => (args.importer.endsWith('photo-background.ts') ? { path: args.path, namespace: 'ps-stub' } : undefined));
+    build.onResolve({ filter: /^\.\/(cloud|local-matting|photo-studio-render)$/ }, (args) => (/(photo-background|local-matting)\.ts$/.test(args.importer) ? { path: args.path, namespace: 'ps-stub' } : undefined));
     build.onLoad({ filter: /.*/, namespace: 'ps-stub' }, (args) => ({ contents: STUBS[args.path], loader: 'js' }));
   },
 };
 async function bundle(entry, name) {
   const outfile = path.join(outDir, `${name}.mjs`);
-  await esbuild.build({ entryPoints: [new URL(entry, import.meta.url).pathname], outfile, bundle: true, format: 'esm', platform: 'browser', plugins: [stubPlugin], logLevel: 'silent', define: { 'import.meta.env.VITE_USE_PAGES_FUNCTIONS': '"true"' } });
+  await esbuild.build({ entryPoints: [new URL(entry, import.meta.url).pathname], outfile, bundle: true, format: 'esm', platform: 'browser', plugins: [stubPlugin], external: ['onnxruntime-web', 'onnxruntime-web/*'], logLevel: 'silent', define: { 'import.meta.env.VITE_USE_PAGES_FUNCTIONS': '"true"', 'import.meta.env.VITE_PHOTO_STUDIO_MODEL_BASE': 'undefined', 'import.meta.env.VITE_PHOTO_STUDIO_ORT_WASM_BASE': 'undefined' } });
   return import(outfile);
 }
 const studio = await bundle('../src/lib/photo-studio.ts', 'photo-studio');
 const background = await bundle('../src/lib/photo-background.ts', 'photo-background');
+const matte = await bundle('../src/lib/photo-matte.ts', 'photo-matte');
+const matting = await bundle('../src/lib/local-matting.ts', 'local-matting');
 
 /** RGBA data where `share` of pixels are opaque subject and the rest transparent. */
 function mask(share, pixels = 1000) {
@@ -92,6 +94,43 @@ test('alpha-mask assessment rejects empty and unremoved results', () => {
   assert.equal(studio.assessAlphaMask(mask(0.4)).usable, true);
   assert.equal(studio.assessAlphaMask(mask(0)).usable, false);
   assert.equal(studio.assessAlphaMask(mask(1)).usable, false);
+  // A washed-out matte (most pixels half-transparent) is rejected instead of reported as success.
+  const foggy = new Uint8ClampedArray(4000);
+  for (let i = 0; i < 1000; i += 1) foggy[i * 4 + 3] = i < 300 ? 255 : i < 700 ? 128 : 0;
+  const verdict = studio.assessAlphaMask(foggy);
+  assert.equal(verdict.usable, false);
+  assert.match(verdict.reason, /couldn't separate/);
+});
+
+test('on-device model output is normalised and rejects empty or invalid masks', () => {
+  const values = new Float32Array([0.1, 0.1, 0.9, 0.5]);
+  const alpha = matting.normalizeAlpha(values, 4);
+  assert.deepEqual(Array.from(alpha).map((v) => Math.round(v * 100) / 100), [0, 0, 1, 0.5]);
+  assert.throws(() => matting.normalizeAlpha(new Float32Array([0.4, 0.45, 0.5, 0.42]), 4), /No person/);
+  assert.throws(() => matting.normalizeAlpha(new Float32Array([0, Number.NaN, 1, 1]), 4), /invalid/i);
+  assert.match(matting.LOCAL_MODEL_NAME, /ORMBG.*Apache-2\.0/);
+});
+
+test('matte refinement snaps near-solid alpha and removes background colour spill at edges', () => {
+  assert.deepEqual(Array.from(matte.stretchAlpha([0, 8, 128, 250, 255])), [0, 0, 128, 255, 255]);
+  // 8×1 strip: green background on the left, red subject on the right, one
+  // half-transparent edge pixel whose colour is a red/green mix.
+  const width = 8; const height = 1;
+  const rgba = new Uint8ClampedArray(width * 4);
+  const alpha = new Uint8ClampedArray(width);
+  for (let x = 0; x < width; x += 1) {
+    const a = x < 3 ? 0 : x === 3 ? 128 : 255;
+    alpha[x] = a;
+    const t = a / 255;
+    rgba.set([Math.round(220 * t), Math.round(200 * (1 - t)), 0, 255], x * 4);
+  }
+  const out = matte.decontaminateEdges(rgba, alpha, width, height, { grid: 8 });
+  assert.equal(out.length, rgba.length);
+  // The edge pixel loses most of its green spill and keeps its red subject colour.
+  assert.ok(out[3 * 4 + 1] < rgba[3 * 4 + 1] / 2, `green spill ${out[3 * 4 + 1]}`);
+  assert.ok(out[3 * 4] > rgba[3 * 4], `red ${out[3 * 4]}`);
+  // Fully opaque subject pixels are untouched.
+  assert.deepEqual(Array.from(out.slice(6 * 4, 6 * 4 + 3)), Array.from(rgba.slice(6 * 4, 6 * 4 + 3)));
 });
 
 test('adjustments are local, preserve alpha and are a no-op when neutral', () => {
@@ -112,7 +151,29 @@ test('background removal tries the primary cloud AI first and uses it when usabl
   assert.equal(result.source, 'cloud');
   assert.equal(state.cloudCalls, 1);
   assert.equal(state.localCalls, 0);
-  assert.deepEqual(statuses, ['cloud']);
+  assert.deepEqual(statuses, ['cloud', 'refining']);
+});
+
+test('Remove again with a specific engine runs only that engine and reports honest failures', async () => {
+  let state = reset();
+  let result = await background.removePhotoBackground(source, () => {}, new AbortController().signal, { cloudAvailable: true, engine: 'local' });
+  assert.equal(result.source, 'local');
+  assert.equal(result.fallbackReason, undefined);
+  assert.deepEqual([state.cloudCalls, state.localCalls], [0, 1]);
+
+  state = reset({ cloud: async () => Response.json({ error: 'AI Gateway credits are exhausted.', fallback: true }, { status: 503 }) });
+  await assert.rejects(
+    background.removePhotoBackground(source, () => {}, new AbortController().signal, { cloudAvailable: true, engine: 'cloud' }),
+    (error) => error instanceof background.BackgroundRemovalError && /credits/.test(error.cloudReason) && error.localReason === null,
+  );
+  assert.deepEqual([state.cloudCalls, state.localCalls], [1, 0]);
+
+  state = reset();
+  await assert.rejects(
+    background.removePhotoBackground(source, () => {}, new AbortController().signal, { cloudAvailable: false, engine: 'cloud' }),
+    (error) => error instanceof background.BackgroundRemovalError && /isn't available/.test(error.cloudReason),
+  );
+  assert.equal(state.cloudCalls, 0);
 });
 
 test('cloud failure switches automatically to the on-device model exactly once', async () => {

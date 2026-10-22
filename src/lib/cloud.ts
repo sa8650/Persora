@@ -1,4 +1,4 @@
-import type { PhotoStudioPhoto, PhotoStudioSaveInput, AdminConsoleSnapshot, AdminMetrics, AiControls, AlarmRingtone, BillingSnapshot, BusinessCardDraft, BusinessSocialLink, DigitalBusinessCard, DocumentTypeOption, MedicalRecord, MedicalRecordDraft, MedicalRecordFile, MedicalRecordLink, PersoraContact, PaymentRecord, ProjectDetail, ProjectField, ProjectFieldAttachment, ProjectSubtask, ProjectFieldComment, ProjectFieldRequest, ProjectFolder, ProjectFolderColor, ProjectFieldStatus, ProjectKind, ProjectMemberRole, ProjectRecord, ProjectSummary, ProjectNotification, ProjectNotificationPreferences, PublicDigitalBusinessCard, ShareComment, ShareNotification, SharePermission, SharedDirection, SharedVaultEntry, RecordShareEntry, SiteContent, SmartScanFieldDefinition, SmartScanResult, SubscriptionPlan, TimelineAttachment, TimelineDraft, TimelineEvent, TransferProgress, VaultFile, VaultFolder, VaultFolderDraft, VaultFolderScope, VaultItem } from "../types";
+import type { PhotoStudioPhoto, PhotoStudioSaveInput, RecordShareType, SharedPhotoRecord, AdminConsoleSnapshot, AdminMetrics, AiControls, AlarmRingtone, BillingSnapshot, BusinessCardDraft, BusinessSocialLink, DigitalBusinessCard, DocumentTypeOption, MedicalRecord, MedicalRecordDraft, MedicalRecordFile, MedicalRecordLink, PersoraContact, PaymentRecord, ProjectDetail, ProjectField, ProjectFieldAttachment, ProjectSubtask, ProjectFieldComment, ProjectFieldRequest, ProjectFolder, ProjectFolderColor, ProjectFieldStatus, ProjectKind, ProjectMemberRole, ProjectRecord, ProjectSummary, ProjectNotification, ProjectNotificationPreferences, PublicDigitalBusinessCard, ShareComment, ShareNotification, SharePermission, SharedDirection, SharedVaultEntry, RecordShareEntry, SiteContent, SmartScanFieldDefinition, SmartScanResult, SubscriptionPlan, TimelineAttachment, TimelineDraft, TimelineEvent, TransferProgress, VaultFile, VaultFolder, VaultFolderDraft, VaultFolderScope, VaultItem } from "../types";
 import { DEFAULT_SITE_CONTENT } from "../data/siteContent";
 
 // Cloudflare Pages always serves the authenticated Functions API from /api in production.
@@ -220,19 +220,33 @@ export async function loadRecordShares(direction: SharedDirection): Promise<Reco
   const rows = await pagesApiJson<Record<string, unknown>[]>(`/record-shares?direction=${direction === "outgoing" ? "outgoing" : "incoming"}`);
   if (!Array.isArray(rows)) return [];
   return rows.flatMap((row) => {
-    const resourceType = row.resourceType === "contact" || row.resourceType === "business_card" ? row.resourceType : null;
+    const resourceType = row.resourceType === "contact" || row.resourceType === "business_card" || row.resourceType === "photo_studio_photo" ? row.resourceType : null;
     if (!resourceType || !row.record || typeof row.record !== "object") return [];
     const raw = row.record as Record<string, unknown>;
     return [{
       shareId: String(row.shareId || ""), resourceType, resourceId: String(row.resourceId || raw.id || ""),
-      record: resourceType === "contact" ? contactFromRow(raw) : businessCardFromRow(raw),
+      record: resourceType === "contact" ? contactFromRow(raw) : resourceType === "photo_studio_photo" ? sharedPhotoFromRow(raw) : businessCardFromRow(raw),
       owner: row.owner as RecordShareEntry["owner"], recipient: row.recipient as RecordShareEntry["recipient"],
       direction, createdAt: String(row.createdAt || ""),
     }];
   });
 }
 
-export async function createRecordShare(resourceType: "contact" | "business_card", resourceId: string, recipient: string): Promise<void> {
+function sharedPhotoFromRow(raw: Record<string, unknown>): SharedPhotoRecord {
+  return {
+    id: String(raw.id || ""), title: String(raw.title || "Photo"), category: String(raw.category || "other"), fileType: String(raw.file_type || "image/jpeg"),
+    fileSize: Number(raw.file_size) || 0, width: Number(raw.width_px) || 0, height: Number(raw.height_px) || 0,
+    dpi: raw.dpi === null || raw.dpi === undefined || raw.dpi === "" ? null : Number(raw.dpi) || null,
+    createdAt: String(raw.created_at || ""), updatedAt: String(raw.updated_at || ""),
+  };
+}
+
+/** Streams a photo shared with (or by) the signed-in member through record sharing. */
+export async function loadSharedPhotoFile(shareId: string, signal?: AbortSignal): Promise<Blob> {
+  return (await pagesApiRequest(`/record-shares/${encodeURIComponent(shareId)}/file`, { signal })).blob();
+}
+
+export async function createRecordShare(resourceType: RecordShareType, resourceId: string, recipient: string): Promise<void> {
   await postJson("/record-shares", { resourceType, resourceId, recipient });
 }
 
@@ -585,7 +599,7 @@ export async function loadAdminConsole(): Promise<AdminConsoleSnapshot> {
     emailSettings: snapshot.emailSettings || { verificationEnabled: true, senderName: "Persora", senderEmail: "", replyToEmail: "", replyToName: "Persora Support" },
     smartScan: snapshot.smartScan || { enabled: true, usageAvailable: false, totals: { scans: 0, ocrRuns: 0, aiExtractions: 0 }, byUser: {} },
     aiControls: { passwordSuggestions: true, smartScanOcr: true, smartScanExtraction: true, photoBackgroundRemoval: true, ...(snapshot.aiControls || {}) },
-    aiProviders: snapshot.aiProviders || { workersAiConfigured: false, azureDocumentIntelligenceConfigured: false },
+    aiProviders: snapshot.aiProviders || { workersAiConfigured: false, azureDocumentIntelligenceConfigured: false, photoBackgroundProviders: [] },
   };
 }
 

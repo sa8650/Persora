@@ -253,17 +253,19 @@ export interface MaskAssessment { foreground: number; usable: boolean; reason: s
 export function assessAlphaMask(rgba: Uint8ClampedArray | Uint8Array): MaskAssessment {
   const pixels = Math.floor(rgba.length / 4);
   if (!pixels) return { foreground: 0, usable: false, reason: "The result was empty." };
-  let sum = 0; let opaque = 0; let clear = 0;
+  let sum = 0; let opaque = 0; let clear = 0; let uncertain = 0;
   for (let i = 3; i < rgba.length; i += 4) {
     const alpha = rgba[i];
     sum += alpha;
     if (alpha > 245) opaque += 1;
     else if (alpha < 10) clear += 1;
+    else if (alpha > 38 && alpha < 217) uncertain += 1;
   }
   const foreground = sum / (pixels * 255);
   if (foreground < 0.03) return { foreground, usable: false, reason: "No person was detected in the photo." };
   if (clear / pixels < 0.02 || foreground > 0.985) return { foreground, usable: false, reason: "The background was not removed." };
   if (opaque / pixels < 0.01) return { foreground, usable: false, reason: "The subject came out too faint to use." };
+  if (uncertain / pixels > 0.25) return { foreground, usable: false, reason: "The model couldn't separate the person from the background clearly." };
   return { foreground, usable: true, reason: null };
 }
 

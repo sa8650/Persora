@@ -52,7 +52,7 @@ const renderStub = `
   export const WORKING_MAX_EDGE = 3000;
   export const decodeImage = async () => ({ naturalWidth: 413, naturalHeight: 531, width: 413, height: 531 });
   export const createCanvas = () => ({}); export const toWorkingCanvas = () => ({}); export const releaseCanvas = () => {};
-  export const renderComposite = () => {}; export const exportPhoto = async () => ({}); export const applyMask = () => ({});
+  export const renderComposite = () => {}; export const exportPhoto = async () => ({}); export const applyMask = () => ({}); export const buildCutout = () => ({});
   export const sampleRgba = () => new Uint8ClampedArray(); export const encodeForCloud = async () => new Blob();`;
 const esbuild = await import('esbuild');
 const outDir = mkdtempSync(path.join(process.cwd(), 'node_modules', '.ps-view-'));
@@ -63,7 +63,7 @@ await esbuild.build({
   loader: { '.css': 'empty' },
   external: ['react', 'react-dom', 'lucide-react', 'onnxruntime-web', 'onnxruntime-web/webgpu'],
   jsx: 'automatic',
-  define: { 'import.meta.env.PROD': 'true', 'import.meta.env.VITE_USE_PAGES_FUNCTIONS': '"true"', 'import.meta.env.VITE_PHOTO_STUDIO_MODEL_URL': 'undefined', 'import.meta.env.VITE_PHOTO_STUDIO_ORT_WASM_BASE': 'undefined' },
+  define: { 'import.meta.env.PROD': 'true', 'import.meta.env.VITE_USE_PAGES_FUNCTIONS': '"true"', 'import.meta.env.VITE_PHOTO_STUDIO_MODEL_BASE': 'undefined', 'import.meta.env.VITE_PHOTO_STUDIO_ORT_WASM_BASE': 'undefined' },
   plugins: [{ name: 'render-stub', setup(build) {
     build.onResolve({ filter: /photo-studio-render$/ }, () => ({ path: 'render-stub', namespace: 'stub' }));
     build.onLoad({ filter: /.*/, namespace: 'stub' }, () => ({ contents: renderStub, loader: 'js' }));
@@ -105,12 +105,47 @@ test('Photo Studio lists saved photos with folders, categories and both primary 
   const { root, container } = await mount();
   assert.match(text(), /Photo Studio/);
   assert.match(text(), /Passport 2026/);
-  assert.match(text(), /413 × 531 px · 35 × 45 mm/);
   assert.match(text(), /Visa 2026/);
+  // Cards keep the print size and file info, but technical details live in the viewer.
+  const card = container.querySelector('.ps-card');
+  assert.match(card.textContent, /35 × 45 mm/);
+  assert.match(card.textContent, /50 KB|50\.0 KB/);
+  assert.doesNotMatch(card.textContent, /413 × 531|JPEG|300 DPI|7:9/);
+  assert.equal(card.querySelector('.ps-checker'), null, 'no checkerboard on cards');
+  await click(card.querySelector('.ps-card-media'));
+  const viewer = document.querySelector('.ps-viewer-modal') || document.querySelector('[role="dialog"]');
+  assert.match(viewer.textContent, /413 × 531 px/);
+  assert.match(viewer.textContent, /JPEG/);
+  assert.match(viewer.textContent, /7:9/);
+  assert.match(viewer.textContent, /300 DPI/);
+  await click(button('Close') || viewer.querySelector('[aria-label="Close"]'));
   assert.ok(button('Upload & Organize'));
   assert.ok(button('Create & Edit'));
   assert.ok(apiCalls.some((call) => call.target === '/api/vault/folders?scope=photo-studio'));
   await act(async () => root.unmount()); container.remove();
+});
+
+test('Share in the card menu opens the shared Persora sharing modal and shares the photo', async () => {
+  const shared = [];
+  const { root, container } = await mount({ canShare: true, onShare: async (photo, recipient) => { shared.push([photo.id, recipient]); } });
+  await click(container.querySelector('.ps-card button[aria-haspopup="menu"]'));
+  const share = [...document.querySelectorAll('[role="menuitem"]')].find((el) => el.textContent.trim() === 'Share');
+  assert.ok(share, 'Share item in the three-dot menu');
+  await click(share);
+  const dialog = [...document.querySelectorAll('[role="dialog"]')].find((el) => /Share with Persora member/.test(el.textContent));
+  assert.ok(dialog, 'existing ShareRecordDialog opens');
+  assert.match(dialog.textContent, /Passport 2026/);
+  const input = dialog.querySelector('form.record-share-form input');
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+    setter.call(input, 'friend@example.com');
+    input.dispatchEvent(new window.Event('input', { bubbles: true }));
+  });
+  await act(async () => { dialog.querySelector('form.record-share-form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true })); });
+  await wait(60);
+  assert.deepEqual(shared, [[PHOTO_ID, 'friend@example.com']]);
+  await act(async () => root.unmount()); container.remove();
+  document.querySelectorAll('.modal-backdrop, [role="dialog"]').forEach((el) => el.remove());
 });
 
 test('Upload & Organize previews locally, uploads nothing until Save, and Cancel leaves nothing', async () => {

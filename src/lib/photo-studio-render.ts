@@ -3,6 +3,7 @@
 // locally, on in-memory canvases. Nothing is uploaded by this module.
 import { withImageDpi } from "../../cloudflare/photo-metadata.js";
 import { applyAdjustments, coverScale, isNeutral, type Adjustments, type PhotoUnit } from "./photo-studio";
+import { decontaminateEdges, stretchAlpha } from "./photo-matte";
 
 /** Longest edge kept for the in-memory working copy (ample for official photos). */
 export const WORKING_MAX_EDGE = 3000;
@@ -149,6 +150,34 @@ export function applyMask(source: HTMLCanvasElement, mask: CanvasImageSource): H
   ctx.imageSmoothingQuality = "high";
   ctx.drawImage(mask, 0, 0, cutout.width, cutout.height);
   ctx.globalCompositeOperation = "source-over";
+  return cutout;
+}
+
+/**
+ * Builds the final cut-out from the untouched source and a mask (any size;
+ * its alpha channel is stretched over the source). The matte is cleaned up
+ * and edge colours are decontaminated so a new background shows no halo.
+ */
+export function buildCutout(source: HTMLCanvasElement, mask: CanvasImageSource): HTMLCanvasElement {
+  const { width, height } = source;
+  const maskLayer = createCanvas(width, height);
+  const mctx = context2d(maskLayer, true);
+  mctx.imageSmoothingEnabled = true;
+  mctx.imageSmoothingQuality = "high";
+  mctx.drawImage(mask, 0, 0, width, height);
+  const maskPixels = mctx.getImageData(0, 0, width, height).data;
+  releaseCanvas(maskLayer);
+  const raw = new Uint8ClampedArray(width * height);
+  for (let index = 0; index < raw.length; index += 1) raw[index] = maskPixels[index * 4 + 3];
+  const alpha = stretchAlpha(raw);
+  const sctx = context2d(source, true);
+  const original = sctx.getImageData(0, 0, width, height).data;
+  const refined = decontaminateEdges(original, alpha, width, height);
+  const cutout = createCanvas(width, height);
+  const cctx = context2d(cutout);
+  const image = cctx.createImageData(width, height);
+  image.data.set(refined);
+  cctx.putImageData(image, 0, 0);
   return cutout;
 }
 

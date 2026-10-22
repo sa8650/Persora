@@ -433,7 +433,7 @@ create table if not exists public.vault_shares (
 
 create table if not exists public.record_shares (
   id uuid primary key default gen_random_uuid(),
-  resource_type text not null check (resource_type in ('contact', 'business_card')),
+  resource_type text not null check (resource_type in ('contact', 'business_card', 'photo_studio_photo')),
   resource_id uuid not null,
   owner_id uuid not null references public.profiles(id) on delete cascade,
   recipient_id uuid not null references public.profiles(id) on delete cascade,

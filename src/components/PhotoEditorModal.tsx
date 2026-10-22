@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import {
-  AlertTriangle, Check, Crop, Eraser, FlipHorizontal2, FlipVertical2, Loader2, Move, Palette, RefreshCw, RotateCcw, RotateCw, ScanFace, ShieldCheck, SlidersHorizontal, Sparkles, Undo2, Wand2, X,
+  AlertTriangle, Check, Cpu, Crop, Eraser, Eye, FlipHorizontal2, FlipVertical2, Loader2, Move, Palette, RefreshCw, RotateCcw, RotateCw, ScanFace, ShieldCheck, SlidersHorizontal, Sparkles, Undo2, Wand2, X,
 } from "lucide-react";
 import type { PhotoStudioPhoto } from "../types";
 import {
   BACKGROUND_SWATCHES, NEUTRAL_ADJUSTMENTS, PHOTO_SIZE_PRESETS, analyzePhoto, convertSize, matchPreset, normalizeHexColor, outputPixels, printSizeLabel,
   type Adjustments, type PhotoAnalysis, type PhotoUnit,
 } from "../lib/photo-studio";
-import { decodeImage, exportPhoto, releaseCanvas, renderComposite, toWorkingCanvas, type EditState, type OutputFormat } from "../lib/photo-studio-render";
-import { BackgroundRemovalError, removePhotoBackground, type BackgroundStatus } from "../lib/photo-background";
+import { decodeImage, exportPhoto, releaseCanvas, renderComposite, toWorkingCanvas, type BackgroundMode, type EditState, type OutputFormat } from "../lib/photo-studio-render";
+import { BackgroundRemovalError, removePhotoBackground, type BackgroundEngine, type BackgroundStatus } from "../lib/photo-background";
 import { LOCAL_MODEL_NAME } from "../lib/local-matting";
 import ModalPortal from "./ModalPortal";
 import { ConfirmDialog } from "./VaultDialogs";
@@ -58,6 +58,15 @@ function initialState(width: number, height: number, photo: PhotoStudioPhoto | n
 
 function clamp(value: number, min: number, max: number) { return Math.max(min, Math.min(max, value)); }
 
+interface BgResultInfo { source: "cloud" | "local"; runtime?: string; fallbackReason?: string }
+/** One undo step: the cut-out and background settings before a removal. */
+interface BgHistoryEntry { cutout: HTMLCanvasElement | null; result: BgResultInfo | null; background: BackgroundMode; backgroundColor: string; format: OutputFormat }
+const BG_HISTORY_LIMIT = 4;
+
+function resultLabel(result: BgResultInfo): string {
+  return result.source === "cloud" ? "Persora AI" : `On this device${result.runtime ? ` · ${result.runtime === "webgpu" ? "WebGPU" : "CPU"}` : ""}`;
+}
+
 /**
  * Create & Edit editor. Works entirely on in-memory canvases; the only network
  * use is the optional background removal (cloud AI first, on-device fallback).
@@ -78,7 +87,12 @@ export default function PhotoEditorModal({ source, cloudAvailable, organizing, o
   const [guide, setGuide] = useState(true);
   const [bgStatus, setBgStatus] = useState<BackgroundStatus | null>(null);
   const [bgError, setBgError] = useState<BackgroundRemovalError | null>(null);
-  const [bgResult, setBgResult] = useState<{ source: "cloud" | "local"; runtime?: string; fallbackReason?: string } | null>(null);
+  const [bgResult, setBgResult] = useState<BgResultInfo | null>(null);
+  const [bgEngine, setBgEngine] = useState<BackgroundEngine>("auto");
+  const [comparing, setComparing] = useState(false);
+  const [historyDepth, setHistoryDepth] = useState(0);
+  const historyRef = useRef<BgHistoryEntry[]>([]);
+  const latestRef = useRef<{ state: EditState | null; bgResult: BgResultInfo | null }>({ state: null, bgResult: null });
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState("");
   const [confirmDiscard, setConfirmDiscard] = useState(false);
@@ -107,9 +121,12 @@ export default function PhotoEditorModal({ source, cloudAvailable, organizing, o
       abortRef.current?.abort();
       releaseCanvas(sourceRef.current); sourceRef.current = null;
       releaseCanvas(cutoutRef.current); cutoutRef.current = null;
+      for (const entry of historyRef.current) releaseCanvas(entry.cutout);
+      historyRef.current = [];
     };
   }, [source.blob, source.photo]);
 
+  latestRef.current = { state, bgResult };
   const output = useMemo(() => state ? outputPixels(state) : { width: 0, height: 0, clamped: false }, [state]);
   const previewScale = output.width && output.height ? Math.min(1, PREVIEW_MAX / Math.max(output.width, output.height)) : 1;
   const previewW = Math.max(1, Math.round(output.width * previewScale));
@@ -119,10 +136,11 @@ export default function PhotoEditorModal({ source, cloudAvailable, organizing, o
   useEffect(() => {
     if (!ready || !state || !sourceRef.current || !previewRef.current) return;
     const frame = requestAnimationFrame(() => {
-      if (sourceRef.current && previewRef.current) renderComposite(previewRef.current, sourceRef.current, cutoutRef.current, state, previewW, previewH);
+      // "Compare" previews the untouched original; the cut-out is kept.
+      if (sourceRef.current && previewRef.current) renderComposite(previewRef.current, sourceRef.current, cutoutRef.current, comparing ? { ...state, background: "original" } : state, previewW, previewH);
     });
     return () => cancelAnimationFrame(frame);
-  }, [ready, state, previewW, previewH, bgResult]);
+  }, [ready, state, previewW, previewH, bgResult, comparing]);
 
   const dirty = Boolean(state && (JSON.stringify(state) !== initialRef.current || bgResult));
   const busy = Boolean(bgStatus) || exporting;
@@ -184,27 +202,55 @@ export default function PhotoEditorModal({ source, cloudAvailable, organizing, o
     if (moves[event.key]) { event.preventDefault(); update(moves[event.key]); }
   };
 
-  const runBackgroundRemoval = async () => {
+  const runBackgroundRemoval = async (engine: BackgroundEngine = "auto") => {
     if (!sourceRef.current || bgStatus) return;
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
     setBgError(null);
+    setBgEngine(engine);
+    setComparing(false);
     try {
-      const result = await removePhotoBackground(sourceRef.current, (status) => { if (!controller.signal.aborted) setBgStatus(status); }, controller.signal, { cloudAvailable });
+      // Always works from the untouched original — never from a previous cut-out.
+      const result = await removePhotoBackground(sourceRef.current, (status) => { if (!controller.signal.aborted) setBgStatus(status); }, controller.signal, { cloudAvailable, engine });
       if (controller.signal.aborted) { releaseCanvas(result.cutout); return; }
-      releaseCanvas(cutoutRef.current);
+      // Keep the previous result as an undo step.
+      const latest = latestRef.current;
+      if (latest.state) {
+        historyRef.current.push({ cutout: cutoutRef.current, result: latest.bgResult, background: latest.state.background, backgroundColor: latest.state.backgroundColor, format: latest.state.format });
+        while (historyRef.current.length > BG_HISTORY_LIMIT) releaseCanvas(historyRef.current.shift()?.cutout);
+        setHistoryDepth(historyRef.current.length);
+      } else {
+        releaseCanvas(cutoutRef.current);
+      }
       cutoutRef.current = result.cutout;
       setBgResult({ source: result.source, runtime: result.runtime, fallbackReason: result.fallbackReason });
       setState((current) => current ? { ...current, background: current.background === "original" ? "color" : current.background } : current);
     } catch (error) {
       if (controller.signal.aborted) return;
-      setBgError(error instanceof BackgroundRemovalError ? error : new BackgroundRemovalError("—", error instanceof Error ? error.message : "Background removal failed."));
+      setBgError(error instanceof BackgroundRemovalError ? error : new BackgroundRemovalError(null, error instanceof Error ? error.message : "Background removal failed."));
     } finally {
       if (abortRef.current === controller) { abortRef.current = null; setBgStatus(null); }
     }
   };
   const cancelBackgroundRemoval = () => { abortRef.current?.abort(); abortRef.current = null; setBgStatus(null); };
+  /** Steps back to the result (or the original photo) before the last removal. */
+  const undoBackgroundRemoval = () => {
+    if (bgStatus) return;
+    const previous = historyRef.current.pop();
+    setHistoryDepth(historyRef.current.length);
+    releaseCanvas(cutoutRef.current);
+    cutoutRef.current = previous?.cutout || null;
+    setBgResult(previous?.result || null);
+    setBgError(null);
+    setComparing(false);
+    setState((current) => current ? {
+      ...current,
+      background: previous?.cutout ? previous.background : "original",
+      backgroundColor: previous ? previous.backgroundColor : current.backgroundColor,
+      format: previous ? previous.format : current.format,
+    } : current);
+  };
 
   const editSummary = useCallback((current: EditState): string[] => {
     const lines: string[] = [];
@@ -283,14 +329,15 @@ export default function PhotoEditorModal({ source, cloudAvailable, organizing, o
                 onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
                 onWheel={onWheel} onKeyDown={onStageKey}
               />
-              {guide && <svg className="ps-stage-guide" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+              {comparing && <span className="ps-compare-tag" aria-live="polite">Original photo</span>}
+              {guide && !comparing && <svg className="ps-stage-guide" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
                 <ellipse cx="50" cy="44" rx="23" ry="31" />
                 <line x1="50" y1="4" x2="50" y2="96" />
                 <line x1="20" y1="40" x2="80" y2="40" />
               </svg>}
               {bgStatus && <div className="ps-stage-busy" role="status" aria-live="polite">
                 <Loader2 className="ps-spin" size={22}/>
-                <b>{bgStatus.stage === "switching" ? "Switching to on-device removal" : bgStatus.stage === "cloud" ? "Persora AI" : "On-device model"}</b>
+                <b>{bgStatus.stage === "switching" ? "Switching to on-device removal" : bgStatus.stage === "cloud" ? "Persora AI" : bgStatus.stage === "refining" ? "Finishing" : "On-device model"}</b>
                 <span>{bgStatus.message}</span>
                 {bgStatus.stage === "switching" && <small>{bgStatus.reason}</small>}
                 {bgProgress !== undefined && <span className="ps-progress"><i style={{ width: `${bgProgress}%` }}/></span>}
@@ -303,6 +350,39 @@ export default function PhotoEditorModal({ source, cloudAvailable, organizing, o
           </div>
 
           <div className="ps-panel">
+            <section className={`ps-remove-card ${bgResult ? "is-done" : ""}`} aria-label="Background removal">
+              {!bgResult ? <>
+                <button type="button" className="editor-submit ps-remove-button" onClick={() => void runBackgroundRemoval("auto")} disabled={Boolean(bgStatus) || exporting}>{bgStatus ? <><Loader2 className="ps-spin" size={15}/> Removing background…</> : <><Sparkles size={15}/> Remove Background</>}</button>
+                <small><ShieldCheck size={12}/> {cloudAvailable ? "Uses Persora AI first. If it's unavailable, an on-device model takes over and your photo stays on this device." : "Runs on this device — your photo isn't uploaded."}</small>
+              </> : <>
+                <div className="ps-remove-status">
+                  <span className="ps-bg-badge"><Check size={13}/> Background removed · {resultLabel(bgResult)}</span>
+                  {bgResult.source === "local" && <small>{LOCAL_MODEL_NAME}.{bgResult.fallbackReason ? ` Persora AI wasn't used: ${bgResult.fallbackReason}` : ""}</small>}
+                </div>
+                <div className="ps-remove-actions">
+                  <button type="button" className={`quiet-button ${comparing ? "is-on" : ""}`} aria-pressed={comparing} onClick={() => setComparing((value) => !value)} disabled={Boolean(bgStatus)} title="Preview the original photo"><Eye size={14}/> {comparing ? "Show result" : "Compare"}</button>
+                  <button type="button" className="quiet-button" onClick={undoBackgroundRemoval} disabled={Boolean(bgStatus)} title={historyDepth ? "Go back to the previous result" : "Go back to the original photo"}><Undo2 size={14}/> Undo</button>
+                </div>
+                <div className="ps-remove-again" role="group" aria-label="Remove the background again">
+                  <span>Not right? Remove again with</span>
+                  <div>
+                    <button type="button" className="quiet-button" onClick={() => void runBackgroundRemoval("cloud")} disabled={Boolean(bgStatus) || !cloudAvailable} title={cloudAvailable ? "Run Persora AI on the original photo" : "Cloud AI isn't available in this workspace"}><Sparkles size={14}/> Persora AI</button>
+                    <button type="button" className="quiet-button" onClick={() => void runBackgroundRemoval("local")} disabled={Boolean(bgStatus)} title="Run the on-device model on the original photo"><Cpu size={14}/> On this device</button>
+                  </div>
+                </div>
+              </>}
+              {bgError && !bgStatus && <div className="ps-bg-error" role="alert">
+                <b><AlertTriangle size={14}/> Background removal didn't work</b>
+                {bgError.cloudReason !== null && <span>Persora AI: {bgError.cloudReason}</span>}
+                {bgError.localReason !== null && <span>On-device model: {bgError.localReason}</span>}
+                <p>{bgResult ? "Your previous result is still applied." : "Nothing was changed."} Your original photo is untouched.</p>
+                <div className="ps-bg-error-actions">
+                  <button type="button" className="quiet-button" onClick={() => void runBackgroundRemoval(bgEngine)}><RefreshCw size={14}/> Retry</button>
+                  {bgError.localReason === null && <button type="button" className="quiet-button" onClick={() => void runBackgroundRemoval("local")}><Cpu size={14}/> Try on this device</button>}
+                  {bgError.cloudReason === null && cloudAvailable && <button type="button" className="quiet-button" onClick={() => void runBackgroundRemoval("cloud")}><Sparkles size={14}/> Try Persora AI</button>}
+                </div>
+              </div>}
+            </section>
             <div className="ps-tabs" role="tablist" aria-label="Editing tools">
               {([["frame", "Crop & size", Crop], ["background", "Background", Eraser], ["adjust", "Adjust", SlidersHorizontal]] as const).map(([id, label, Icon]) => <button key={id} type="button" role="tab" aria-selected={tab === id} className={tab === id ? "is-active" : ""} onClick={() => setTab(id)}><Icon size={14}/>{label}</button>)}
             </div>
@@ -334,29 +414,13 @@ export default function PhotoEditorModal({ source, cloudAvailable, organizing, o
             </div>}
 
             {tab === "background" && <div className="ps-tool-group" role="tabpanel" aria-label="Background">
-              {!bgResult && !bgError && <div className="ps-bg-intro">
-                <p>Remove the background, then choose a solid colour accepted for official photos.</p>
-                <button type="button" className="section-add-button ps-wide" onClick={() => void runBackgroundRemoval()} disabled={Boolean(bgStatus)}><Sparkles size={15}/> Remove background</button>
-                <small><ShieldCheck size={12}/> {cloudAvailable ? "Uses Persora AI first. If it's unavailable, an on-device model takes over automatically and your photo stays on this device." : "Runs on this device — your photo isn't uploaded."}</small>
-              </div>}
-              {bgError && !bgStatus && <div className="ps-bg-error" role="alert">
-                <b><AlertTriangle size={14}/> Background removal didn't work</b>
-                <span>Persora AI: {bgError.cloudReason}</span>
-                <span>On-device model: {bgError.localReason}</span>
-                <p>Your photo and edits are kept. You can retry, or continue with the original background.</p>
-                <button type="button" className="quiet-button" onClick={() => void runBackgroundRemoval()}><RefreshCw size={14}/> Retry</button>
-              </div>}
-              {bgResult && <div className="ps-bg-done">
-                <span className="ps-bg-badge"><Check size={13}/> {bgResult.source === "cloud" ? "Removed with Persora AI" : `Removed on this device${bgResult.runtime ? ` · ${bgResult.runtime === "webgpu" ? "WebGPU" : "CPU"}` : ""}`}</span>
-                {bgResult.source === "local" && <small>{LOCAL_MODEL_NAME}. {bgResult.fallbackReason ? `Cloud AI wasn't used: ${bgResult.fallbackReason}` : ""}</small>}
-              </div>}
+              <p className="ps-muted-note ps-bg-tab-note">{bgResult ? "Choose the new background. Use Compare, Undo or Remove again above if the cut-out isn't right." : "Press Remove Background above. Colour backgrounds become available once the background is removed."}</p>
               <div className="ps-bg-options" role="radiogroup" aria-label="Background">
                 <button type="button" role="radio" aria-checked={state.background === "original"} className={`ps-bg-option ${state.background === "original" ? "is-selected" : ""}`} onClick={() => update({ background: "original" })}><span className="ps-bg-swatch ps-bg-original"/>Original</button>
                 {BACKGROUND_SWATCHES.map((swatch) => <button key={swatch.id} type="button" role="radio" aria-checked={state.background === "color" && state.backgroundColor === swatch.color} disabled={!bgResult} className={`ps-bg-option ${state.background === "color" && state.backgroundColor === swatch.color ? "is-selected" : ""}`} onClick={() => update({ background: "color", backgroundColor: swatch.color })}><span className="ps-bg-swatch" style={{ background: swatch.color }}/>{swatch.label}</button>)}
                 <label className={`ps-bg-option ${state.background === "color" && !BACKGROUND_SWATCHES.some((swatch) => swatch.color === state.backgroundColor) ? "is-selected" : ""} ${!bgResult ? "is-disabled" : ""}`}><input type="color" value={state.backgroundColor} disabled={!bgResult} onChange={(event) => update({ background: "color", backgroundColor: normalizeHexColor(event.target.value) })} aria-label="Custom background colour"/><Palette size={13}/>Custom</label>
                 <button type="button" role="radio" aria-checked={state.background === "transparent"} disabled={!bgResult} className={`ps-bg-option ${state.background === "transparent" ? "is-selected" : ""}`} onClick={() => update({ background: "transparent", format: "image/png" })}><span className="ps-bg-swatch ps-checker"/>Transparent</button>
               </div>
-              {!bgResult && <small className="ps-muted-note">Colour backgrounds become available after the background is removed.</small>}
             </div>}
 
             {tab === "adjust" && <div className="ps-tool-group" role="tabpanel" aria-label="Adjustments">

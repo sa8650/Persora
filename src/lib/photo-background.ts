@@ -1,22 +1,30 @@
 // Photo Studio — background removal orchestration.
-//   1. Primary: Persora's cloud AI (Cloudflare Images segment=foreground via the
-//      authenticated Pages API; stateless, nothing stored).
-//   2. Automatic fallback when the primary is unavailable, fails, times out or
-//      returns an unusable mask: the on-device MODNet model (no image leaves
-//      the browser).
-//   3. If both fail: a clear error. Each attempt runs exactly once — no hidden
-//      retries; the UI offers an explicit Retry.
+//   engine "auto" (default, the Remove Background button):
+//     1. Persora's cloud AI — Workers AI `bria/remove-background` (RMBG 2.0)
+//        through the authenticated Pages API. Nothing is stored by Persora.
+//     2. Automatic fallback when the cloud is unavailable, fails, times out or
+//        returns an unusable mask: the on-device ORMBG model (WebGPU, else
+//        WebAssembly). No image leaves the browser on this path.
+//   engine "cloud" / "local" (Remove again → a specific engine): only that
+//   engine runs, so a member can compare results after a poor cut-out.
+// Every result goes through the same refinement (matte clean-up + edge colour
+// decontamination) and the same quality check. A result is only returned when
+// it passed; otherwise BackgroundRemovalError explains each engine's failure.
+// Each attempt runs exactly once — no hidden retries; the UI offers Retry.
 import { requestCloudBackgroundRemoval } from "./cloud";
 import { assessAlphaMask } from "./photo-studio";
-import { applyMask, decodeImage, encodeForCloud, releaseCanvas, sampleRgba, toWorkingCanvas } from "./photo-studio-render";
+import { buildCutout, decodeImage, encodeForCloud, releaseCanvas, sampleRgba } from "./photo-studio-render";
 import { runLocalMatting, type LocalProgress, type LocalRuntime } from "./local-matting";
 
-const CLOUD_TIMEOUT_MS = 35_000;
+const CLOUD_TIMEOUT_MS = 60_000;
+
+export type BackgroundEngine = "auto" | "cloud" | "local";
 
 export type BackgroundStatus =
   | { stage: "cloud"; message: string }
   | { stage: "switching"; message: string; reason: string }
-  | { stage: "local"; message: string; progress?: number; runtime?: LocalRuntime };
+  | { stage: "local"; message: string; progress?: number; runtime?: LocalRuntime }
+  | { stage: "refining"; message: string };
 
 export interface BackgroundResult {
   cutout: HTMLCanvasElement;
@@ -27,9 +35,11 @@ export interface BackgroundResult {
 }
 
 export class BackgroundRemovalError extends Error {
-  readonly cloudReason: string;
-  readonly localReason: string;
-  constructor(cloudReason: string, localReason: string) {
+  /** null when the cloud engine wasn't attempted. */
+  readonly cloudReason: string | null;
+  /** null when the on-device engine wasn't attempted. */
+  readonly localReason: string | null;
+  constructor(cloudReason: string | null, localReason: string | null) {
     super("Background removal didn't work on this photo.");
     this.name = "BackgroundRemovalError";
     this.cloudReason = cloudReason;
@@ -42,7 +52,22 @@ function errorText(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
-async function tryCloud(source: HTMLCanvasElement, signal: AbortSignal): Promise<HTMLCanvasElement> {
+function checkAborted(signal: AbortSignal) {
+  if (signal.aborted) throw new DOMException("Cancelled", "AbortError");
+}
+
+/** Builds the refined cut-out and verifies it; never returns an unusable result. */
+function finish(source: HTMLCanvasElement, mask: CanvasImageSource, label: string): HTMLCanvasElement {
+  const cutout = buildCutout(source, mask);
+  const verdict = assessAlphaMask(sampleRgba(cutout));
+  if (!verdict.usable) {
+    releaseCanvas(cutout);
+    throw new Error(`${label}: ${verdict.reason}`);
+  }
+  return cutout;
+}
+
+async function tryCloud(source: HTMLCanvasElement, onStatus: (status: BackgroundStatus) => void, signal: AbortSignal): Promise<HTMLCanvasElement> {
   const controller = new AbortController();
   const abort = () => controller.abort();
   signal.addEventListener("abort", abort, { once: true });
@@ -62,13 +87,11 @@ async function tryCloud(source: HTMLCanvasElement, signal: AbortSignal): Promise
       throw new Error(message);
     }
     const blob = await response.blob();
+    checkAborted(signal);
     const image = await decodeImage(blob);
-    const maskCanvas = toWorkingCanvas(image);
-    const cutout = applyMask(source, maskCanvas);
-    releaseCanvas(maskCanvas);
-    const verdict = assessAlphaMask(sampleRgba(cutout));
-    if (!verdict.usable) { releaseCanvas(cutout); throw new Error(`The cloud AI result wasn't usable: ${verdict.reason}`); }
-    return cutout;
+    checkAborted(signal);
+    onStatus({ stage: "refining", message: "Cleaning up the edges…" });
+    return finish(source, image, "The cloud AI result wasn't usable");
   } catch (error) {
     if (signal.aborted) throw new DOMException("Cancelled", "AbortError");
     if (controller.signal.aborted) throw new Error("The cloud AI service timed out.");
@@ -84,42 +107,57 @@ async function tryLocal(source: HTMLCanvasElement, onStatus: (status: Background
     if (signal.aborted) return;
     if (progress.phase === "download") {
       const percent = progress.total ? Math.round(((progress.loaded || 0) / progress.total) * 100) : undefined;
-      onStatus({ stage: "local", message: "Downloading the on-device model (first use only)…", progress: percent });
+      onStatus({ stage: "local", message: `Downloading the on-device model${progress.sizeLabel ? ` (${progress.sizeLabel}, first use only)` : " (first use only)"}…`, progress: percent, runtime: progress.runtime });
     } else if (progress.phase === "initialize") {
       onStatus({ stage: "local", message: progress.runtime === "webgpu" ? "Starting the on-device model with WebGPU…" : "Starting the on-device model (CPU)…", runtime: progress.runtime });
     } else {
-      onStatus({ stage: "local", message: "Removing the background on this device…", runtime: progress.runtime });
+      onStatus({ stage: "local", message: progress.runtime === "webgpu" ? "Removing the background on this device (WebGPU)…" : "Removing the background on this device — this can take up to a minute…", runtime: progress.runtime });
     }
   };
   const { mask, runtime } = await runLocalMatting(source, report);
-  if (signal.aborted) { releaseCanvas(mask); throw new DOMException("Cancelled", "AbortError"); }
-  const cutout = applyMask(source, mask);
-  releaseCanvas(mask);
-  const verdict = assessAlphaMask(sampleRgba(cutout));
-  if (!verdict.usable) { releaseCanvas(cutout); throw new Error(verdict.reason || "The on-device result wasn't usable."); }
-  return { cutout, runtime };
+  try {
+    checkAborted(signal);
+    onStatus({ stage: "refining", message: "Cleaning up the edges…" });
+    const cutout = finish(source, mask, "The on-device result wasn't usable");
+    return { cutout, runtime };
+  } finally {
+    releaseCanvas(mask);
+  }
 }
 
 /**
- * Removes the background from `source` (an in-memory working canvas). Tries
- * the cloud AI first and falls back to the on-device model automatically.
+ * Removes the background from `source` (an in-memory working canvas, never
+ * modified). `engine` "auto" tries the cloud AI first and falls back to the
+ * on-device model automatically; "cloud" / "local" run only that engine.
  */
-export async function removePhotoBackground(source: HTMLCanvasElement, onStatus: (status: BackgroundStatus) => void, signal: AbortSignal, options: { cloudAvailable: boolean }): Promise<BackgroundResult> {
-  let cloudReason = "Cloud AI isn't available in this workspace.";
-  if (options.cloudAvailable) {
-    onStatus({ stage: "cloud", message: "Removing the background with Persora AI…" });
-    try {
-      const cutout = await tryCloud(source, signal);
-      return { cutout, source: "cloud" };
-    } catch (error) {
-      if (signal.aborted) throw new DOMException("Cancelled", "AbortError");
-      cloudReason = errorText(error, "The cloud AI service failed.");
+export async function removePhotoBackground(
+  source: HTMLCanvasElement,
+  onStatus: (status: BackgroundStatus) => void,
+  signal: AbortSignal,
+  options: { cloudAvailable: boolean; engine?: BackgroundEngine },
+): Promise<BackgroundResult> {
+  const engine = options.engine || "auto";
+  let cloudReason: string | null = null;
+  if (engine !== "local") {
+    if (!options.cloudAvailable) {
+      cloudReason = "Cloud AI isn't available in this workspace.";
+      if (engine === "cloud") throw new BackgroundRemovalError(cloudReason, null);
+    } else {
+      onStatus({ stage: "cloud", message: "Removing the background with Persora AI…" });
+      try {
+        const cutout = await tryCloud(source, onStatus, signal);
+        return { cutout, source: "cloud" };
+      } catch (error) {
+        if (signal.aborted) throw new DOMException("Cancelled", "AbortError");
+        cloudReason = errorText(error, "The cloud AI service failed.");
+        if (engine === "cloud") throw new BackgroundRemovalError(cloudReason, null);
+      }
     }
+    onStatus({ stage: "switching", message: "Switching to the on-device model — your photo stays on this device.", reason: cloudReason || "" });
   }
-  onStatus({ stage: "switching", message: "Switching to the on-device model — your photo stays on this device.", reason: cloudReason });
   try {
     const { cutout, runtime } = await tryLocal(source, onStatus, signal);
-    return { cutout, source: "local", runtime, fallbackReason: cloudReason };
+    return { cutout, source: "local", runtime, ...(cloudReason ? { fallbackReason: cloudReason } : {}) };
   } catch (error) {
     if (signal.aborted) throw new DOMException("Cancelled", "AbortError");
     throw new BackgroundRemovalError(cloudReason, errorText(error, "The on-device model failed."));
