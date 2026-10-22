@@ -50,11 +50,47 @@ test('permission predicates mirror the server-side matrix', () => {
   assert.equal(helpers.canDeleteComment(owner, { author_id: 'a' }, 'b'), true);
 });
 
+const checklist = (done, total) => Array.from({ length: total }, (_, index) => ({ id: `t-${index}`, title: `Task ${index}`, completed: index < done, assignee_id: null }));
+
+test('checklistProgress derives (completed ÷ total) × 100 and is 0% when empty', () => {
+  assert.deepEqual(helpers.checklistProgress([]), { total: 0, completed: 0, percent: 0 });
+  assert.deepEqual(helpers.checklistProgress(undefined), { total: 0, completed: 0, percent: 0 });
+  assert.equal(helpers.checklistProgress(checklist(1, 3)).percent, 33);
+  assert.equal(helpers.checklistProgress(checklist(2, 3)).percent, 67);
+  assert.equal(helpers.checklistProgress(checklist(4, 4)).percent, 100);
+  // The stored/manual progress value and status never override the checklist.
+  assert.equal(helpers.fieldProgress(mkField({ id: 'x', status: 'completed', progress: 100 })), 0);
+  assert.equal(helpers.fieldProgress(mkField({ id: 'y', progress: 90, subtasks: checklist(1, 4) })), 25);
+});
+
+test('planChecklistSync diffs edited checklist rows against the saved checklist', () => {
+  const saved = [
+    { id: 's1', title: 'Keep', completed: false, assignee_id: null },
+    { id: 's2', title: 'Rename me', completed: false, assignee_id: 'u1' },
+    { id: 's3', title: 'Remove me', completed: true, assignee_id: null },
+  ];
+  const draft = [
+    { key: 's1', id: 's1', title: 'Keep', completed: true, assigneeId: null },
+    { key: 's2', id: 's2', title: '  Renamed  ', completed: false, assigneeId: null },
+    { key: 'new', title: ' Brand new ', completed: true, assigneeId: 'u2' },
+  ];
+  const plan = helpers.planChecklistSync(saved, draft);
+  assert.deepEqual(plan.remove, ['s3']);
+  assert.deepEqual(plan.update, [
+    { id: 's1', patch: { completed: true } },
+    { id: 's2', patch: { title: 'Renamed', assigneeId: null } },
+  ]);
+  assert.equal(plan.create.length, 1);
+  assert.equal(plan.create[0].title, 'Brand new');
+  assert.equal(plan.create[0].completed, true);
+  assert.deepEqual(helpers.planChecklistSync(saved, helpers.checklistDraftFrom(saved)), { create: [], update: [], remove: [] }, 'an untouched checklist needs no writes');
+});
+
 test('filterSortFields pins first, then applies sort + filters', () => {
   const fields = [
-    mkField({ id: 'a', title: 'Alpha task', status: 'in-progress', progress: 20, updated_at: '2026-10-10T09:00:00Z', mine: { pinned: false, favourite: false } }),
-    mkField({ id: 'b', title: 'Beta task', status: 'completed', progress: 100, updated_at: '2026-10-11T09:00:00Z', folder_id: 'f-a', mine: { pinned: true, favourite: true } }),
-    mkField({ id: 'c', title: 'Gamma copy', status: 'in-progress', progress: 80, updated_at: '2026-10-12T09:00:00Z', folder_id: 'f-b', due_date: '2026-11-20' }),
+    mkField({ id: 'a', title: 'Alpha task', status: 'in-progress', progress: 20, subtasks: checklist(1, 5), updated_at: '2026-10-10T09:00:00Z', mine: { pinned: false, favourite: false } }),
+    mkField({ id: 'b', title: 'Beta task', status: 'completed', progress: 100, subtasks: checklist(5, 5), updated_at: '2026-10-11T09:00:00Z', folder_id: 'f-a', mine: { pinned: true, favourite: true } }),
+    mkField({ id: 'c', title: 'Gamma copy', status: 'in-progress', progress: 80, subtasks: checklist(4, 5), updated_at: '2026-10-12T09:00:00Z', folder_id: 'f-b', due_date: '2026-11-20' }),
   ];
   const byUpdated = helpers.filterSortFields(fields, { query: '', status: 'all', folderId: 'all', sort: 'updated' });
   assert.deepEqual(byUpdated.map((f) => f.id), ['b', 'c', 'a'], 'pinned field must lead');

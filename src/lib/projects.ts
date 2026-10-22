@@ -1,7 +1,7 @@
 // Pure Projects helpers — status/role/folder metadata, permission predicates,
 // filtering, sorting, and formatting. Imported by ProjectsView and unit tests;
 // keep this module free of DOM/network access.
-import type { ProjectField, ProjectFieldStatus, ProjectFolderColor, ProjectMemberRole, ProjectRecord } from "../types";
+import type { ProjectField, ProjectFieldStatus, ProjectFolderColor, ProjectMemberRole, ProjectRecord, ProjectSubtask } from "../types";
 
 export const PROJECT_STATUSES: { value: ProjectFieldStatus; label: string; tone: "muted" | "accent" | "warning" | "danger" | "success" }[] = [
   { value: "planning", label: "Planning", tone: "muted" },
@@ -39,6 +39,55 @@ export function statusMeta(status: ProjectFieldStatus) {
 export function progressForStatus(status: ProjectFieldStatus, progress: number): number {
   if (status === "completed") return 100;
   return Math.max(0, Math.min(100, Math.round(progress) || 0));
+}
+
+// ---------------------------------------------------------------------------
+// Checklist-derived progress
+// ---------------------------------------------------------------------------
+/**
+ * Field progress is derived from its checklist only:
+ * (completed items ÷ total items) × 100, rounded; 0% when the checklist is empty.
+ */
+export function checklistProgress(items: ReadonlyArray<{ completed: boolean }> | null | undefined): { total: number; completed: number; percent: number } {
+  const list = items || [];
+  const total = list.length;
+  const completed = list.filter((item) => item.completed).length;
+  return { total, completed, percent: total ? Math.round((completed / total) * 100) : 0 };
+}
+/** The single progress value shown on field cards, the view modal, tables, and sorting. */
+export function fieldProgress(field: Pick<ProjectField, "subtasks">): number {
+  return checklistProgress(field.subtasks).percent;
+}
+
+/** A checklist row as edited inside the Create/Edit field modal. `id` is set once persisted. */
+export interface ChecklistDraftItem { key: string; id?: string; title: string; completed: boolean; assigneeId: string | null }
+
+export function checklistDraftFrom(subtasks: ProjectSubtask[] | null | undefined): ChecklistDraftItem[] {
+  return (subtasks || []).map((task) => ({ key: task.id, id: task.id, title: task.title, completed: task.completed, assigneeId: task.assignee_id || null }));
+}
+
+export interface ChecklistSyncPlan {
+  create: ChecklistDraftItem[];
+  update: { id: string; patch: { title?: string; completed?: boolean; assigneeId?: string | null } }[];
+  remove: string[];
+}
+/** Diffs the edited checklist against the saved one (pure; no network). */
+export function planChecklistSync(baseline: ProjectSubtask[] | null | undefined, draft: ChecklistDraftItem[]): ChecklistSyncPlan {
+  const saved = new Map((baseline || []).map((task) => [task.id, task]));
+  const keep = new Set(draft.filter((item) => item.id).map((item) => item.id as string));
+  const plan: ChecklistSyncPlan = { create: [], update: [], remove: [] };
+  for (const task of baseline || []) if (!keep.has(task.id)) plan.remove.push(task.id);
+  for (const item of draft) {
+    const title = item.title.trim();
+    if (!item.id) { plan.create.push({ ...item, title }); continue; }
+    const task = saved.get(item.id);
+    const patch: ChecklistSyncPlan["update"][number]["patch"] = {};
+    if (!task || task.title !== title) patch.title = title;
+    if (!task || task.completed !== item.completed) patch.completed = item.completed;
+    if (!task || (task.assignee_id || null) !== (item.assigneeId || null)) patch.assigneeId = item.assigneeId || null;
+    if (Object.keys(patch).length) plan.update.push({ id: item.id, patch });
+  }
+  return plan;
 }
 
 export interface ProjectAccessLike { owner: boolean; role: string; canCreateFields: boolean }
@@ -100,7 +149,7 @@ export function filterSortFields(fields: ProjectField[], filter: FieldFilter): P
     if (pinDelta !== 0) return pinDelta;
     switch (filter.sort) {
       case "name": return a.title.localeCompare(b.title);
-      case "progress": return b.progress - a.progress;
+      case "progress": return fieldProgress(b) - fieldProgress(a);
       case "due": return (a.due_date || "9999-99-99").localeCompare(b.due_date || "9999-99-99");
       case "updated":
       default: return String(b.updated_at).localeCompare(String(a.updated_at));
