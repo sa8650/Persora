@@ -65,7 +65,7 @@ import {
   emptyTrashEntries,
 } from "./lib/backend";
 import { buildTrashEntry, clearLocalTrash, loadLocalTrash, pushLocalTrash, removeLocalTrash } from "./lib/local-trash";
-import { loadAdminBootstrapStatus, loadDocumentTypes, loadPublicPlans, loadPublicSiteContent, sendEmailVerificationCode, verifyEmailVerificationCode } from "./lib/cloud";
+import { loadAdminBootstrapStatus, loadDocumentTypes, loadProjectNotifications, loadPublicPlans, loadPublicSiteContent, markProjectNotificationRead, markProjectNotificationsRead, sendEmailVerificationCode, verifyEmailVerificationCode } from "./lib/cloud";
 import { signIn, signOut, signUp, getCurrentUser } from "./lib/auth";
 import { getLocalAvatar, getLocalBusinessCards, getLocalContacts, getLocalItems, getLocalProfile, putLocalAvatar, putLocalBusinessCards, putLocalContacts, putLocalItems, putLocalProfile } from "./lib/local-store";
 
@@ -117,12 +117,13 @@ export default function App() {
   const [recordSharesByMe, setRecordSharesByMe] = useState<RecordShareEntry[]>([]);
   const [recordSharesWithMe, setRecordSharesWithMe] = useState<RecordShareEntry[]>([]);
   const [shareNotifications, setShareNotifications] = useState<ShareNotification[]>([]);
+  const [projectNotifications, setProjectNotifications] = useState<ShareNotification[]>([]);
   const [localScheduleNotifications, setLocalScheduleNotifications] = useState<ShareNotification[]>([]);
   const [ringingSchedules, setRingingSchedules] = useState<ActiveScheduleAlert[]>([]);
   const [scheduleNotificationOwner, setScheduleNotificationOwner] = useState("");
   const [shareComments, setShareComments] = useState<ShareComment[]>([]);
   const [shareTarget, setShareTarget] = useState<VaultItem | null>(null);
-  const [view, setView] = useState<ViewId>("dashboard");
+  const [view, setView] = useState<ViewId>(() => new URLSearchParams(window.location.search).has("project") ? "projects" : "dashboard");
   const [search, setSearch] = useState("");
   const [authOpen, setAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<AuthMode>("signup");
@@ -322,9 +323,9 @@ export default function App() {
   const applyUser = useCallback(async (profile: AppUser) => {
     const [loadedItems, extraResults] = await Promise.all([
       loadVaultItems(),
-      Promise.allSettled([loadSharedItems("outgoing"), loadSharedItems("incoming"), loadShareNotifications(), loadContacts(), loadBusinessCards(), loadRecordShares("outgoing"), loadRecordShares("incoming"), loadMedicalRecords()]),
+      Promise.allSettled([loadSharedItems("outgoing"), loadSharedItems("incoming"), loadShareNotifications(), loadProjectNotifications(), loadContacts(), loadBusinessCards(), loadRecordShares("outgoing"), loadRecordShares("incoming"), loadMedicalRecords()]),
     ]);
-    const [outgoing, incoming, notifications, loadedContacts, loadedBusinessCards, outgoingRecords, incomingRecords, loadedMedicalRecords] = extraResults;
+    const [outgoing, incoming, notifications, projectUpdates, loadedContacts, loadedBusinessCards, outgoingRecords, incomingRecords, loadedMedicalRecords] = extraResults;
     setUser(profile);
     setRingingSchedules([]);
     setLocalScheduleNotifications([]);
@@ -332,13 +333,14 @@ export default function App() {
     setSharedByMe(outgoing.status === "fulfilled" ? outgoing.value : []);
     setSharedWithMe(incoming.status === "fulfilled" ? incoming.value : []);
     setShareNotifications(notifications.status === "fulfilled" ? notifications.value : []);
+    setProjectNotifications(projectUpdates.status === "fulfilled" ? projectUpdates.value : []);
     setRecordSharesByMe(outgoingRecords.status === "fulfilled" ? outgoingRecords.value : []);
     setRecordSharesWithMe(incomingRecords.status === "fulfilled" ? incomingRecords.value : []);
     commitContacts(loadedContacts.status === "fulfilled" ? loadedContacts.value : []);
     commitBusinessCards(loadedBusinessCards.status === "fulfilled" ? loadedBusinessCards.value : []);
     commitMedicalRecords(loadedMedicalRecords.status === "fulfilled" ? loadedMedicalRecords.value : []);
     demoMedicalFiles.current.clear();
-    setView(pendingPlanId ? "billing" : "dashboard");
+    setView(pendingPlanId ? "billing" : new URLSearchParams(window.location.search).has("project") ? "projects" : "dashboard");
     setAuthOpen(false);
     setSearch("");
   }, [pendingPlanId, commitContacts, commitBusinessCards, commitMedicalRecords]);
@@ -398,9 +400,14 @@ export default function App() {
   useEffect(() => {
     if (!user || user.demo || !isPagesApiConfigured) return;
     let active = true;
-    const refresh = () => { void loadShareNotifications().then((rows) => { if (active) setShareNotifications(rows); }).catch(() => {}); };
+    const refresh = () => {
+      if (document.visibilityState !== "visible") return;
+      void Promise.allSettled([loadShareNotifications(), loadProjectNotifications()]).then(([shares, projects]) => { if (!active) return; if (shares.status === "fulfilled") setShareNotifications(shares.value); if (projects.status === "fulfilled") setProjectNotifications(projects.value); });
+    };
+    refresh();
     const timer = window.setInterval(refresh, 30_000);
-    return () => { active = false; window.clearInterval(timer); };
+    window.addEventListener("focus", refresh);
+    return () => { active = false; window.clearInterval(timer); window.removeEventListener("focus", refresh); };
   }, [user?.id, user?.demo]);
 
   useEffect(() => {
@@ -456,7 +463,7 @@ export default function App() {
 commitContacts(getLocalContacts(DEMO_USER.id));
     commitBusinessCards(getLocalBusinessCards(DEMO_USER.id));
     commitMedicalRecords([]); demoMedicalFiles.current.clear();
-    setSharedByMe([]); setSharedWithMe([]); setRecordSharesByMe([]); setRecordSharesWithMe([]); setShareNotifications([]); setShareComments([]);
+    setSharedByMe([]); setSharedWithMe([]); setRecordSharesByMe([]); setRecordSharesWithMe([]); setShareNotifications([]); setProjectNotifications([]); setShareComments([]);
     setView("dashboard");
     setSearch("");
     setAuthOpen(false);
@@ -511,7 +518,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
     commitContacts([]);
     commitBusinessCards([]);
     commitMedicalRecords([]); demoMedicalFiles.current.clear();
-    setSharedByMe([]); setSharedWithMe([]); setRecordSharesByMe([]); setRecordSharesWithMe([]); setShareNotifications([]); setLocalScheduleNotifications([]); setRingingSchedules([]); setShareComments([]); setShareTarget(null);
+    setSharedByMe([]); setSharedWithMe([]); setRecordSharesByMe([]); setRecordSharesWithMe([]); setShareNotifications([]); setProjectNotifications([]); setLocalScheduleNotifications([]); setRingingSchedules([]); setShareComments([]); setShareTarget(null);
     setView("dashboard");
     setEditor(null);
     setTodoEditor(false);
@@ -1068,8 +1075,8 @@ commitContacts(getLocalContacts(DEMO_USER.id));
 
   const refreshSharing = async () => {
     if (!user || user.demo || !isPagesApiConfigured) return;
-    const [outgoing, incoming, notifications, outgoingRecords, incomingRecords] = await Promise.all([loadSharedItems("outgoing"), loadSharedItems("incoming"), loadShareNotifications(), loadRecordShares("outgoing"), loadRecordShares("incoming")]);
-    setSharedByMe(outgoing); setSharedWithMe(incoming); setShareNotifications(notifications); setRecordSharesByMe(outgoingRecords); setRecordSharesWithMe(incomingRecords);
+    const [outgoing, incoming, notifications, projectUpdates, outgoingRecords, incomingRecords] = await Promise.all([loadSharedItems("outgoing"), loadSharedItems("incoming"), loadShareNotifications(), loadProjectNotifications(), loadRecordShares("outgoing"), loadRecordShares("incoming")]);
+    setSharedByMe(outgoing); setSharedWithMe(incoming); setShareNotifications(notifications); setProjectNotifications(projectUpdates); setRecordSharesByMe(outgoingRecords); setRecordSharesWithMe(incomingRecords);
   };
   const handleOpenSharedEntry = (entry: SharedVaultEntry) => {
     setFocusedItem({ ...entry.item, sharedAccess: { shareId: entry.shareId, permission: entry.permission, direction: entry.direction, owner: entry.owner, recipient: entry.recipient } });
@@ -1109,9 +1116,24 @@ commitContacts(getLocalContacts(DEMO_USER.id));
     const now = new Date().toISOString();
     setLocalScheduleNotifications((current) => current.map((entry) => ({ ...entry, readAt: entry.readAt || now })));
     setShareNotifications((current) => current.map((entry) => ({ ...entry, readAt: entry.readAt || now })));
+    setProjectNotifications((current) => current.map((entry) => ({ ...entry, readAt: entry.readAt || now })));
     if (!user || user.demo || !isPagesApiConfigured) return;
-    try { await markShareNotificationsRead(); await refreshSharing(); }
-    catch (error) { notify(error instanceof Error ? error.message : "Couldn't update notifications.", "error"); }
+    try { await Promise.all([markShareNotificationsRead(), markProjectNotificationsRead()]); await refreshSharing(); }
+    catch (error) {
+      notify(error instanceof Error ? error.message : "Couldn't update notifications.", "error");
+      void Promise.allSettled([loadShareNotifications(), loadProjectNotifications()]).then(([shares, projects]) => {
+        if (shares.status === "fulfilled") setShareNotifications(shares.value);
+        if (projects.status === "fulfilled") setProjectNotifications(projects.value);
+      });
+    }
+  };
+  const handleMarkNotificationRead = async (notificationId: string) => {
+    if (!notificationId.startsWith("project:")) return;
+    const now = new Date().toISOString();
+    setProjectNotifications((current) => current.map((entry) => entry.id === notificationId ? { ...entry, readAt: entry.readAt || now } : entry));
+    if (!user || user.demo || !isPagesApiConfigured) return;
+    try { await markProjectNotificationRead(notificationId); }
+    catch (error) { notify(error instanceof Error ? error.message : "That project notification could not be marked read.", "error"); void loadProjectNotifications().then(setProjectNotifications).catch(() => {}); }
   };
   const handleAddShareComment = async (body: string) => {
     const access = focusedItem?.sharedAccess;
@@ -1240,12 +1262,12 @@ commitContacts(getLocalContacts(DEMO_USER.id));
   const handleDeleteAccount = async () => {
     if (!user) return;
     if (user.demo) {
-      putLocalProfile(null); putLocalAvatar(user.id, null); putLocalAvatar(`demo-${user.email}`, null); putLocalItems([]); putLocalBusinessCards(user.id, []); setItems([]); setUser(null); commitBusinessCards([]); commitMedicalRecords([]); demoMedicalFiles.current.clear(); setSharedByMe([]); setSharedWithMe([]); setRecordSharesByMe([]); setRecordSharesWithMe([]); setShareNotifications([]); setView("dashboard");
+      putLocalProfile(null); putLocalAvatar(user.id, null); putLocalAvatar(`demo-${user.email}`, null); putLocalItems([]); putLocalBusinessCards(user.id, []); setItems([]); setUser(null); commitBusinessCards([]); commitMedicalRecords([]); demoMedicalFiles.current.clear(); setSharedByMe([]); setSharedWithMe([]); setRecordSharesByMe([]); setRecordSharesWithMe([]); setShareNotifications([]); setProjectNotifications([]); setView("dashboard");
       notify("Your demo account has been cleared from this browser."); return;
     }
     if (!isPagesApiConfigured) throw new Error("The private Pages API is not enabled. Ask an administrator to finish setup.");
     await deleteOwnAccount();
-    setUser(null); setItems([]); commitBusinessCards([]); commitMedicalRecords([]); demoMedicalFiles.current.clear(); setSharedByMe([]); setSharedWithMe([]); setRecordSharesByMe([]); setRecordSharesWithMe([]); setShareNotifications([]); setView("dashboard");
+    setUser(null); setItems([]); commitBusinessCards([]); commitMedicalRecords([]); demoMedicalFiles.current.clear(); setSharedByMe([]); setSharedWithMe([]); setRecordSharesByMe([]); setRecordSharesWithMe([]); setShareNotifications([]); setProjectNotifications([]); setView("dashboard");
     notify("Your Persora account has been deleted.");
   };
 
@@ -1254,6 +1276,11 @@ commitContacts(getLocalContacts(DEMO_USER.id));
     openAuth("signup");
   };
   const navigateWorkspace = (next: ViewId) => {
+    if (next !== "projects" && new URLSearchParams(window.location.search).has("project")) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("project");
+      window.history.replaceState(window.history.state, "", url);
+    }
     if (next !== "documents") {
       setEditor((current) => current?.section === "documents" ? null : current);
       setFocusedItem((current) => current?.section === "documents" ? null : current);
@@ -1305,7 +1332,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       recordSharesWithMe={recordSharesWithMe}
       contacts={contacts}
       businessCards={businessCards}
-      notifications={[...localScheduleNotifications, ...shareNotifications].sort((a, b) => b.createdAt.localeCompare(a.createdAt))}
+      notifications={[...localScheduleNotifications, ...shareNotifications, ...projectNotifications].sort((a, b) => b.createdAt.localeCompare(a.createdAt))}
       ringingSchedules={ringingSchedules}
       sharingAvailable={!user.demo && isPagesApiConfigured}
       timelineEvents={displayTimelineEvents}
@@ -1352,6 +1379,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       onShareRecord={handleShareRecord}
       onRevokeRecordShare={handleRevokeRecordShare}
       onMarkNotificationsRead={() => void handleMarkNotificationsRead()}
+      onMarkNotificationRead={(notificationId) => void handleMarkNotificationRead(notificationId)}
       onToggleFavorite={handleToggleFavorite}
       onTogglePin={handleTogglePin}
       onMoveVaultItem={handleMoveVaultItem}

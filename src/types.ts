@@ -111,12 +111,17 @@ export interface SharedItemAccess {
 
 export interface ShareNotification {
   id: string;
-  kind: "shared" | "permission_changed" | "unshared" | "reminder" | "alarm";
+  kind: "shared" | "permission_changed" | "unshared" | "reminder" | "alarm" | "project" | "access_removed";
   itemTitle: string;
   actorName: string;
   message: string;
   createdAt: string;
   readAt?: string;
+  projectId?: string | null;
+  projectName?: string;
+  projectEventKind?: string;
+  fieldId?: string;
+  subtaskId?: string;
 }
 
 export interface ShareComment {
@@ -437,16 +442,34 @@ export type ProjectAccessRole = ProjectMemberRole | "owner";
 export type ProjectFolderColor = "cyan" | "purple" | "pink" | "blue" | "orange" | "green";
 export interface ProjectRecord { id: string; owner_id: string; name: string; description: string; kind: ProjectKind; created_at: string; updated_at: string }
 export interface ProjectAccess { owner: boolean; role: ProjectAccessRole; canCreateFields: boolean; canRequest?: boolean }
-export interface ProjectStats { fields: number; completed: number; inReview: number; members: number; pendingRequests: number }
+export interface ProjectStats { fields: number; completed: number; inReview: number; members: number; pendingRequests: number; subtasksTotal?: number; subtasksCompleted?: number }
 export interface ProjectSummary extends ProjectRecord { access: { owner: boolean; role: ProjectAccessRole; canCreateFields: boolean }; stats: ProjectStats }
 export interface ProjectMember { userId: string; role: ProjectMemberRole; canCreateFields: boolean; invitedBy: string | null; createdAt: string; name: string; email: string; loginId: string }
 export interface ProjectFolder { id: string; project_id: string; name: string; color: ProjectFolderColor; created_by: string | null; created_at: string; updated_at: string; fieldCount?: number }
 export interface ProjectFieldComment { id: string; field_id: string; author_id: string; author_name: string; body: string; created_at: string; updated_at: string }
-export interface ProjectField {
+export interface ProjectSubtask {
+  id: string; project_id: string; field_id: string; title: string; completed: boolean; sort_order: number;
+  assignee_id: string | null; created_by: string; created_at: string; updated_at: string;
+  assigneeName?: string | null; creatorName?: string;
+}
+export interface ProjectFieldAttachment {
+  id: string; project_id: string; field_id: string; uploader_id: string; uploaderName: string;
+  file_name: string; file_size: number; file_type: string; created_at: string;
+}
+export interface ProjectNotification {
+  id: string; kind: string; actorName: string; title: string; message: string; createdAt: string; readAt?: string;
+  projectId: string | null; projectName: string; fieldId?: string; subtaskId?: string;
+}
+export interface ProjectNotificationPreferences {
+  membership: boolean; assignments: boolean; requests: boolean; subtasks: boolean;
+  comments: boolean; attachments: boolean; deadlines: boolean; updates: boolean;
+}
+export interface ProjectField { 
   id: string; project_id: string; folder_id: string | null; title: string; description: string;
   status: ProjectFieldStatus; progress: number; creator_id: string; creator_name: string;
   assignee_id: string | null; due_date: string | null; created_at: string; updated_at: string;
   assigneeName?: string | null; mine?: { pinned: boolean; favourite: boolean }; commentCount?: number; comments?: ProjectFieldComment[];
+  subtasks?: ProjectSubtask[]; attachments?: ProjectFieldAttachment[];
 }
 export interface ProjectFieldRequest {
   id: string; project_id: string; requester_id: string; requester_name: string; note: string;

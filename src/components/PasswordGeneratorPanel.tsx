@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { AudioWaveform, BookOpenText, Check, Copy, Dices, Eye, EyeOff, Info, RefreshCw, Save, ShieldCheck, Sparkles } from "lucide-react";
 import ModalPortal from "./ModalPortal";
 import ItemModalShell from "./ItemModalShell";
@@ -38,7 +38,10 @@ const AI_STYLE_OPTIONS: ReadonlyArray<{ value: AIComposerOptions["style"]; label
   { value: "passphrase", label: "Passphrase", hint: "simple uncommon word chains" },
 ];
 
-const AI_REQUEST_TIMEOUT_MS = 9000;
+// 70B Workers AI inference can outlast a short browser timeout even when the
+// provider completes successfully. Keep a generous client guard so a healthy
+// response is not discarded and mislabeled as an offline fallback.
+const AI_REQUEST_TIMEOUT_MS = 45_000;
 
 /** Toggle that never lets every random character class end up disabled. */
 const toggleRandomClass = (options: RandomOptions, key: "upper" | "lower" | "digits" | "symbols") => {
@@ -46,9 +49,12 @@ const toggleRandomClass = (options: RandomOptions, key: "upper" | "lower" | "dig
   return next.upper || next.lower || next.digits || next.symbols ? next : options;
 };
 
-const withTimeout = <T,>(promise: Promise<T>, ms: number): Promise<T> =>
+const withTimeout = <T,>(promise: Promise<T>, ms: number, onTimeout?: () => void): Promise<T> =>
   new Promise<T>((resolve, reject) => {
-    const timer = window.setTimeout(() => reject(new Error("Persora AI took too long to respond.")), ms);
+    const timer = window.setTimeout(() => {
+      onTimeout?.();
+      reject(new Error("Persora AI took too long to respond."));
+    }, ms);
     promise.then(
       (value) => { window.clearTimeout(timer); resolve(value); },
       (error) => { window.clearTimeout(timer); reject(error); },
@@ -79,26 +85,40 @@ export default function PasswordGeneratorPanel({
   const [aiOpts, setAiOpts] = useState<AIComposerOptions>(DEFAULT_AI);
   const [aiBusy, setAiBusy] = useState(false);
   const [aiStatus, setAiStatus] = useState<"ai" | "local" | "disabled" | "">("");
+  const [aiMessage, setAiMessage] = useState("");
   const aiTicket = useRef(0);
   const selectedAiStyle = AI_STYLE_OPTIONS.find((option) => option.value === aiOpts.style) || AI_STYLE_OPTIONS[0];
+  const updateAiOptions = (next: AIComposerOptions) => {
+    setAiOpts(next);
+    setAiStatus("");
+    setAiMessage("");
+  };
 
   const regenerateAi = async (options: AIComposerOptions) => {
     const ticket = ++aiTicket.current;
     // The request carries only public style parameters — never the vault, never
     // existing passwords. If the AI is offline or returns junk we fall back to
     // fully local generation with the same controls, without interrupting.
+    setAiMessage("");
     if (!isPagesApiConfigured) {
       setPassword(generateAiLocalFallback(options));
       setAiStatus("local");
+      setAiMessage("The Cloudflare Pages API is not connected in this environment.");
       return;
     }
     setAiBusy(true);
+    const controller = new AbortController();
     try {
-      const { candidates, source, reason } = await withTimeout(generateAiPasswordSuggestions(options.style, 4, options.length + 8), AI_REQUEST_TIMEOUT_MS);
+      const { candidates, source, reason, error } = await withTimeout(
+        generateAiPasswordSuggestions(options.style, 4, options.length + 8, controller.signal),
+        AI_REQUEST_TIMEOUT_MS,
+        () => controller.abort(),
+      );
       if (ticket !== aiTicket.current) return;
       if (source !== "ai" || !candidates.length) {
         setPassword(generateAiLocalFallback(options));
         setAiStatus(reason === "disabled" ? "disabled" : "local");
+        if (reason !== "disabled") setAiMessage(error || "Cloudflare Workers AI did not return usable suggestions.");
         return;
       }
       try {
@@ -107,11 +127,13 @@ export default function PasswordGeneratorPanel({
       } catch {
         setPassword(generateAiLocalFallback(options));
         setAiStatus("local");
+        setAiMessage("The AI suggestions could not be composed with these settings.");
       }
-    } catch {
+    } catch (error) {
       if (ticket !== aiTicket.current) return;
       setPassword(generateAiLocalFallback(options));
       setAiStatus("local");
+      setAiMessage(error instanceof Error ? error.message : "Cloudflare Workers AI could not complete the request.");
     } finally {
       if (ticket === aiTicket.current) setAiBusy(false);
     }
@@ -124,12 +146,6 @@ export default function PasswordGeneratorPanel({
     else if (mode === "rhythm") setPassword(generateRhythm(rhythmOpts));
     else void regenerateAi(aiOpts);
   };
-
-  // Live generation: any control change (or the initial open) produces a fresh password.
-  useEffect(() => {
-    regenerate();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, randomOpts, memoOpts, rhythmOpts, aiOpts]);
 
   const report = useMemo(
     () => evaluateStrength(
@@ -195,7 +211,7 @@ export default function PasswordGeneratorPanel({
               const Icon = meta.icon;
               const active = mode === candidate;
               return (
-                <button key={candidate} type="button" role="tab" aria-selected={active} className={`pm-gen-tab ${active ? "is-active" : ""}`} onClick={() => setMode(candidate)}>
+                <button key={candidate} type="button" role="tab" aria-selected={active} className={`pm-gen-tab ${active ? "is-active" : ""}`} onClick={() => { setMode(candidate); setAiStatus(""); setAiMessage(""); }}>
                   <Icon size={15} />
                   <span>{meta.label}</span>
                 </button>
@@ -221,7 +237,7 @@ export default function PasswordGeneratorPanel({
                 ? <><Sparkles size={13} /><span>Suggested by Persora AI, finished with secure local randomness.</span></>
                 : aiStatus === "disabled"
                   ? <><Info size={13} /><span>AI suggestions are turned off by an administrator — generated locally with the same settings instead.</span></>
-                  : <><Info size={13} /><span>Persora AI is offline right now — generated locally with the same settings instead.</span></>}
+                  : <><Info size={13} /><span>AI suggestions were unavailable: {aiMessage || "the request could not be completed."} Generated locally with the same settings instead.</span></>}
             </p>
           )}
 
@@ -322,7 +338,7 @@ export default function PasswordGeneratorPanel({
               <div className="pm-gen-section-head"><span>AI memorable password</span><small>Persora AI suggests the words — secure local randomness finishes the password</small></div>
               <div className="editor-fields-grid pm-pair-grid">
                 <label className="field-label" htmlFor="pm-gen-ai-style">AI style
-                  <select id="pm-gen-ai-style" value={aiOpts.style} onChange={(event) => setAiOpts({ ...aiOpts, style: event.target.value as AIComposerOptions["style"] })}>
+                  <select id="pm-gen-ai-style" value={aiOpts.style} onChange={(event) => updateAiOptions({ ...aiOpts, style: event.target.value as AIComposerOptions["style"] })}>
                     {AI_STYLE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                   </select>
                 </label>
@@ -333,13 +349,13 @@ export default function PasswordGeneratorPanel({
               </div>
               <div className="pm-range-row">
                 <label htmlFor="pm-gen-ai-length">Length</label>
-                <input id="pm-gen-ai-length" type="range" min={8} max={32} step={1} value={aiOpts.length} onChange={(event) => setAiOpts({ ...aiOpts, length: Number(event.target.value) })} />
+                <input id="pm-gen-ai-length" type="range" min={8} max={32} step={1} value={aiOpts.length} onChange={(event) => updateAiOptions({ ...aiOpts, length: Number(event.target.value) })} />
                 <span className="pm-range-value">{aiOpts.length}</span>
               </div>
               <div className="pm-check-grid">
-                <label className="pm-check"><input type="checkbox" checked={aiOpts.capitalize} onChange={(event) => setAiOpts({ ...aiOpts, capitalize: event.target.checked })} /> Capitalize words</label>
-                <label className="pm-check"><input type="checkbox" checked={aiOpts.addNumber} onChange={(event) => setAiOpts({ ...aiOpts, addNumber: event.target.checked })} /> Include a number <b>7</b></label>
-                <label className="pm-check"><input type="checkbox" checked={aiOpts.addSymbol} onChange={(event) => setAiOpts({ ...aiOpts, addSymbol: event.target.checked })} /> Include a symbol <b>!</b></label>
+                <label className="pm-check"><input type="checkbox" checked={aiOpts.capitalize} onChange={(event) => updateAiOptions({ ...aiOpts, capitalize: event.target.checked })} /> Capitalize words</label>
+                <label className="pm-check"><input type="checkbox" checked={aiOpts.addNumber} onChange={(event) => updateAiOptions({ ...aiOpts, addNumber: event.target.checked })} /> Include a number <b>7</b></label>
+                <label className="pm-check"><input type="checkbox" checked={aiOpts.addSymbol} onChange={(event) => updateAiOptions({ ...aiOpts, addSymbol: event.target.checked })} /> Include a symbol <b>!</b></label>
               </div>
               <p className="pm-gen-note"><Info size={13} /><span>The AI only suggests word material — it never sees your vault, existing passwords, or master password, and secure randomness on this device always picks, shuffles, and inserts the final characters. If the AI is unreachable you seamlessly get a local generation. <b>Memorable does not always mean strong</b> — check the meter above and add length when in doubt.</span></p>
             </div>
@@ -368,7 +384,7 @@ export default function PasswordGeneratorPanel({
         <div className="editor-form-footer">
           <div className="editor-footnote"><ShieldCheck size={14} /><span>Generated on this device · never shared</span></div>
           <div className="editor-actions">
-            <button type="button" className="quiet-button" onClick={regenerate} disabled={aiBusy} title="Generate a new password with these settings"><RefreshCw size={14} className={aiBusy ? "pm-spin" : ""} /> Regenerate</button>
+            <button type="button" className="quiet-button" onClick={regenerate} disabled={aiBusy} title="Generate a password with these settings"><RefreshCw size={14} className={aiBusy ? "pm-spin" : ""} /> {password ? "Regenerate" : "Generate"}</button>
             <button type="button" className={`quiet-button ${copied ? "is-copied" : ""}`} disabled={!password || aiBusy} onClick={() => void copyValue()}>{copied ? <Check size={14} /> : <Copy size={14} />} {copied ? "Copied" : "Copy"}</button>
             <button type="button" className="editor-submit" disabled={!password || aiBusy} onClick={save}><Save size={15} /> {saveTarget === "new" ? "Save as new login" : "Replace & save"}</button>
           </div>

@@ -1,4 +1,4 @@
-import type { AdminConsoleSnapshot, AdminMetrics, AiControls, AlarmRingtone, BillingSnapshot, BusinessCardDraft, BusinessSocialLink, DigitalBusinessCard, DocumentTypeOption, MedicalRecord, MedicalRecordDraft, MedicalRecordFile, MedicalRecordLink, PersoraContact, PaymentRecord, ProjectDetail, ProjectField, ProjectFieldComment, ProjectFieldRequest, ProjectFolder, ProjectFolderColor, ProjectFieldStatus, ProjectKind, ProjectMemberRole, ProjectRecord, ProjectSummary, PublicDigitalBusinessCard, ShareComment, ShareNotification, SharePermission, SharedDirection, SharedVaultEntry, RecordShareEntry, SiteContent, SmartScanFieldDefinition, SmartScanResult, SubscriptionPlan, TimelineAttachment, TimelineDraft, TimelineEvent, TransferProgress, VaultFile, VaultFolder, VaultFolderDraft, VaultFolderScope, VaultItem } from "../types";
+import type { AdminConsoleSnapshot, AdminMetrics, AiControls, AlarmRingtone, BillingSnapshot, BusinessCardDraft, BusinessSocialLink, DigitalBusinessCard, DocumentTypeOption, MedicalRecord, MedicalRecordDraft, MedicalRecordFile, MedicalRecordLink, PersoraContact, PaymentRecord, ProjectDetail, ProjectField, ProjectFieldAttachment, ProjectSubtask, ProjectFieldComment, ProjectFieldRequest, ProjectFolder, ProjectFolderColor, ProjectFieldStatus, ProjectKind, ProjectMemberRole, ProjectRecord, ProjectSummary, ProjectNotification, ProjectNotificationPreferences, PublicDigitalBusinessCard, ShareComment, ShareNotification, SharePermission, SharedDirection, SharedVaultEntry, RecordShareEntry, SiteContent, SmartScanFieldDefinition, SmartScanResult, SubscriptionPlan, TimelineAttachment, TimelineDraft, TimelineEvent, TransferProgress, VaultFile, VaultFolder, VaultFolderDraft, VaultFolderScope, VaultItem } from "../types";
 import { DEFAULT_SITE_CONTENT } from "../data/siteContent";
 
 // Cloudflare Pages always serves the authenticated Functions API from /api in production.
@@ -702,10 +702,21 @@ export async function emptyTrashEntries(): Promise<{ ok: boolean; deleted: numbe
 
 export type AIPasswordStyle = "rhythmic" | "pronounceable" | "poetic" | "sonnet" | "passphrase";
 
-export async function generateAiPasswordSuggestions(style: AIPasswordStyle, count: number, maxLength: number): Promise<{ candidates: string[]; source: "ai" | "offline"; reason?: string }> {
-  const body = await postJson<{ candidates?: unknown; source?: unknown; reason?: unknown }>("/ai/password-suggestions", { style, count, maxLength });
-  const candidates = Array.isArray(body.candidates) ? body.candidates.filter((value): value is string => typeof value === "string") : [];
-  return { candidates, source: body.source === "ai" && candidates.length ? "ai" : "offline", reason: typeof body.reason === "string" ? body.reason : undefined };
+export async function generateAiPasswordSuggestions(style: AIPasswordStyle, count: number, maxLength: number, signal?: AbortSignal): Promise<{ candidates: string[]; source: "ai" | "offline"; reason?: string; error?: string }> {
+  const body = await pagesApiJson<{ candidates?: unknown; source?: unknown; reason?: unknown; error?: unknown }>("/ai/password-suggestions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ style, count, maxLength }),
+    signal,
+  });
+  const candidates = Array.isArray(body.candidates) ? body.candidates.filter((value): value is string => typeof value === "string" && value.trim().length > 0) : [];
+  const source = body.source === "ai" && candidates.length ? "ai" : "offline";
+  return {
+    candidates,
+    source,
+    reason: typeof body.reason === "string" ? body.reason : undefined,
+    error: typeof body.error === "string" ? body.error : source === "offline" && body.source === "ai" ? "The AI response did not contain usable suggestions." : undefined,
+  };
 }
 
 export async function resetPasswordWithRecoveryCode(identifier: string, code: string, newPassword: string): Promise<{ ok: boolean; message?: string }> {
@@ -775,6 +786,33 @@ export async function updateProjectField(projectId: string, fieldId: string, inp
 export async function deleteProjectField(projectId: string, fieldId: string): Promise<void> {
   await deleteJson(`/projects/${encodeURIComponent(projectId)}/fields/${encodeURIComponent(fieldId)}`);
 }
+export async function createProjectSubtask(projectId: string, fieldId: string, input: { title: string; assigneeId?: string | null }): Promise<ProjectSubtask> {
+  const data = await postJson<{ subtask: ProjectSubtask }>(`/projects/${encodeURIComponent(projectId)}/fields/${encodeURIComponent(fieldId)}/subtasks`, input);
+  return data.subtask;
+}
+export async function updateProjectSubtask(projectId: string, fieldId: string, subtaskId: string, patch: { title?: string; completed?: boolean; assigneeId?: string | null }): Promise<ProjectSubtask> {
+  const data = await patchJson<{ subtask: ProjectSubtask }>(`/projects/${encodeURIComponent(projectId)}/fields/${encodeURIComponent(fieldId)}/subtasks/${encodeURIComponent(subtaskId)}`, patch);
+  return data.subtask;
+}
+export async function reorderProjectSubtasks(projectId: string, fieldId: string, order: string[]): Promise<void> {
+  await patchJson(`/projects/${encodeURIComponent(projectId)}/fields/${encodeURIComponent(fieldId)}/subtasks/reorder`, { order });
+}
+export async function deleteProjectSubtask(projectId: string, fieldId: string, subtaskId: string): Promise<void> {
+  await deleteJson(`/projects/${encodeURIComponent(projectId)}/fields/${encodeURIComponent(fieldId)}/subtasks/${encodeURIComponent(subtaskId)}`);
+}
+export async function uploadProjectFieldAttachment(projectId: string, fieldId: string, file: File): Promise<ProjectFieldAttachment> {
+  const form = new FormData(); form.append("file", file, file.name);
+  const response = await pagesApiRequest(`/projects/${encodeURIComponent(projectId)}/fields/${encodeURIComponent(fieldId)}/attachments`, { method: "POST", body: form });
+  const data = await response.json() as { attachment: ProjectFieldAttachment };
+  return data.attachment;
+}
+export async function deleteProjectFieldAttachment(projectId: string, fieldId: string, attachmentId: string): Promise<void> {
+  await deleteJson(`/projects/${encodeURIComponent(projectId)}/fields/${encodeURIComponent(fieldId)}/attachments/${encodeURIComponent(attachmentId)}`);
+}
+export async function loadProjectFieldAttachment(projectId: string, fieldId: string, attachmentId: string, preview = false): Promise<Blob> {
+  const url = `/projects/${encodeURIComponent(projectId)}/fields/${encodeURIComponent(fieldId)}/attachments/${encodeURIComponent(attachmentId)}/file${preview ? "?preview=1" : ""}`;
+  return (await pagesApiRequest(url)).blob();
+}
 export async function reactToProjectField(projectId: string, fieldId: string, reaction: { pinned: boolean; favourite: boolean }): Promise<void> {
   await postJson(`/projects/${encodeURIComponent(projectId)}/fields/${encodeURIComponent(fieldId)}/react`, reaction);
 }
@@ -799,4 +837,27 @@ export async function cancelProjectFieldRequest(projectId: string, requestId: st
 }
 export async function resolveProjectFieldRequest(projectId: string, requestId: string, decision: "approved" | "rejected", note?: string): Promise<void> {
   await postJson(`/projects/${encodeURIComponent(projectId)}/requests/${encodeURIComponent(requestId)}/resolve`, { decision, note: note || "" });
+}
+
+export async function loadProjectNotifications(): Promise<ShareNotification[]> {
+  const rows = await pagesApiJson<ProjectNotification[]>("/projects/notifications");
+  return Array.isArray(rows) ? rows.map((row) => ({
+    id: `project:${row.id}`, kind: row.kind === "access_removed" ? "access_removed" : "project",
+    itemTitle: row.projectName || row.title, actorName: row.actorName || "Project update", message: row.message,
+    createdAt: row.createdAt, readAt: row.readAt, projectId: row.projectId, projectName: row.projectName,
+    projectEventKind: row.kind, fieldId: row.fieldId, subtaskId: row.subtaskId,
+  })) : [];
+}
+export async function markProjectNotificationRead(notificationId: string): Promise<void> {
+  const id = notificationId.startsWith("project:") ? notificationId.slice("project:".length) : notificationId;
+  await pagesApiRequest(`/projects/notifications/${encodeURIComponent(id)}`, { method: "PATCH" });
+}
+export async function markProjectNotificationsRead(): Promise<void> {
+  await pagesApiRequest("/projects/notifications", { method: "PATCH" });
+}
+export async function loadProjectNotificationPreferences(): Promise<ProjectNotificationPreferences> {
+  return pagesApiJson<ProjectNotificationPreferences>("/projects/notification-preferences");
+}
+export async function saveProjectNotificationPreferences(preferences: ProjectNotificationPreferences): Promise<ProjectNotificationPreferences> {
+  return patchJson<ProjectNotificationPreferences>("/projects/notification-preferences", preferences);
 }

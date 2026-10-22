@@ -2417,3 +2417,30 @@
 .record-share-revoke-btn:hover {
   background: #fce8e6 !important;
 }
+
+/* Unread count and action styling for the persistent mixed notification tray. */
+.notification-dot { display: grid; place-items: center; min-width: 17px; width: auto; height: 17px; border: 1.5px solid #fff; border-radius: 999px; padding: 0 4px; color: #fff; font-size: 8px; font-weight: 800; line-height: 1; }
+.notification-head-actions { display: flex; align-items: center; gap: 6px; }
+.notification-mark-all { border: 0; border-radius: 6px; padding: 5px 6px; color: #185abc; background: #e8f0fe; font: inherit; font-size: 9px; font-weight: 700; cursor: pointer; }
+.notification-mark-all:hover { background: #d2e3fc; }
+.notification-row.is-unread { background: #f5f9ff; }
+.notification-row.is-unread b { color: #202124; font-weight: 750; }
+.notification-row.is-unread::after { content: ""; width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%; background: #1a73e8; }
+.tag-project { color: #188038!important; background: #e6f4ea!important; }
+@media (max-width: 520px) {
+  .notification-popover { right: -42px; }
+  .notification-head-actions { flex-wrap: wrap; justify-content: flex-end; }
+}
+
+.dark .notification-popover,[data-theme="dark"] .notification-popover { border-color: #3c4043; color: #e8eaed; background: #292a2d; box-shadow: 0 10px 32px rgba(0,0,0,.4); }
+.dark .notification-head,[data-theme="dark"] .notification-head,.dark .notification-footnote,[data-theme="dark"] .notification-footnote { border-color: #3c4043; }
+.dark .notification-head b,[data-theme="dark"] .notification-head b,.dark .notification-row b,[data-theme="dark"] .notification-row b { color: #e8eaed; }
+.dark .notification-head span,[data-theme="dark"] .notification-head span,.dark .notification-row small,[data-theme="dark"] .notification-row small,.dark .notification-time,[data-theme="dark"] .notification-time,.dark .notification-empty,[data-theme="dark"] .notification-empty { color: #bdc1c6; }
+.dark .notification-row:hover,[data-theme="dark"] .notification-row:hover { background: #303134; }
+.dark .notification-row.is-unread,[data-theme="dark"] .notification-row.is-unread { background: #26364d; }
+.dark .notification-row.is-unread b,[data-theme="dark"] .notification-row.is-unread b { color: #f1f3f4; }
+.dark .notification-mark-all,[data-theme="dark"] .notification-mark-all { color: #d2e3fc; background: #394457; }
+.dark .notification-mark-all:hover,[data-theme="dark"] .notification-mark-all:hover { background: #45536a; }
+.dark .notification-enable,[data-theme="dark"] .notification-enable { color: #d2e3fc; }
+.dark .notification-button:hover,[data-theme="dark"] .notification-button:hover { border-color: #5f6368; background: #303134; }
+.dark .notification-button.button-pressed,[data-theme="dark"] .notification-button.button-pressed { color: #d2e3fc; background: #394457; }

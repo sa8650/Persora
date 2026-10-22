@@ -622,9 +622,10 @@ export default {
           return json({ candidates: await aiPasswordCandidates(env, body), source: "ai" }, 200, origin);
         } catch (error) {
           if (error instanceof AIPasswordError) {
-            // Offline/unavailable/invalid output never blocks the user: the client
-            // falls back to fully local generation with the same intent.
-            if (error.status === 503) return json({ candidates: [], source: "offline" }, 200, origin);
+            // Keep generation available locally, but include the real failure
+            // reason so the UI never labels a failed or timed-out AI request as
+            // a successful AI result or an unexplained generic outage.
+            if (error.status === 503) return json({ candidates: [], source: "offline", reason: "unavailable", error: error.message }, 200, origin);
             return json({ error: error.message }, error.status, origin);
           }
           throw error;
@@ -640,6 +641,12 @@ export default {
       if (url.pathname === PROJECTS_ROUTE_PREFIX || url.pathname.startsWith(PROJECTS_ROUTE_PREFIX + "/")) {
         const identity = await authorize(request, env);
         if (!identity) return json({ error: "Sign in is required to open projects." }, 401, origin);
+        const projectUpload = request.method === "POST" && /^\/projects\/[0-9a-f-]+\/fields\/[0-9a-f-]+\/attachments$/i.test(url.pathname);
+        if (projectUpload) {
+          if (!(await hasActivePaidUploadPlan(identity.id, env))) throw uploadPlanRequiredError();
+          const settings = await loadSettings(env);
+          return await handleProjects(request, identity, env, origin, { storageUsage: userStorageUsage, maxUploadMb: settings.storage.maxUploadMb });
+        }
         return await handleProjects(request, identity, env, origin);
       }
       if (url.pathname === "/upload" && request.method === "POST") {

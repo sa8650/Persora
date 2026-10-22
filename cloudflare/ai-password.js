@@ -63,6 +63,19 @@ function extractJsonObject(text) {
   }
 }
 
+// Workers AI's chat models return { response: string, usage: {...} }. Accept
+// equivalent text-bearing envelopes too, while keeping parsed provider output
+// separate from the usage metadata (which must never be treated as candidates).
+function modelResponseText(value) {
+  if (typeof value === "string") return value;
+  if (!value || typeof value !== "object") return "";
+  if (typeof value.response === "string") return value.response;
+  if (typeof value.output_text === "string") return value.output_text;
+  const choiceContent = value.choices?.[0]?.message?.content;
+  if (typeof choiceContent === "string") return choiceContent;
+  return "";
+}
+
 const STYLE_GUIDANCE = {
   rhythmic: "Pairs of short rhyming or alliterative words with a strong beat (e.g. 'drift swift', 'lunar tuner'). Two or three beats, no full sentences.",
   pronounceable: "Invented but easy-to-pronounce words with natural consonant-vowel flow (e.g. 'veratilo', 'sondripe'). They must NOT be real dictionary words.",
@@ -86,7 +99,10 @@ export function validateAiPasswordRequest(body) {
 // then the client) can fall back to fully local generation without friction.
 export async function aiPasswordCandidates(env, options) {
   const { style, count, maxLength } = validateAiPasswordRequest(options);
-  if (!env?.AI || typeof env.AI.run !== "function") throw new AIPasswordError("Persora AI is not configured for password suggestions.", 503);
+  if (!env?.AI || typeof env.AI.run !== "function") {
+    console.error("Persora Workers AI password binding is unavailable", { binding: "AI", model: AI_PASSWORD_MODEL });
+    throw new AIPasswordError("The Cloudflare Workers AI binding is not configured for this Pages environment.", 503);
+  }
 
   const messages = [
     {
@@ -111,19 +127,43 @@ export async function aiPasswordCandidates(env, options) {
     },
   ];
 
+  const startedAt = Date.now();
   let response;
   try {
     response = await env.AI.run(AI_PASSWORD_MODEL, {
       messages,
-      max_tokens: 600,
+      max_tokens: 320,
       temperature: 0.9,
       response_format: { type: "json_object" },
     });
-  } catch {
-    throw new AIPasswordError("Persora AI is temporarily unavailable.", 503);
+  } catch (error) {
+    // Do not log prompts, candidate strings, or account identifiers. The
+    // provider message and duration are enough to correlate a failure in Pages
+    // real-time logs with Workers AI's execution/neuron metrics.
+    console.error("Persora Workers AI password request failed", {
+      model: AI_PASSWORD_MODEL,
+      elapsedMs: Date.now() - startedAt,
+      error: error instanceof Error ? error.message.slice(0, 300) : "unknown provider error",
+    });
+    throw new AIPasswordError("Cloudflare Workers AI did not complete the suggestion request.", 503);
   }
-  const parsed = extractJsonObject(typeof response === "string" ? response : response?.response);
+  const parsed = extractJsonObject(modelResponseText(response));
   const candidates = sanitizeAiPasswordCandidates(parsed?.candidates, { maxCount: count, maxLength: 72 });
-  if (!candidates.length) throw new AIPasswordError("Persora AI returned no usable suggestions.", 503);
+  if (!candidates.length) {
+    console.error("Persora Workers AI returned no usable password suggestions", {
+      model: AI_PASSWORD_MODEL,
+      elapsedMs: Date.now() - startedAt,
+      responseType: typeof response,
+      hasResponseText: Boolean(modelResponseText(response)),
+      hasUsage: Boolean(response && typeof response === "object" && response.usage),
+    });
+    throw new AIPasswordError("Cloudflare Workers AI completed but returned no usable suggestions.", 503);
+  }
+  console.info("Persora Workers AI password request succeeded", {
+    model: AI_PASSWORD_MODEL,
+    elapsedMs: Date.now() - startedAt,
+    candidateCount: candidates.length,
+    neurons: Number.isFinite(Number(response?.usage?.neuron_count)) ? Number(response.usage.neuron_count) : undefined,
+  });
   return candidates;
 }

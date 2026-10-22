@@ -72,8 +72,16 @@ export function MagicCard(props: MagicCardProps) {
   const glowOpacity = isOrbMode(props) ? (props.glowOpacity ?? 0.9) : 0.9
   const { theme, systemTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
+  const [reducedMotion, setReducedMotion] = useState(false)
 
   useEffect(() => setMounted(true), [])
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)")
+    const sync = () => setReducedMotion(media.matches)
+    sync()
+    media.addEventListener?.("change", sync)
+    return () => media.removeEventListener?.("change", sync)
+  }, [])
 
   const isDarkTheme = useMemo(() => {
     if (!mounted) return true
@@ -83,6 +91,8 @@ export function MagicCard(props: MagicCardProps) {
 
   const mouseX = useMotionValue(-gradientSize)
   const mouseY = useMotionValue(-gradientSize)
+  const gradientX = useSpring(mouseX, { stiffness: 420, damping: 42, mass: 0.35 })
+  const gradientY = useSpring(mouseY, { stiffness: 420, damping: 42, mass: 0.35 })
 
   const orbX = useSpring(mouseX, { stiffness: 250, damping: 30, mass: 0.6 })
   const orbY = useSpring(mouseY, { stiffness: 250, damping: 30, mass: 0.6 })
@@ -123,11 +133,12 @@ export function MagicCard(props: MagicCardProps) {
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
+      if (reducedMotion || e.pointerType === "touch") return
       const rect = e.currentTarget.getBoundingClientRect()
       mouseX.set(e.clientX - rect.left)
       mouseY.set(e.clientY - rect.top)
     },
-    [mouseX, mouseY]
+    [mouseX, mouseY, reducedMotion]
   )
 
   useEffect(() => {
@@ -166,7 +177,7 @@ export function MagicCard(props: MagicCardProps) {
       style={{
         background: useMotionTemplate`
           linear-gradient(var(--color-background) 0 0) padding-box,
-          radial-gradient(${gradientSize}px circle at ${mouseX}px ${mouseY}px,
+          radial-gradient(${gradientSize}px circle at ${gradientX}px ${gradientY}px,
             ${gradientFrom},
             ${gradientTo},
             var(--color-border) 100%
@@ -182,12 +193,12 @@ export function MagicCard(props: MagicCardProps) {
           className="pointer-events-none absolute inset-px z-30 rounded-[inherit] opacity-0 transition-opacity duration-300 group-hover:opacity-100"
           style={{
             background: useMotionTemplate`
-              radial-gradient(${gradientSize}px circle at ${mouseX}px ${mouseY}px,
+              radial-gradient(${gradientSize}px circle at ${gradientX}px ${gradientY}px,
                 ${gradientColor},
                 transparent 100%
               )
             `,
-            opacity: gradientOpacity,
+            opacity: reducedMotion ? 0 : gradientOpacity,
           }}
         />
       )}

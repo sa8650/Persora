@@ -50,3 +50,25 @@ test('AI candidates sanitize wrapped/prose model output before returning', async
   const out = await aiPasswordCandidates(fakeEnv, { style: 'poetic', count: 4, maxLength: 24 });
   assert.deepEqual(out, ['amber horizon', 'quiet thunder']);
 });
+
+test('successful Workers AI response with neuron usage reaches candidate output', async () => {
+  let requestedModel = '';
+  const fakeEnv = { AI: { run: async (model, options) => {
+    requestedModel = model;
+    assert.equal(options.response_format.type, 'json_object');
+    return { response: '{"candidates":["quiet thunder","amber horizon"]}', usage: { neuron_count: 12 } };
+  } } };
+  const out = await aiPasswordCandidates(fakeEnv, { style: 'poetic', count: 2, maxLength: 24 });
+  assert.equal(requestedModel, mod.AI_PASSWORD_MODEL);
+  assert.deepEqual(out, ['quiet thunder', 'amber horizon']);
+});
+
+test('Workers AI candidate parser handles compatible response envelopes', async () => {
+  const fakeEnv = { AI: { run: async () => ({ choices: [{ message: { content: '{"candidates":["cobalt river lantern"]}' } }] }) } };
+  assert.deepEqual(await aiPasswordCandidates(fakeEnv, { style: 'passphrase', count: 1, maxLength: 32 }), ['cobalt river lantern']);
+});
+
+test('Workers AI provider failure preserves a useful fallback reason', async () => {
+  const fakeEnv = { AI: { run: async () => { throw new Error('rate limited'); } } };
+  await assert.rejects(() => aiPasswordCandidates(fakeEnv, { style: 'rhythmic', count: 4, maxLength: 24 }), (error) => error instanceof AIPasswordError && error.status === 503 && /Cloudflare Workers AI did not complete/.test(error.message));
+});

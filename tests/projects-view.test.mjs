@@ -34,7 +34,8 @@ globalThis.fetch = async (url, init = {}) => {
   const key = `${method} ${target}`;
   const body = fixtures[key];
   if (!body) return new Response(JSON.stringify({ error: `No fixture for ${key}` }), { status: 404, headers: { 'Content-Type': 'application/json' } });
-  return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  const resolved = typeof body === 'function' ? await body({ method, target, init }) : body;
+  return new Response(JSON.stringify(resolved), { status: 200, headers: { 'Content-Type': 'application/json' } });
 };
 
 // Bundle the real component; React stays external so the mounted copy shares
@@ -111,11 +112,11 @@ function memberFixture() {
 }
 
 const text = () => document.body.textContent || '';
-async function mount(user) {
+async function mount(user, props = {}) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
-  await act(async () => { root.render(React.createElement(ProjectsView, { user, notify: () => undefined })); });
+  await act(async () => { root.render(React.createElement(ProjectsView, { user, maxUploadMb: props.maxUploadMb, notify: props.notify || (() => undefined) })); });
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
   return {
     container,
@@ -144,13 +145,40 @@ test('project list renders cards with stats and navigates into detail', async ()
   const { container, unmount } = await mount(userRecord(OWNER_ID, 'Amina Rahman'));
   assert.ok(text().includes('Website relaunch'), 'project name visible');
   assert.ok(text().includes('2 fields') && text().includes('1 done'));
-  await click('.pj-project-card', container);
+  assert.ok(container.querySelector('.pj-project-card.magic-card'), 'project cards reuse the Documents MagicCard');
+  await click('.pj-project-card .magic-card-content', container);
   assert.ok(fixtures['GET /api/projects/proj-1'], 'detail fetched');
   assert.ok(text().includes('New field'), 'owner sees the create button');
   assert.ok(text().includes('Requests'), 'owner sees review queue');
   assert.ok(text().includes('Active fields'), 'stats grid renders');
+  assert.equal(container.querySelectorAll('.pj-stat-icon').length, 4, 'Overview KPIs use a consistent icon treatment');
+  assert.ok(text().includes('50%'), 'Overview progress is derived from field statuses');
   assert.ok(text().includes('Amina Rahman') && text().includes('Kris Ray'), 'team roster renders');
   assert.ok(text().includes('Latest activity'));
+  await unmount();
+});
+
+test('folders render as Fields shelves with open, filter, and management controls', async () => {
+  ownerFixture();
+  const { container, unmount } = await mount(userRecord(OWNER_ID, 'Amina Rahman'));
+  await click('.pj-project-card .magic-card-content', container);
+  assert.ok(![...container.querySelectorAll('.pj-section-nav button')].some((button) => button.textContent === 'Folders'), 'there is no dedicated Folders tab');
+  const fieldsTab = [...container.querySelectorAll('.pj-section-nav button')].find((button) => button.textContent === 'Fields');
+  assert.ok(fieldsTab);
+  await act(async () => { fieldsTab.dispatchEvent(new window.MouseEvent('click', { bubbles: true })); await new Promise((resolve) => setTimeout(resolve, 20)); });
+  assert.ok(container.querySelector('.pj-folder-shelf'), 'folder shelves render inside Fields');
+  assert.ok(text().includes('Design') && text().includes('Unfiled'));
+  assert.ok(container.querySelector('[aria-label="Rename folder Design"]'), 'folder rename stays available from its shelf');
+  assert.ok([...container.querySelectorAll('.pj-fields-head-actions button')].some((button) => button.textContent.includes('New folder')), 'folder creation is inside Fields');
+  const designShelf = [...container.querySelectorAll('.pj-folder-shelf')].find((shelf) => shelf.textContent.includes('Design'));
+  assert.ok(designShelf);
+  const openFolder = [...designShelf.querySelectorAll('button')].find((button) => button.textContent.includes('Open folder'));
+  assert.ok(openFolder, 'folder can be opened as a focused filter');
+  await act(async () => { openFolder.dispatchEvent(new window.MouseEvent('click', { bubbles: true })); await new Promise((resolve) => setTimeout(resolve, 10)); });
+  assert.ok(text().includes('Hero illustration'));
+  assert.ok(!text().includes('Copy deck'), 'the selected folder filter scopes fields');
+  await click('.pj-fields-head-actions button', container);
+  assert.ok(text().includes('Copy deck'), 'clearing the folder filter restores all shelves');
   await unmount();
 });
 
@@ -158,7 +186,7 @@ test('fields tab renders cards, and pin toggles fire the react endpoint', async 
   ownerFixture();
   fixtures['POST /api/projects/proj-1/fields/fld-1/react'] = { reaction: { pinned: true, favourite: false } };
   const { container, unmount } = await mount(userRecord(OWNER_ID, 'Amina Rahman'));
-  await click('.pj-project-card', container);
+  await click('.pj-project-card .magic-card-content', container);
   const fieldsTab = [...container.querySelectorAll('.pj-section-nav button')].find((btn) => btn.textContent === 'Fields');
   assert.ok(fieldsTab, 'fields nav tab present');
   await act(async () => { fieldsTab.dispatchEvent(new window.MouseEvent('click', { bubbles: true })); await new Promise((resolve) => setTimeout(resolve, 20)); });
@@ -173,10 +201,37 @@ test('fields tab renders cards, and pin toggles fire the react endpoint', async 
   await unmount();
 });
 
+test('saving a field refreshes detail, the project summary, and derived Overview progress', async () => {
+  ownerFixture();
+  const original = fixtures['GET /api/projects/proj-1'];
+  const updatedFields = original.fields.map((field) => field.id === 'fld-1' ? { ...field, status: 'completed', progress: 100, updated_at: '2026-10-22T09:00:00.000Z' } : field);
+  fixtures['PATCH /api/projects/proj-1/fields/fld-1'] = { field: updatedFields[0] };
+  fixtures['GET /api/projects/proj-1'] = { ...original, fields: updatedFields };
+  fixtures['GET /api/projects'] = { projects: [{ ...fixtures['GET /api/projects'].projects[0], stats: { ...fixtures['GET /api/projects'].projects[0].stats, completed: 2 } }] };
+  const { container, unmount } = await mount(userRecord(OWNER_ID, 'Amina Rahman'));
+  await click('.pj-project-card .magic-card-content', container);
+  const fieldsTab = [...container.querySelectorAll('.pj-section-nav button')].find((button) => button.textContent === 'Fields');
+  await act(async () => { fieldsTab.dispatchEvent(new window.MouseEvent('click', { bubbles: true })); await new Promise((resolve) => setTimeout(resolve, 10)); });
+  await click('.pj-field-card-magic .magic-card-content', container);
+  await click('.pj-detail-actions .pj-primary-button', document.body);
+  const status = document.querySelectorAll('.pj-form select')[1];
+  status.value = 'completed';
+  await act(async () => { status.dispatchEvent(new window.Event('change', { bubbles: true })); await new Promise((resolve) => setTimeout(resolve, 5)); });
+  await click('.pj-form .pj-primary-button', document.body);
+  assert.ok(apiCalls.some((call) => call.method === 'PATCH' && call.target === '/api/projects/proj-1/fields/fld-1'), 'the field save reaches the authorized API route');
+  assert.ok(apiCalls.some((call) => call.method === 'GET' && call.target === '/api/projects/proj-1'), 'detail is refetched after the mutation');
+  assert.ok(apiCalls.some((call) => call.method === 'GET' && call.target === '/api/projects'), 'project summaries are refreshed after the mutation');
+  assert.ok(text().includes('Completed') && text().includes('100%'), 'refetched field state is shown');
+  const overview = [...container.querySelectorAll('.pj-section-nav button')].find((button) => button.textContent === 'Overview');
+  await act(async () => { overview.dispatchEvent(new window.MouseEvent('click', { bubbles: true })); await new Promise((resolve) => setTimeout(resolve, 5)); });
+  assert.ok(text().includes('100% of all fields'), 'Overview KPI progress follows the saved field data');
+  await unmount();
+});
+
 test('field detail modal shows comments with author actions', async () => {
   ownerFixture();
   const { container, unmount } = await mount(userRecord(OWNER_ID, 'Amina Rahman'));
-  await click('.pj-project-card', container);
+  await click('.pj-project-card .magic-card-content', container);
   const fieldsTab = [...container.querySelectorAll('.pj-section-nav button')].find((btn) => btn.textContent === 'Fields');
   assert.ok(fieldsTab, 'fields nav tab present');
   await act(async () => { fieldsTab.dispatchEvent(new window.MouseEvent('click', { bubbles: true })); await new Promise((resolve) => setTimeout(resolve, 20)); });
@@ -185,6 +240,7 @@ test('field detail modal shows comments with author actions', async () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
   });
   assert.ok(text().includes('First pass is up.'), 'comment body visible');
+  for (const label of ['Information', 'Description', 'Status & progress', 'Owner & assignee', 'Dates', 'Folder', 'Members & permissions']) assert.ok(text().includes(label), `${label} section is visible`);
   assert.ok(text().includes('Write a comment') || document.querySelector('.pj-comment-input'), 'composer renders');
   // The owner (not the comment author) must see moderation delete but not edit.
   const commentActions = [...document.querySelectorAll('.pj-comment-actions button')].map((btn) => btn.textContent);
@@ -196,10 +252,135 @@ test('field detail modal shows comments with author actions', async () => {
 test('a member without the grant gets request-mode surfaces and no owner tools', async () => {
   memberFixture();
   const { container, unmount } = await mount(userRecord(MEMBER_ID, 'Kris Ray'));
-  await click('.pj-project-card', container);
+  await click('.pj-project-card .magic-card-content', container);
   assert.ok(text().includes('Request field'), 'member sees the request button');
   assert.ok(!text().includes('New folder'), 'commenter cannot create folders');
   assert.ok(text().includes('You are a'), 'access note explains member context');
   assert.ok(text().includes('My requests'), 'member request history available');
+  await unmount();
+});
+
+test('creating a project opens its returned database UUID immediately and refresh reopens it', async () => {
+  const id = '6b2c3d4e-5f60-4789-8a1b-2c3d4e5f6071';
+  const project = { id, owner_id: OWNER_ID, name: 'Created from UI', description: 'Open directly', kind: 'personal', created_at: NOW, updated_at: NOW };
+  fixtures['GET /api/projects'] = { projects: [] };
+  fixtures['POST /api/projects'] = { project };
+  fixtures[`GET /api/projects/${id}`] = {
+    project,
+    access: { owner: true, role: 'owner', canCreateFields: true, canRequest: false },
+    owner: { id: OWNER_ID, name: 'Amina Rahman', email: 'amina@example.com', loginId: '1000001' },
+    members: [], folders: [], fields: [], requests: [], activity: [],
+  };
+  window.history.replaceState({}, '', '/');
+  const { container, unmount } = await mount(userRecord(OWNER_ID, 'Amina Rahman'));
+  const newProjectButton = [...container.querySelectorAll('button')].find((button) => button.textContent.includes('New project'));
+  assert.ok(newProjectButton);
+  await act(async () => { newProjectButton.dispatchEvent(new window.MouseEvent('click', { bubbles: true })); await new Promise((resolve) => setTimeout(resolve, 10)); });
+  const nameInput = document.querySelector('.pj-modal input');
+  assert.ok(nameInput);
+  await act(async () => {
+    nameInput.value = 'Created from UI';
+    nameInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+    nameInput.dispatchEvent(new window.Event('change', { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  });
+  const submit = [...document.querySelectorAll('.pj-modal button[type="submit"]')].find((button) => button.textContent.includes('Create project'));
+  assert.ok(submit);
+  await act(async () => { submit.dispatchEvent(new window.MouseEvent('click', { bubbles: true })); await new Promise((resolve) => setTimeout(resolve, 40)); });
+  assert.ok(apiCalls.some((call) => call.method === 'POST' && call.target === '/api/projects'), 'create API called');
+  assert.ok(apiCalls.some((call) => call.method === 'GET' && call.target === `/api/projects/${id}`), 'detail opened by returned database UUID');
+  assert.ok(text().includes('Created from UI'), 'new project detail appears immediately');
+  assert.equal(new URL(window.location.href).searchParams.get('project'), id, 'URL stores the actual database UUID');
+  await unmount();
+
+  apiCalls.length = 0;
+  const reopened = await mount(userRecord(OWNER_ID, 'Amina Rahman'));
+  assert.ok(apiCalls.some((call) => call.method === 'GET' && call.target === `/api/projects/${id}`), 'refresh reloads authorized detail from its URL');
+  assert.ok(text().includes('Created from UI'));
+  await reopened.unmount();
+  window.history.replaceState({}, '', '/');
+});
+
+test('subtask completion persists through the project route and refreshes live checklist progress', async () => {
+  ownerFixture();
+  let completed = false;
+  const detail = fixtures['GET /api/projects/proj-1'];
+  detail.fields[0].subtasks = [{
+    id: 'task-1', project_id: 'proj-1', field_id: 'fld-1', title: 'Draft campaign brief', completed: false,
+    sort_order: 10, assignee_id: OWNER_ID, created_by: OWNER_ID, created_at: NOW, updated_at: NOW, assigneeName: 'Amina Rahman', creatorName: 'Amina Rahman',
+  }];
+  fixtures['GET /api/projects/proj-1'] = () => ({
+    ...detail,
+    fields: detail.fields.map((field) => field.id === 'fld-1' ? { ...field, subtasks: field.subtasks.map((task) => ({ ...task, completed })) } : field),
+  });
+  fixtures['PATCH /api/projects/proj-1/fields/fld-1/subtasks/task-1'] = async ({ init }) => {
+    const payload = JSON.parse(init.body);
+    assert.deepEqual(payload, { completed: true });
+    completed = true;
+    return { subtask: { ...detail.fields[0].subtasks[0], completed: true } };
+  };
+  const { container, unmount } = await mount(userRecord(OWNER_ID, 'Amina Rahman'));
+  await click('.pj-project-card .magic-card-content', container);
+  const fieldsTab = [...container.querySelectorAll('.pj-section-nav button')].find((button) => button.textContent === 'Fields');
+  await act(async () => { fieldsTab.dispatchEvent(new window.MouseEvent('click', { bubbles: true })); await new Promise((resolve) => setTimeout(resolve, 10)); });
+  await click('.pj-field-card', container);
+  const checkbox = document.querySelector('input[aria-label="Complete: Draft campaign brief"]');
+  assert.ok(checkbox);
+  await act(async () => { checkbox.dispatchEvent(new window.MouseEvent('click', { bubbles: true })); checkbox.dispatchEvent(new window.Event('change', { bubbles: true })); await new Promise((resolve) => setTimeout(resolve, 30)); });
+  assert.ok(apiCalls.some((call) => call.method === 'PATCH' && call.target === '/api/projects/proj-1/fields/fld-1/subtasks/task-1'), 'completion is saved to the authenticated project API');
+  assert.equal(document.querySelector('input[aria-label="Mark incomplete: Draft campaign brief"]')?.checked, true);
+  assert.equal(document.querySelector('[aria-label="Checklist completion"]')?.getAttribute('aria-valuenow'), '100');
+  assert.ok(apiCalls.filter((call) => call.method === 'GET' && call.target === '/api/projects').length >= 2, 'project summaries are reloaded after completion');
+  await unmount();
+});
+
+test('project notification destinations open the authorized field and target subtask', async () => {
+  ownerFixture();
+  const projectId = 'b72190d2-bcff-4d6c-8f10-1290ad3a23d1';
+  const fieldId = 'd392e001-8646-4f04-91bc-602b9d54ea02';
+  const taskId = 'ad5711b3-513d-4d43-bc54-b99f64372d17';
+  const baseDetail = fixtures['GET /api/projects/proj-1'];
+  const routedDetail = {
+    ...baseDetail,
+    project: { ...baseDetail.project, id: projectId },
+    fields: baseDetail.fields.map((field, index) => index === 0 ? {
+      ...field, id: fieldId, project_id: projectId,
+      subtasks: [{ id: taskId, project_id: projectId, field_id: fieldId, title: 'Review final mock', completed: false, sort_order: 10, assignee_id: OWNER_ID, created_by: OWNER_ID, created_at: NOW, updated_at: NOW, assigneeName: 'Amina Rahman', creatorName: 'Amina Rahman' }],
+    } : { ...field, id: '03eb4074-d9d8-4080-b2f8-b0c0d6658a8e', project_id: projectId }),
+  };
+  fixtures['GET /api/projects'] = { projects: [{ ...fixtures['GET /api/projects'].projects[0], id: projectId }] };
+  fixtures[`GET /api/projects/${projectId}`] = routedDetail;
+  const { container, unmount } = await mount(userRecord(OWNER_ID, 'Amina Rahman'));
+  await act(async () => {
+    window.dispatchEvent(new window.CustomEvent('persora-project-notification-navigation', { detail: { projectId, fieldId, subtaskId: taskId } }));
+    await new Promise((resolve) => setTimeout(resolve, 40));
+  });
+  assert.ok(apiCalls.some((call) => call.method === 'GET' && call.target === `/api/projects/${projectId}`), 'destination fetches project through normal API authorization');
+  assert.ok(document.body.textContent.includes('Hero illustration'), 'destination resolves the field title');
+  assert.ok(document.body.textContent.includes('Review final mock'), 'destination opens field detail with the target subtask');
+  assert.ok(document.querySelector(`#project-subtask-${taskId}`), 'the destination subtask has a stable scroll target');
+  await unmount();
+});
+
+test('project attachment client gate blocks unsupported and oversized files before upload', async () => {
+  ownerFixture();
+  const errors = [];
+  const user = { ...userRecord(OWNER_ID, 'Amina Rahman'), uploadsEnabled: true };
+  const { container, unmount } = await mount(user, { maxUploadMb: 1, notify: (message, kind) => { if (kind === 'error') errors.push(message); } });
+  await click('.pj-project-card .magic-card-content', container);
+  const fieldsTab = [...container.querySelectorAll('.pj-section-nav button')].find((button) => button.textContent === 'Fields');
+  await act(async () => { fieldsTab.dispatchEvent(new window.MouseEvent('click', { bubbles: true })); await new Promise((resolve) => setTimeout(resolve, 10)); });
+  await click('.pj-field-card', container);
+  const input = document.querySelector('.pj-attachment-upload input[type="file"]');
+  assert.ok(input, 'upload control is shown only for upload-enabled accounts');
+  const unsupported = new window.File(['x'], 'script.exe', { type: 'application/octet-stream' });
+  Object.defineProperty(input, 'files', { configurable: true, value: [unsupported] });
+  await act(async () => { input.dispatchEvent(new window.Event('change', { bubbles: true })); await new Promise((resolve) => setTimeout(resolve, 10)); });
+  const oversized = new window.File([new Uint8Array(1024 * 1024 + 1)], 'large.pdf', { type: 'application/pdf' });
+  Object.defineProperty(input, 'files', { configurable: true, value: [oversized] });
+  await act(async () => { input.dispatchEvent(new window.Event('change', { bubbles: true })); await new Promise((resolve) => setTimeout(resolve, 10)); });
+  assert.ok(errors.some((message) => message.includes('PDF, image')), 'unsupported extension gets a clear client-side rejection');
+  assert.ok(errors.some((message) => message.includes('1 MB')), 'upload limit follows the configured maximum');
+  assert.equal(apiCalls.some((call) => call.method === 'POST' && call.target.endsWith('/attachments')), false, 'invalid files never reach the Worker');
   await unmount();
 });

@@ -652,3 +652,105 @@
   .shared-view .shared-list-layout .shared-record-meta { grid-column: 2; grid-row: 1; }
   .shared-view .shared-list-layout .shared-record-controls { grid-column: 1 / -1; grid-row: 2; }
 }
+
+/* Admin navigation owns its scroll region; account actions remain reachable at
+   short viewports and browser zoom levels. */
+.admin-portal:not(.admin-error-state):not(.admin-loading-state) {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+.admin-sidebar {
+  box-sizing: border-box;
+  position: sticky;
+  top: 0;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  width: auto;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+.admin-sidebar-label,
+.admin-brand,
+.admin-sidebar-actions,
+.admin-sidebar-safe,
+.admin-back-button,
+.admin-user-button { flex: 0 0 auto; }
+.admin-nav {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #dadce0 transparent;
+  padding: 0 0 6px;
+}
+.admin-nav-item { flex: 0 0 auto; }
+.admin-sidebar-spacer { flex: 0 0 12px; }
+.admin-sidebar-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  min-height: min-content;
+  padding-top: 4px;
+  background: #fff;
+}
+.admin-back-button,
+.admin-user-button { width: calc(100% - 2px); box-sizing: border-box; }
+.admin-sidebar-safe { flex: 0 0 auto; }
+
+@media (max-width: 720px) {
+  .admin-sidebar {
+    position: sticky;
+    top: 0;
+    align-self: stretch;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    overflow: visible;
+    padding: 0 14px 10px;
+  }
+  .admin-sidebar-label,
+  .admin-sidebar-safe,
+  .admin-sidebar-spacer { display: none; }
+  .admin-nav {
+    flex: 0 0 auto;
+    flex-direction: row;
+    min-height: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0 0 4px;
+    scrollbar-width: thin;
+  }
+  .admin-nav-item { flex: 0 0 auto; }
+  .admin-sidebar-actions {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding-top: 5px;
+    background: transparent;
+  }
+  .admin-back-button,
+  .admin-user-button {
+    display: flex;
+    width: auto;
+    min-height: 38px;
+    margin: 0;
+  }
+  .admin-back-button { flex: 0 0 auto; }
+  .admin-user-button { flex: 1 1 auto; min-width: 0; max-width: 260px; }
+}
+
+@media (max-height: 620px) and (min-width: 721px) {
+  .admin-sidebar-safe { display: none; }
+  .admin-brand { margin-bottom: 6px; }
+  .admin-sidebar-spacer { flex-basis: 4px; }
+}
