@@ -1,4 +1,4 @@
-import type { PhotoStudioPhoto, PhotoStudioSaveInput, RecordShareType, SharedPhotoRecord, AdminConsoleSnapshot, AdminMetrics, AiControls, AlarmRingtone, BillingSnapshot, BusinessCardDraft, BusinessSocialLink, DigitalBusinessCard, DocumentTypeOption, MedicalRecord, MedicalRecordDraft, MedicalRecordFile, MedicalRecordLink, PersoraContact, PaymentRecord, ProjectDetail, ProjectField, ProjectFieldAttachment, ProjectSubtask, ProjectFieldComment, ProjectFieldRequest, ProjectFolder, ProjectFolderColor, ProjectFieldStatus, ProjectKind, ProjectMemberRole, ProjectRecord, ProjectSummary, ProjectNotification, ProjectNotificationPreferences, PublicDigitalBusinessCard, ShareComment, ShareNotification, SharePermission, SharedDirection, SharedVaultEntry, RecordShareEntry, SiteContent, SmartScanFieldDefinition, SmartScanResult, SubscriptionPlan, TimelineAttachment, TimelineDraft, TimelineEvent, TransferProgress, VaultFile, VaultFolder, VaultFolderDraft, VaultFolderScope, VaultItem } from "../types";
+import type { PdfStudioDocument, PdfStudioFileMeta, PdfStudioSaveInput, PhotoStudioPhoto, PhotoStudioSaveInput, RecordShareType, SharedPhotoRecord, AdminConsoleSnapshot, AdminMetrics, AiControls, AlarmRingtone, BillingSnapshot, BusinessCardDraft, BusinessSocialLink, DigitalBusinessCard, DocumentTypeOption, MedicalRecord, MedicalRecordDraft, MedicalRecordFile, MedicalRecordLink, PersoraContact, PaymentRecord, ProjectDetail, ProjectField, ProjectFieldAttachment, ProjectSubtask, ProjectFieldComment, ProjectFieldRequest, ProjectFolder, ProjectFolderColor, ProjectFieldStatus, ProjectKind, ProjectMemberRole, ProjectRecord, ProjectSummary, ProjectNotification, ProjectNotificationPreferences, PublicDigitalBusinessCard, ShareComment, ShareNotification, SharePermission, SharedDirection, SharedVaultEntry, RecordShareEntry, SiteContent, SmartScanFieldDefinition, SmartScanResult, SubscriptionPlan, TimelineAttachment, TimelineDraft, TimelineEvent, TransferProgress, VaultFile, VaultFolder, VaultFolderDraft, VaultFolderScope, VaultItem } from "../types";
 import { DEFAULT_SITE_CONTENT } from "../data/siteContent";
 
 // Cloudflare Pages always serves the authenticated Functions API from /api in production.
@@ -381,14 +381,14 @@ export async function downloadMedicalRecordFile(recordId: string): Promise<void>
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
 }
 
-function uploadMultipart<T>(path: string, form: FormData, onProgress?: (progress: TransferProgress) => void): Promise<T> {
+function uploadMultipart<T>(path: string, form: FormData, onProgress?: (progress: TransferProgress) => void, method: "POST" | "PUT" = "POST"): Promise<T> {
   if (!apiBase) return Promise.reject(new Error("Persora's Pages Functions API is not enabled. Set VITE_USE_PAGES_FUNCTIONS=true in Cloudflare Pages settings."));
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     const fileValue = form.get("file");
     const fileSize = fileValue instanceof File ? fileValue.size : 0;
     const start = performance.now();
-    xhr.open("POST", `${apiBase}${path}`);
+    xhr.open(method, `${apiBase}${path}`);
     xhr.withCredentials = true;
     xhr.responseType = "json";
     xhr.timeout = 15 * 60 * 1000;
@@ -902,10 +902,10 @@ function photoFromRow(row: Record<string, unknown>): PhotoStudioPhoto {
   };
 }
 
-function folderFromRow(row: Record<string, unknown>): VaultFolder {
+function folderFromRow(row: Record<string, unknown>, scope: VaultFolder["scope"] = "photo-studio"): VaultFolder {
   return {
     id: String(row.id),
-    scope: "photo-studio",
+    scope,
     name: String(row.name || "Folder"),
     color: (typeof row.color === "string" ? row.color : "blue") as VaultFolder["color"],
     pinned: Boolean(row.pinned),
@@ -939,6 +939,63 @@ export async function deletePhotoStudioPhoto(id: string): Promise<void> {
 
 export async function loadPhotoStudioFile(id: string, signal?: AbortSignal): Promise<Blob> {
   return (await pagesApiRequest(`/photo-studio/photos/${encodeURIComponent(id)}/file`, { signal })).blob();
+}
+
+// ---------------------------------------------------------------------------
+// PDF Studio API (2026-10-23). PDFs are created and edited in the browser;
+// savePdfStudioDocument() and replacePdfStudioFile() — called only from the
+// explicit "Save to Persora" action — are the only requests that store a file.
+// ---------------------------------------------------------------------------
+function pdfDocumentFromRow(row: Record<string, unknown>): PdfStudioDocument {
+  const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata) ? row.metadata as Record<string, unknown> : {};
+  return {
+    id: String(row.id),
+    folderId: typeof row.folder_id === "string" ? row.folder_id : null,
+    title: String(row.title || "Untitled PDF"),
+    notes: typeof row.notes === "string" ? row.notes : "",
+    fileName: String(row.file_name || "document.pdf"),
+    fileSize: Number(row.file_size) || 0,
+    pageCount: Number(row.page_count) || 0,
+    thumbnail: typeof row.thumbnail === "string" && row.thumbnail.startsWith("data:image/jpeg;base64,") ? row.thumbnail : null,
+    metadata,
+    createdAt: String(row.created_at || ""),
+    updatedAt: String(row.updated_at || row.created_at || ""),
+  };
+}
+
+function pdfUploadForm(file: Blob, meta: Record<string, unknown>): FormData {
+  const form = new FormData();
+  form.append("file", file, typeof meta.fileName === "string" && meta.fileName ? meta.fileName : "document.pdf");
+  form.append("meta", JSON.stringify(meta));
+  return form;
+}
+
+export async function listPdfStudioDocuments(): Promise<PdfStudioDocument[]> {
+  const data = await pagesApiJson<{ documents?: Record<string, unknown>[] }>("/pdf-studio/documents");
+  return Array.isArray(data.documents) ? data.documents.map(pdfDocumentFromRow) : [];
+}
+
+export async function savePdfStudioDocument(file: Blob, input: PdfStudioSaveInput, meta: PdfStudioFileMeta, onProgress?: (progress: TransferProgress) => void): Promise<{ document: PdfStudioDocument; folder: VaultFolder | null; createdFolder: boolean }> {
+  const data = await uploadMultipart<{ document: Record<string, unknown>; folder?: Record<string, unknown> | null; createdFolder?: boolean }>("/pdf-studio/documents", pdfUploadForm(file, { ...input, ...meta }), onProgress);
+  return { document: pdfDocumentFromRow(data.document), folder: data.folder ? folderFromRow(data.folder, "pdf-studio") : null, createdFolder: Boolean(data.createdFolder) };
+}
+
+export async function replacePdfStudioFile(id: string, file: Blob, meta: PdfStudioFileMeta, onProgress?: (progress: TransferProgress) => void): Promise<PdfStudioDocument> {
+  const data = await uploadMultipart<{ document: Record<string, unknown> }>(`/pdf-studio/documents/${encodeURIComponent(id)}/file`, pdfUploadForm(file, { ...meta }), onProgress, "PUT");
+  return pdfDocumentFromRow(data.document);
+}
+
+export async function updatePdfStudioDocument(id: string, patch: Partial<Pick<PdfStudioSaveInput, "title" | "notes" | "folderId">>): Promise<PdfStudioDocument> {
+  const data = await patchJson<{ document: Record<string, unknown> }>(`/pdf-studio/documents/${encodeURIComponent(id)}`, patch);
+  return pdfDocumentFromRow(data.document);
+}
+
+export async function deletePdfStudioDocument(id: string): Promise<void> {
+  await deleteJson(`/pdf-studio/documents/${encodeURIComponent(id)}`);
+}
+
+export async function loadPdfStudioFile(id: string, signal?: AbortSignal): Promise<Blob> {
+  return (await pagesApiRequest(`/pdf-studio/documents/${encodeURIComponent(id)}/file`, { signal })).blob();
 }
 
 /** Raw response so the caller can read the failure reason and fall back locally. */

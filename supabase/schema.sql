@@ -282,7 +282,8 @@ create table if not exists public.vault_folders (
   scope text not null check (scope in (
     'documents', 'academics', 'subscriptions', 'family', 'purchases', 'accounts',
     'memberships', 'wallet-cards', 'study', 'business-card', 'urls', 'notes',
-    'contacts', 'business-cards', 'medical-records', 'password-manager', 'photo-studio'
+    'contacts', 'business-cards', 'medical-records', 'password-manager', 'photo-studio',
+    'pdf-studio'
   )),
   name text not null check (char_length(name) between 1 and 64),
   color text not null default 'blue' check (color in ('blue','sky','teal','violet','amber','rose','slate','mint')),

@@ -4,6 +4,7 @@ import { AIPasswordError, aiPasswordCandidates } from "./ai-password.js";
 import { DEFAULT_AI_CONTROLS, resolveAiControls } from "./ai-controls.js";
 import { handleProjects, PROJECTS_ROUTE_PREFIX } from "./projects.js";
 import { handlePhotoStudio, handleSharedPhotoFile, backgroundProviders, PHOTO_STUDIO_ROUTE_PREFIX } from "./photo-studio.js";
+import { handlePdfStudio, PDF_STUDIO_ROUTE_PREFIX } from "./pdf-studio.js";
 
 const DEFAULT_SETTINGS = {
   billing: { currency: "BDT", manualInstructions: "Follow the account details shown for your selected payment method.", billingEnabled: false, minTermMonths: 1, maxTermMonths: 12 },
@@ -677,6 +678,21 @@ export default {
         }
         return await handlePhotoStudio(request, identity, env, origin);
       }
+      if (url.pathname === PDF_STUDIO_ROUTE_PREFIX || url.pathname.startsWith(PDF_STUDIO_ROUTE_PREFIX + "/")) {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required to open PDF Studio." }, 401, origin);
+        // PDFs are created and edited in the browser. "Save to Persora" (new PDF
+        // or replacing a saved PDF's file) is the only write that stores a file:
+        // it needs an active upload plan, the storage quota and the upload size.
+        const savesFile = (request.method === "POST" && url.pathname === PDF_STUDIO_ROUTE_PREFIX + "/documents")
+          || (request.method === "PUT" && /^\/pdf-studio\/documents\/[0-9a-f-]+\/file$/i.test(url.pathname));
+        if (savesFile) {
+          if (!(await hasActivePaidUploadPlan(identity.id, env))) throw uploadPlanRequiredError();
+          const settings = await loadSettings(env);
+          return await handlePdfStudio(request, identity, env, origin, { storageUsage: userStorageUsage, maxUploadMb: Math.min(MAX_CONFIGURABLE_UPLOAD_MB, Number(settings.storage.maxUploadMb) || 25) });
+        }
+        return await handlePdfStudio(request, identity, env, origin);
+      }
       if (url.pathname === "/upload" && request.method === "POST") {
         const identity = await authorize(request, env);
         if (!identity) return json({ error: "Sign in is required to upload a private file." }, 401, origin);
@@ -1016,7 +1032,7 @@ function randomLoginId() {
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
 const DUMMY_PASSWORD = "persora-login-timing-padding-never-use";
 const VALID_SECTIONS = new Set(["documents", "academics", "subscriptions", "family", "purchases", "accounts", "memberships", "wallet-cards", "study", "business-card", "urls", "notes", "personal-finance"]);
-const VALID_FOLDER_SCOPES = new Set([...VALID_SECTIONS, "contacts", "business-cards", "medical-records", "password-manager", "photo-studio"]);
+const VALID_FOLDER_SCOPES = new Set([...VALID_SECTIONS, "contacts", "business-cards", "medical-records", "password-manager", "photo-studio", "pdf-studio"]);
 const VALID_FOLDER_COLORS = new Set(["blue", "sky", "teal", "violet", "amber", "rose", "slate", "mint"]);
 function validPasswordLength(password) { return typeof password === "string" && password.length >= 12 && new TextEncoder().encode(password).length <= 72; }
 function rpcValue(value) {
@@ -1645,7 +1661,8 @@ async function deleteTrashFileIfUnreferenced(userId, key, env) {
   const owner = encodeURIComponent(userId);
   const stillTrashed = encodeURIComponent(`["${key}"]`);
   const photoStudioKey = key.startsWith(`${userId}/photo-studio/`);
-  const [items, medical, contacts, cardsByPhoto, cardsByLogo, otherTrash, studioPhotos] = await Promise.all([
+  const pdfStudioKey = key.startsWith(`${userId}/pdf-studio/`);
+  const [items, medical, contacts, cardsByPhoto, cardsByLogo, otherTrash, studioPhotos, studioPdfs] = await Promise.all([
     restRows(`vault_items?user_id=eq.${owner}&file_key=eq.${encoded}&select=id&limit=1`, env),
     restRows(`medical_records?user_id=eq.${owner}&file_key=eq.${encoded}&select=id&limit=1`, env),
     restRows(`contacts?user_id=eq.${owner}&photo_key=eq.${encoded}&select=id&limit=1`, env),
@@ -1653,8 +1670,9 @@ async function deleteTrashFileIfUnreferenced(userId, key, env) {
     restRows(`business_cards?user_id=eq.${owner}&business_logo_key=eq.${encoded}&select=id&limit=1`, env),
     restRows(`trash_items?owner_id=eq.${owner}&file_keys=cs.${stillTrashed}&status=in.(active,restoring)&select=id&limit=1`, env),
     photoStudioKey ? restRows(`photo_studio_photos?user_id=eq.${owner}&file_key=eq.${encoded}&select=id&limit=1`, env) : Promise.resolve([]),
+    pdfStudioKey ? restRows(`pdf_studio_documents?user_id=eq.${owner}&file_key=eq.${encoded}&select=id&limit=1`, env) : Promise.resolve([]),
   ]);
-  if (items.length || medical.length || contacts.length || cardsByPhoto.length || cardsByLogo.length || otherTrash.length || studioPhotos.length) return;
+  if (items.length || medical.length || contacts.length || cardsByPhoto.length || cardsByLogo.length || otherTrash.length || studioPhotos.length || studioPdfs.length) return;
   const object = await env.VAULT_FILES.head(key);
   if (!object) return;
   if (object.customMetadata?.ownerId && object.customMetadata.ownerId !== userId) {
@@ -1699,10 +1717,12 @@ async function purgeClaimedTrashRows(rows, env, { strict = false } = {}) {
 }
 
 async function restoreTrashEntry(identity, id, env) {
-  // Photo Studio entries are restored by their own RPC (202610220006); every
+  // Photo Studio (202610220006) and PDF Studio (202610230008) entries are
+  // restored by their own RPCs; every
   // other kind keeps using the original global restore function unchanged.
   const rows = await restRows(`trash_items?id=eq.${encodeURIComponent(id)}&owner_id=eq.${encodeURIComponent(identity.id)}&select=kind&limit=1`, env);
   if (rows[0]?.kind === "photo_studio_photo") return callTrashRpc("persora_photo_studio_trash_restore", { p_owner: identity.id, p_trash_id: id }, env);
+  if (rows[0]?.kind === "pdf_studio_document") return callTrashRpc("persora_pdf_studio_trash_restore", { p_owner: identity.id, p_trash_id: id }, env);
   return callTrashRpc("persora_trash_restore", { p_owner: identity.id, p_trash_id: id }, env);
 }
 

@@ -15,13 +15,13 @@ export type SectionId =
   | "notes"
   | "personal-finance";
 
-export type ViewId = "dashboard" | SectionId | "contacts" | "settings" | "billing" | "shared" | "timeline" | "medical-records" | "password-manager" | "trash" | "projects" | "photo-studio";
+export type ViewId = "dashboard" | SectionId | "contacts" | "settings" | "billing" | "shared" | "timeline" | "medical-records" | "password-manager" | "trash" | "projects" | "photo-studio" | "pdf-studio";
 
 /** Content families that flow through the global Trash. */
-export type TrashKind = "vault_item" | "contact" | "business_card" | "medical_record" | "timeline_event" | "password_entry" | "photo_studio_photo";
+export type TrashKind = "vault_item" | "contact" | "business_card" | "medical_record" | "timeline_event" | "password_entry" | "photo_studio_photo" | "pdf_studio_document";
 
 /** Space keys used by Trash entries: vault section ids plus whole-app spaces. */
-export type TrashSpace = SectionId | "contacts" | "business-cards" | "medical-records" | "timeline" | "password-manager" | "photo-studio";
+export type TrashSpace = SectionId | "contacts" | "business-cards" | "medical-records" | "timeline" | "password-manager" | "photo-studio" | "pdf-studio";
 
 export interface TrashEntry {
   /** Stable id of the original record (restoration re-uses it). */
@@ -314,7 +314,7 @@ export interface SectionDefinition {
   dateKey?: string;
 }
 
-export type VaultFolderScope = SectionId | "contacts" | "business-cards" | "medical-records" | "password-manager" | "photo-studio";
+export type VaultFolderScope = SectionId | "contacts" | "business-cards" | "medical-records" | "password-manager" | "photo-studio" | "pdf-studio";
 export type VaultFolderColor = "blue" | "sky" | "teal" | "violet" | "amber" | "rose" | "slate" | "mint";
 export interface VaultFolder {
   id: string;
@@ -532,6 +532,38 @@ export interface PhotoStudioPhoto {
   editSettings: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
+}
+
+/** A PDF saved to the PDF Studio library (2026-10-23). */
+export interface PdfStudioDocument {
+  id: string;
+  folderId: string | null;
+  title: string;
+  notes: string;
+  fileName: string;
+  fileSize: number;
+  pageCount: number;
+  /** Small first-page JPEG preview (data URL) rendered in the browser at save time. */
+  thumbnail: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Save-form fields for "Save to Persora" (new PDF) and "Edit details". */
+export interface PdfStudioSaveInput {
+  title: string;
+  notes: string;
+  folderId: string | null;
+  newFolder: { name: string; color: VaultFolderColor } | null;
+}
+
+/** File facts sent with each saved PDF; the server verifies the bytes. */
+export interface PdfStudioFileMeta {
+  pageCount: number;
+  thumbnail: string | null;
+  fileName: string;
+  metadata: Record<string, unknown>;
 }
 
 /** Organise-form fields shared by Upload & Organize and Save & Organize. */
