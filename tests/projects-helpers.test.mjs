@@ -141,3 +141,24 @@ test('activityLabel maps known actions and cleans unknown ones', () => {
   assert.equal(helpers.activityLabel('member_removed'), 'removed a member');
   assert.equal(helpers.activityLabel('totally_new_action'), 'totally new action');
 });
+
+test('profileAvatar recognises photos, emojis, and DiceBear avatars and rejects anything else', () => {
+  assert.deepEqual(helpers.profileAvatar('data:image/webp;base64,UklGRg=='), { kind: 'photo', src: 'data:image/webp;base64,UklGRg==' });
+  assert.deepEqual(helpers.profileAvatar('emoji:🦊'), { kind: 'emoji', emoji: '🦊' });
+  assert.deepEqual(helpers.profileAvatar('https://api.dicebear.com/7.x/adventurer/svg?seed=Felix'), { kind: 'image', src: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Felix' });
+  for (const unsafe of ['', null, undefined, 'javascript:alert(1)', 'https://evil.example/x.png', 'data:image/svg+xml;base64,PHN2Zz4=', 'emoji:', 'emoji:<b>']) {
+    assert.deepEqual(helpers.profileAvatar(unsafe), { kind: 'initials' }, `${String(unsafe)} falls back to initials`);
+  }
+});
+
+test('canToggleChecklistItem lets editors and assignees tick items, nobody else', () => {
+  const member = { owner: false, role: 'commenter', canCreateFields: false };
+  const owner = { owner: true, role: 'owner', canCreateFields: true };
+  const field = { creator_id: 'creator', assignee_id: 'field-assignee' };
+  assert.equal(helpers.canToggleChecklistItem(owner, field, { assignee_id: null }, 'someone'), true, 'project owner');
+  assert.equal(helpers.canToggleChecklistItem(member, field, { assignee_id: null }, 'creator'), true, 'field creator');
+  assert.equal(helpers.canToggleChecklistItem(member, field, { assignee_id: null }, 'field-assignee'), true, 'field assignee, any item');
+  assert.equal(helpers.canToggleChecklistItem(member, field, { assignee_id: 'item-assignee' }, 'item-assignee'), true, 'item assignee, own item');
+  assert.equal(helpers.canToggleChecklistItem(member, field, { assignee_id: 'item-assignee' }, 'bystander'), false, 'unrelated member');
+  assert.equal(helpers.canToggleChecklistItem(null, field, { assignee_id: 'x' }, 'x'), false, 'no access');
+});

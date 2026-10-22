@@ -444,7 +444,7 @@ export interface ProjectRecord { id: string; owner_id: string; name: string; des
 export interface ProjectAccess { owner: boolean; role: ProjectAccessRole; canCreateFields: boolean; canRequest?: boolean }
 export interface ProjectStats { fields: number; completed: number; inReview: number; members: number; pendingRequests: number; subtasksTotal?: number; subtasksCompleted?: number }
 export interface ProjectSummary extends ProjectRecord { access: { owner: boolean; role: ProjectAccessRole; canCreateFields: boolean }; stats: ProjectStats }
-export interface ProjectMember { userId: string; role: ProjectMemberRole; canCreateFields: boolean; invitedBy: string | null; createdAt: string; name: string; email: string; loginId: string }
+export interface ProjectMember { userId: string; role: ProjectMemberRole; canCreateFields: boolean; invitedBy: string | null; createdAt: string; name: string; email: string; loginId: string; avatarUrl?: string }
 export interface ProjectFolder { id: string; project_id: string; name: string; color: ProjectFolderColor; created_by: string | null; created_at: string; updated_at: string; fieldCount?: number }
 export interface ProjectFieldComment { id: string; field_id: string; author_id: string; author_name: string; body: string; created_at: string; updated_at: string }
 export interface ProjectSubtask {
@@ -480,10 +480,13 @@ export interface ProjectActivity { id: string; actor_id: string | null; actor_na
 export interface ProjectDetail {
   project: ProjectRecord;
   access: ProjectAccess;
-  owner: { id: string; name: string; email: string; loginId: string } | null;
+  owner: { id: string; name: string; email: string; loginId: string; avatarUrl?: string } | null;
   members: ProjectMember[];
   folders: ProjectFolder[];
   fields: ProjectField[];
   requests: ProjectFieldRequest[];
   activity: ProjectActivity[];
+  /** Display name + chosen profile picture (photo, emoji, avatar) for everyone the project references. */
+  people?: Record<string, ProjectPerson>;
 }
+export interface ProjectPerson { name: string; avatarUrl: string }

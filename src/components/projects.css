@@ -307,6 +307,13 @@
 .pj-avatar-blue { background: #2563eb; }
 .pj-avatar-orange { background: #ea580c; }
 .pj-avatar-green { background: #059669; }
+/* Each person's own profile picture: uploaded photo, chosen emoji, or avatar (initials stay the fallback). */
+.pj-avatar-has-photo,.pj-avatar-has-image { overflow: hidden; background: #eef2f7; }
+.pj-avatar > img { display: block; width: 100%; height: 100%; border-radius: inherit; object-fit: cover; }
+.pj-avatar-has-emoji { background: #f1f5f9; color: inherit; font-size: 1.05rem; font-weight: 400; letter-spacing: 0; line-height: 1; }
+.pj-avatar-sm.pj-avatar-has-emoji { font-size: .8rem; }
+.pj-avatar-emoji { display: grid; width: 100%; height: 100%; place-items: center; }
+.dark .pj-avatar-has-emoji,[data-theme="dark"] .pj-avatar-has-emoji,.dark .pj-avatar-has-photo,[data-theme="dark"] .pj-avatar-has-photo,.dark .pj-avatar-has-image,[data-theme="dark"] .pj-avatar-has-image { background: #334155; }
 
 /* ---- activity table ------------------------------------------------------ */
 .pj-table-scroll { overflow-x: auto; }
@@ -571,14 +578,7 @@
 .pj-detail-progress-row { display: flex; align-items: center; gap: .7rem; }
 .pj-detail-progress-row .pj-progress-track { flex: 1; }
 .pj-detail-progress-row > b { min-width: 2.5rem; color: var(--pj-strong); font-size: .82rem; text-align: right; }
-.pj-detail-folder-value { display: flex; align-items: center; gap: .5rem; color: var(--pj-strong); font-size: .82rem; }
-.pj-folder-swatch-neutral { background: #94a3b8; }
 .pj-detail-permission-note { margin: 0; color: var(--pj-muted); font-size: .75rem; line-height: 1.5; }
-.pj-detail-member-list { display: flex; flex-direction: column; gap: .4rem; margin: 0; padding: 0; list-style: none; }
-.pj-detail-member-list li { display: flex; align-items: center; gap: .5rem; min-width: 0; border-top: 1px solid var(--border-soft, rgba(15,23,42,.06)); padding: .45rem 0 0; }
-.pj-detail-member-list li > span:nth-child(2) { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: .1rem; }
-.pj-detail-member-list li > span:nth-child(2) b { overflow: hidden; color: var(--pj-strong); font-size: .76rem; text-overflow: ellipsis; white-space: nowrap; }
-.pj-detail-member-list li > span:nth-child(2) small { color: var(--pj-muted); font-size: .67rem; }
 .dark .pj-detail-section,[data-theme="dark"] .pj-detail-section { background: rgba(30,41,59,.5); border-color: rgba(148,163,184,.16); }
 
 @media (hover: none) {
@@ -731,6 +731,15 @@
 .pj-checklist-readonly > li.is-complete .pj-checklist-readonly-title { color: var(--pj-muted); text-decoration: line-through; }
 .pj-checklist-readonly > li > small { max-width: 10rem; overflow: hidden; color: var(--pj-muted); font-size: .65rem; text-overflow: ellipsis; white-space: nowrap; }
 .dark .pj-checklist-readonly > li,[data-theme="dark"] .pj-checklist-readonly > li { border-color: rgba(148,163,184,.18); }
+/* Assigned people tick items off straight from the field view (no add/rename/delete here). */
+.pj-checklist-readonly .pj-checklist-toggle { margin: 0; padding: 0; background: transparent; cursor: pointer; font: inherit; transition: border-color .15s ease, background-color .15s ease, box-shadow .15s ease; }
+.pj-checklist-readonly .pj-checklist-toggle:hover:not(:disabled) { border-color: #188038; }
+.pj-checklist-readonly .pj-checklist-toggle:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(24,128,56,.28); }
+.pj-checklist-readonly .pj-checklist-toggle:disabled { cursor: progress; opacity: .7; }
+.pj-checklist-readonly > li.is-complete .pj-checklist-toggle { border-color: #188038; background: #188038; }
+.pj-checklist-readonly > li > small.pj-checklist-assignee { display: inline-flex; align-items: center; gap: .3rem; max-width: 11rem; }
+.pj-checklist-assignee .pj-avatar-sm { width: 1.15rem; height: 1.15rem; border-width: 1px; font-size: .46rem; }
+.pj-checklist-assignee .pj-avatar-sm.pj-avatar-has-emoji { font-size: .62rem; }
 .pj-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
 @media (max-width: 560px) {
   .pj-checklist-editor-list > li { grid-template-columns: auto minmax(0,1fr); }
@@ -739,3 +748,5 @@
   .pj-checklist-editor-add { grid-template-columns: minmax(0,1fr); }
   .pj-checklist-editor-add .pj-ghost-button { justify-content: center; }
 }
+/* Keep the attachment count beside its heading instead of floating mid-header. */
+.pj-attachments-section > header h3 { flex: 0 1 auto; }

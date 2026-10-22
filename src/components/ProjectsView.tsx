@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import {
-  Activity, ArrowDown, ArrowUp, Bell, CalendarDays, Check, CheckCircle2, ChevronLeft, CircleAlert, Clock3, Download, Eye, FileText, Folder, FolderKanban, FolderPlus, FolderOpen, Info, LayoutGrid, List, Loader2,
+  Activity, ArrowDown, ArrowUp, Bell, Check, CheckCircle2, ChevronLeft, CircleAlert, Clock3, Download, Eye, FileText, Folder, FolderKanban, FolderPlus, FolderOpen, Info, LayoutGrid, List, Loader2,
   MessageSquare, Paperclip, Pencil, Pin, Plus, RefreshCw, Search, Send, ShieldCheck, Star, Trash2, UserPlus, UsersRound, X,
 } from "lucide-react";
 import type {
   AppUser, ProjectDetail, ProjectField, ProjectFieldAttachment, ProjectSubtask, ProjectFieldComment, ProjectFieldRequest, ProjectFieldStatus,
-  ProjectFolder, ProjectFolderColor, ProjectKind, ProjectMemberRole, ProjectNotificationPreferences, ProjectSummary,
+  ProjectFolder, ProjectFolderColor, ProjectKind, ProjectMemberRole, ProjectNotificationPreferences, ProjectPerson, ProjectSummary,
 } from "../types";
 import {
   addProjectComment, addProjectMember, cancelProjectFieldRequest, createProject, createProjectField, createProjectFolder, createProjectSubtask,
@@ -15,7 +15,7 @@ import {
 } from "../lib/cloud";
 import {
   activityLabel, avatarTone, canCreateField, checklistDraftFrom, checklistProgress, fieldProgress, planChecklistSync, canCreateFolder, canDeleteComment, canEditComment,
-  canEditField, canManageFolder, canManageMembers, canRequestField, filterSortFields, formatDate, initialsFor,
+  canEditField, canManageFolder, canManageMembers, canRequestField, canToggleChecklistItem, filterSortFields, formatDate, initialsFor, profileAvatar,
   projectKindLabel, projectStats, relativeTime, statusMeta, FOLDER_COLORS, PROJECT_MEMBER_ROLES,
   PROJECT_SORT_OPTIONS, PROJECT_STATUSES, type ChecklistDraftItem, type FieldFilter, type ProjectSortKey,
 } from "../lib/projects";
@@ -74,6 +74,27 @@ function syncProjectUrl(projectId: string) {
   window.history.pushState({ ...(window.history.state || {}), persoraProjectId: projectId || null }, "", url);
 }
 
+/** Everyone the open project references, keyed by user id, so avatars show each person's own profile picture. */
+const ProjectPeopleContext = createContext<Record<string, ProjectPerson>>({});
+
+/** A person's chosen profile picture (uploaded photo, emoji, or avatar), falling back to coloured initials. */
+function PersonAvatar({ userId, name, small = false, title, style }: { userId?: string | null; name?: string | null; small?: boolean; title?: string; style?: CSSProperties }) {
+  const people = useContext(ProjectPeopleContext);
+  const person = userId ? people[userId] : undefined;
+  const label = String(name || person?.name || "");
+  const avatar = profileAvatar(person?.avatarUrl);
+  const [failedSrc, setFailedSrc] = useState("");
+  const image = (avatar.kind === "photo" || avatar.kind === "image") && avatar.src !== failedSrc ? avatar.src : "";
+  const kind = image ? avatar.kind : avatar.kind === "emoji" ? "emoji" : "initials";
+  return (
+    <span className={`pj-avatar ${small ? "pj-avatar-sm " : ""}pj-avatar-${avatarTone(label)}${kind === "initials" ? "" : ` pj-avatar-has-${kind}`}`} title={title} style={style} data-avatar={kind}>
+      {image ? <img src={image} alt="" referrerPolicy="no-referrer" onError={() => setFailedSrc(image)} />
+        : avatar.kind === "emoji" ? <span className="pj-avatar-emoji" aria-hidden="true">{avatar.emoji}</span>
+          : initialsFor(label)}
+    </span>
+  );
+}
+
 export default function ProjectsView({ user, maxUploadMb = 25, notify }: Props) {
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
   const [listError, setListError] = useState("");
@@ -113,6 +134,9 @@ export default function ProjectsView({ user, maxUploadMb = 25, notify }: Props) 
         setDetail(null);
         setDetailError(error instanceof Error ? error.message : "The project could not be loaded.");
       }
+    } finally {
+      // Whichever request finishes last clears the spinner, even when a later reload replaced the first one.
+      if (ticket === detailRequest.current) setDetailLoading(false);
     }
   }, []);
 
@@ -128,10 +152,7 @@ export default function ProjectsView({ user, maxUploadMb = 25, notify }: Props) 
     }
     setDetail(null);
     setDetailLoading(true);
-    const ticket = detailRequest.current + 1;
-    void reloadDetail(selectedId).finally(() => {
-      if (detailRequest.current === ticket) setDetailLoading(false);
-    });
+    void reloadDetail(selectedId);
   }, [selectedId, refreshList, reloadDetail]);
 
   useEffect(() => {
@@ -151,7 +172,7 @@ export default function ProjectsView({ user, maxUploadMb = 25, notify }: Props) 
       lastProjectDestination.current = "";
       setPendingProjectDestination({ projectId: destination.projectId!, fieldId: destination.fieldId || "", subtaskId: destination.subtaskId || "" });
       setModal(null); setTab("fields");
-      if (selectedId === destination.projectId) { setDetailLoading(true); void reloadDetail(destination.projectId).finally(() => setDetailLoading(false)); }
+      if (selectedId === destination.projectId) { setDetailLoading(true); void reloadDetail(destination.projectId); }
       else setSelectedId(destination.projectId!);
     };
     window.addEventListener("persora-project-notification-navigation", onProjectNotification);
@@ -179,6 +200,7 @@ export default function ProjectsView({ user, maxUploadMb = 25, notify }: Props) 
     setTab("overview");
     setDetail(null);
     setDetailError("");
+    setModal(null);
   }, []);
   const backToList = useCallback(() => {
     syncProjectUrl("");
@@ -215,6 +237,21 @@ export default function ProjectsView({ user, maxUploadMb = 25, notify }: Props) 
       notify(error instanceof Error ? error.message : "The reaction could not be saved.", "error");
     }
   }, [selectedId, notify]);
+
+  const people = useMemo(() => {
+    const map: Record<string, ProjectPerson> = { ...(detail?.people || {}) };
+    if (detail?.owner) map[detail.owner.id] = { name: detail.owner.name, avatarUrl: detail.owner.avatarUrl ?? map[detail.owner.id]?.avatarUrl ?? "" };
+    for (const member of detail?.members || []) map[member.userId] = { name: member.name, avatarUrl: member.avatarUrl ?? map[member.userId]?.avatarUrl ?? "" };
+    // The signed-in user's own picture is always the freshest copy (Settings updates it immediately).
+    if (user.id && typeof user.avatarUrl === "string") map[user.id] = { name: map[user.id]?.name || user.fullName, avatarUrl: user.avatarUrl };
+    return map;
+  }, [detail, user.id, user.fullName, user.avatarUrl]);
+
+  // A folder filter only makes sense inside the project (and folder list) it was chosen in.
+  useEffect(() => {
+    if (!detail || filter.folderId === "all") return;
+    if (!detail.folders.some((folder) => folder.id === filter.folderId)) setFilter((current) => ({ ...current, folderId: "all" }));
+  }, [detail, filter.folderId]);
 
   if (demo) {
     return (
@@ -293,6 +330,7 @@ export default function ProjectsView({ user, maxUploadMb = 25, notify }: Props) 
             notify(error instanceof Error ? error.message : "The project could not be created.", "error");
           } finally { setBusy(false); }
         }} />}
+        {modal?.kind === "notification-preferences" && <ProjectNotificationPreferencesModal onClose={() => setModal(null)} notify={notify} />}
       </div>
     );
   }
@@ -306,6 +344,7 @@ export default function ProjectsView({ user, maxUploadMb = 25, notify }: Props) 
   const ownerPendingCount = (access?.owner ? pendingRequests.length : 0);
 
   return (
+    <ProjectPeopleContext.Provider value={people}>
     <div className="pj-view">
       <div className="pj-topbar">
         <div className="pj-breadcrumbs">
@@ -382,10 +421,10 @@ export default function ProjectsView({ user, maxUploadMb = 25, notify }: Props) 
                   <div className="pj-card-head"><h3><span className="pj-overview-section-icon pj-overview-section-purple"><UsersRound size={15} /></span>Team</h3>{detail.project.kind === "shared" && <button type="button" className="pj-link-button" onClick={() => setModal({ kind: "members" })}>{canManageMembers(access) ? "Manage" : "View"}</button>}</div>
                   <ul className="pj-people-list">
                     {detail.owner && (
-                      <li><span className={`pj-avatar pj-avatar-${avatarTone(detail.owner.name)}`}>{initialsFor(detail.owner.name)}</span><span className="pj-person"><b>{detail.owner.name}</b><small>Owner{detail.owner.id === user.id ? " — you" : ""}</small></span><span className="pj-chip pj-chip-soft">Owner</span></li>
+                      <li><PersonAvatar userId={detail.owner.id} name={detail.owner.name} /><span className="pj-person"><b>{detail.owner.name}</b><small>Owner{detail.owner.id === user.id ? " — you" : ""}</small></span><span className="pj-chip pj-chip-soft">Owner</span></li>
                     )}
                     {detail.members.map((member) => (
-                      <li key={member.userId}><span className={`pj-avatar pj-avatar-${avatarTone(member.name)}`}>{initialsFor(member.name)}</span><span className="pj-person"><b>{member.name}</b><small>{member.userId === user.id ? "You" : member.email || member.loginId}{member.canCreateFields ? " · creates fields" : ""}</small></span><span className="pj-chip pj-chip-soft">{member.role}</span></li>
+                      <li key={member.userId}><PersonAvatar userId={member.userId} name={member.name} /><span className="pj-person"><b>{member.name}</b><small>{member.userId === user.id ? "You" : member.email || member.loginId}{member.canCreateFields ? " · creates fields" : ""}</small></span><span className="pj-chip pj-chip-soft">{member.role}</span></li>
                     ))}
                   </ul>
                 </div></MagicCard>
@@ -642,6 +681,7 @@ export default function ProjectsView({ user, maxUploadMb = 25, notify }: Props) 
       )}
       {modal?.kind === "notification-preferences" && <ProjectNotificationPreferencesModal onClose={() => setModal(null)} notify={notify} />}
     </div>
+    </ProjectPeopleContext.Provider>
   );
 }
 
@@ -725,8 +765,8 @@ function FieldCard({ field, layout, folders, onOpen, onToggleReaction }: {
       <div className="pj-field-card-checklist"><CheckCircle2 size={12} /> {checklist.total ? `${checklist.completed}/${checklist.total} checklist items` : "No checklist items"}</div>
       <footer>
         <span className="pj-people-inline">
-          {field.creator_name && <span className={`pj-avatar pj-avatar-sm pj-avatar-${avatarTone(field.creator_name)}`} title={`Created by ${field.creator_name}`}>{initialsFor(field.creator_name)}</span>}
-          {field.assigneeName && <span className={`pj-avatar pj-avatar-sm pj-avatar-${avatarTone(field.assigneeName)}`} title={`Assigned to ${field.assigneeName}`} style={{ marginLeft: -6 }}>{initialsFor(field.assigneeName)}</span>}
+          {field.creator_name && <PersonAvatar small userId={field.creator_id} name={field.creator_name} title={`Created by ${field.creator_name}`} />}
+          {field.assigneeName && <PersonAvatar small userId={field.assignee_id} name={field.assigneeName} title={`Assigned to ${field.assigneeName}`} style={{ marginLeft: -6 }} />}
         </span>
         <span className="pj-field-card-meta">
           {field.assigneeName && <small>→ {field.assigneeName}</small>}
@@ -998,14 +1038,31 @@ function FieldDetailModal({ busy, field, detail, user, maxUploadMb, onClose, onT
   const [attachmentBusy, setAttachmentBusy] = useState(false);
   const [attachmentPreview, setAttachmentPreview] = useState<{ url: string; type: string; name: string } | null>(null);
   const comments = field.comments || [];
-  const subtasks = field.subtasks || [];
+  // Completion ticks in flight (subtask id → requested state) so the checkbox and progress respond instantly.
+  const [pendingChecks, setPendingChecks] = useState<Record<string, boolean>>({});
+  const subtasks = (field.subtasks || []).map((task) => (task.id in pendingChecks ? { ...task, completed: pendingChecks[task.id] } : task));
   const attachments = field.attachments || [];
   // Same checklist-derived value the field cards show, so both stay in sync after every reload.
   const progress = checklistProgress(subtasks);
   const mine = field.mine || { pinned: false, favourite: false };
   const meta = statusMeta(field.status);
-  const folder = detail.folders.find((entry) => entry.id === field.folder_id);
   const editable = canEditField(detail.access, field, user.id);
+  const canCheckAny = subtasks.some((task) => canToggleChecklistItem(detail.access, field, task, user.id));
+
+  /** Assigned people tick items off here; adding, renaming, and deleting items stays in Edit field. */
+  const toggleChecklistItem = async (task: ProjectSubtask) => {
+    if (task.id in pendingChecks || !canToggleChecklistItem(detail.access, field, task, user.id)) return;
+    const next = !task.completed;
+    setPendingChecks((current) => ({ ...current, [task.id]: next }));
+    try {
+      await updateProjectSubtask(detail.project.id, field.id, task.id, { completed: next });
+      await onChanged();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "The checklist item could not be updated.", "error");
+    } finally {
+      setPendingChecks((current) => { const rest = { ...current }; delete rest[task.id]; return rest; });
+    }
+  };
 
   const postComment = async () => {
     const body = comment.trim();
@@ -1094,6 +1151,11 @@ function FieldDetailModal({ busy, field, detail, user, maxUploadMb, onClose, onT
             <div><span>Project</span><b>{detail.project.name}</b></div>
             <div><span>Project access</span><b>{detail.access.owner ? "Owner" : detail.access.role}</b></div>
             <div><span>Comments</span><b>{comments.length} comment{comments.length === 1 ? "" : "s"}</b></div>
+            <div className="pj-detail-person"><span>Created by</span><b><PersonAvatar small userId={field.creator_id} name={field.creator_name} />{field.creator_name || "—"}</b></div>
+            <div className="pj-detail-person"><span>Assigned to</span><b>{field.assigneeName ? <><PersonAvatar small userId={field.assignee_id} name={field.assigneeName} />{field.assigneeName}</> : "Unassigned"}</b></div>
+            <div><span>Due</span><b>{formatDate(field.due_date)}</b></div>
+            <div><span>Created</span><b>{formatDate(field.created_at)}</b></div>
+            <div><span>Last updated</span><b>{relativeTime(field.updated_at)}</b></div>
           </div>
         </section>
 
@@ -1105,16 +1167,22 @@ function FieldDetailModal({ busy, field, detail, user, maxUploadMb, onClose, onT
         <section className="pj-detail-section pj-progress-section">
           <header><span className="pj-detail-section-icon pj-detail-green"><CheckCircle2 size={15} /></span><h3>Status &amp; progress</h3><span className={`pj-chip pj-chip-${meta.tone}`}>{meta.label}</span></header>
           <div className="pj-detail-progress-row"><div className="pj-progress-track pj-progress-track-lg" role="progressbar" aria-label="Field progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress.percent}><span style={{ width: `${progress.percent}%` }} /></div><b>{progress.percent}%</b></div>
-          <small className="pj-detail-progress-note">{progress.total ? `${progress.completed} of ${progress.total} checklist item${progress.total === 1 ? "" : "s"} complete.` : "No checklist items yet — progress is 0%."}{editable ? " Manage the checklist from Edit." : ""}</small>
+          <small className="pj-detail-progress-note">{progress.total ? `${progress.completed} of ${progress.total} checklist item${progress.total === 1 ? "" : "s"} complete.` : "No checklist items yet — progress is 0%."}{editable ? " Manage the checklist from Edit." : canCheckAny ? " Check off the items assigned to you." : ""}</small>
           {subtasks.length > 0 && (
             <ul className="pj-checklist-readonly" aria-label="Checklist">
-              {subtasks.map((task) => (
-                <li key={task.id} id={`project-subtask-${task.id}`} className={task.completed ? "is-complete" : ""}>
-                  <span className="pj-checklist-readonly-mark" aria-hidden="true">{task.completed ? <Check size={11} /> : null}</span>
-                  <span className="pj-checklist-readonly-title">{task.title}<span className="pj-visually-hidden">{task.completed ? " (complete)" : " (not complete)"}</span></span>
-                  {task.assigneeName && <small>{task.assigneeName}</small>}
-                </li>
-              ))}
+              {subtasks.map((task) => {
+                const checkable = canToggleChecklistItem(detail.access, field, task, user.id);
+                const saving = task.id in pendingChecks;
+                return (
+                  <li key={task.id} id={`project-subtask-${task.id}`} className={`${task.completed ? "is-complete" : ""}${checkable ? " is-checkable" : ""}`}>
+                    {checkable ? (
+                      <button type="button" role="checkbox" aria-checked={task.completed} className="pj-checklist-readonly-mark pj-checklist-toggle" onClick={() => void toggleChecklistItem(task)} disabled={saving} aria-busy={saving || undefined} aria-label={`${task.title} — mark as ${task.completed ? "not complete" : "complete"}`}>{task.completed ? <Check size={11} /> : null}</button>
+                    ) : <span className="pj-checklist-readonly-mark" aria-hidden="true">{task.completed ? <Check size={11} /> : null}</span>}
+                    <span className="pj-checklist-readonly-title">{task.title}{!checkable && <span className="pj-visually-hidden">{task.completed ? " (complete)" : " (not complete)"}</span>}</span>
+                    {task.assigneeName && <small className="pj-checklist-assignee"><PersonAvatar small userId={task.assignee_id} name={task.assigneeName} />{task.assigneeName}</small>}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>
@@ -1133,38 +1201,6 @@ function FieldDetailModal({ busy, field, detail, user, maxUploadMb, onClose, onT
             {!attachments.length && <li className="pj-attachment-empty">No attachments on this field yet.</li>}
           </ul>
         </section>
-
-        <section className="pj-detail-section">
-          <header><span className="pj-detail-section-icon pj-detail-blue"><UsersRound size={15} /></span><h3>Owner &amp; assignee</h3></header>
-          <div className="pj-detail-people-grid">
-            <div className="pj-detail-person"><span>Created by · field owner</span><b><span className={`pj-avatar pj-avatar-sm pj-avatar-${avatarTone(field.creator_name)}`}>{initialsFor(field.creator_name)}</span>{field.creator_name || "—"}</b></div>
-            <div className="pj-detail-person"><span>Assigned to</span><b>{field.assigneeName ? <><span className={`pj-avatar pj-avatar-sm pj-avatar-${avatarTone(field.assigneeName)}`}>{initialsFor(field.assigneeName)}</span>{field.assigneeName}</> : "Unassigned"}</b></div>
-          </div>
-        </section>
-
-        <section className="pj-detail-section">
-          <header><span className="pj-detail-section-icon pj-detail-amber"><CalendarDays size={15} /></span><h3>Dates</h3></header>
-          <div className="pj-detail-info-grid pj-detail-dates">
-            <div><span>Due</span><b>{formatDate(field.due_date)}</b></div>
-            <div><span>Created</span><b>{formatDate(field.created_at)}</b></div>
-            <div><span>Last updated</span><b>{relativeTime(field.updated_at)}</b></div>
-          </div>
-        </section>
-
-        <section className="pj-detail-section">
-          <header><span className="pj-detail-section-icon pj-detail-cyan"><FolderOpen size={15} /></span><h3>Folder</h3></header>
-          <div className="pj-detail-folder-value">{folder ? <><span className={`pj-folder-swatch pj-folder-${folder.color}`} /><b>{folder.name}</b></> : <><span className="pj-folder-swatch pj-folder-swatch-neutral" /><b>Unfiled</b></>}</div>
-        </section>
-
-        <section className="pj-detail-section">
-          <header><span className="pj-detail-section-icon pj-detail-purple"><ShieldCheck size={15} /></span><h3>Members &amp; permissions</h3><span className="pj-chip pj-chip-muted">{detail.members.length + (detail.owner ? 1 : 0)}</span></header>
-          <p className="pj-detail-permission-note">{editable ? "You can edit this field. The project owner can also edit it." : "You can view this field; editing is limited to its creator and the project owner."} {detail.access.owner ? "Only the project owner can manage project members and roles." : "Only the project owner manages project members and roles."}</p>
-          <ul className="pj-detail-member-list">
-            {detail.owner && <li><span className={`pj-avatar pj-avatar-sm pj-avatar-${avatarTone(detail.owner.name)}`}>{initialsFor(detail.owner.name)}</span><span><b>{detail.owner.name}{detail.owner.id === user.id ? " (you)" : ""}</b><small>Project owner · can manage access</small></span><span className="pj-chip pj-chip-soft">Owner</span></li>}
-            {detail.members.map((member) => <li key={member.userId}><span className={`pj-avatar pj-avatar-sm pj-avatar-${avatarTone(member.name)}`}>{initialsFor(member.name)}</span><span><b>{member.name}{member.userId === user.id ? " (you)" : ""}</b><small>{member.canCreateFields ? `${member.role} · may create fields` : member.role}</small></span><span className="pj-chip pj-chip-soft">{member.role}</span></li>)}
-            {!detail.owner && !detail.members.length && <li className="pj-muted">This personal project has no additional members.</li>}
-          </ul>
-        </section>
       </div>
 
       <section className="pj-comments">
@@ -1174,7 +1210,7 @@ function FieldDetailModal({ busy, field, detail, user, maxUploadMb, onClose, onT
             const editing = editingCommentId === entry.id;
             return (
               <li key={entry.id}>
-                <span className={`pj-avatar pj-avatar-${avatarTone(entry.author_name)}`}>{initialsFor(entry.author_name)}</span>
+                <PersonAvatar userId={entry.author_id} name={entry.author_name} />
                 <div className="pj-comment-body">
                   <header><b>{entry.author_name || "A member"}</b><time>{relativeTime(entry.created_at)}{entry.updated_at !== entry.created_at ? " (edited)" : ""}</time></header>
                   {editing ? (
@@ -1270,14 +1306,14 @@ function MembersModal({ busy, detail, user, onClose, act, onLeft }: {
       <ul className="pj-people-list pj-people-list-modal">
         {detail.owner && (
           <li>
-            <span className={`pj-avatar pj-avatar-${avatarTone(detail.owner.name)}`}>{initialsFor(detail.owner.name)}</span>
+            <PersonAvatar userId={detail.owner.id} name={detail.owner.name} />
             <span className="pj-person"><b>{detail.owner.name}</b><small>{detail.owner.email || detail.owner.loginId}</small></span>
             <span className="pj-chip pj-chip-soft">Owner</span>
           </li>
         )}
         {detail.members.map((member) => (
           <li key={member.userId}>
-            <span className={`pj-avatar pj-avatar-${avatarTone(member.name)}`}>{initialsFor(member.name)}</span>
+            <PersonAvatar userId={member.userId} name={member.name} />
             <span className="pj-person"><b>{member.name}{isSelf(member.userId) ? " (you)" : ""}</b><small>{member.email || member.loginId}</small></span>
             {owner ? (
               <span className="pj-member-controls">

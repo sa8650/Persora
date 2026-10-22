@@ -177,6 +177,24 @@ export function initialsFor(name: string): string {
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
+/** How a person's chosen profile picture renders. Unknown or unsafe values fall back to initials. */
+export type ProfileAvatar = { kind: "photo" | "image"; src: string } | { kind: "emoji"; emoji: string } | { kind: "initials" };
+export function profileAvatar(avatarUrl: string | null | undefined): ProfileAvatar {
+  const value = typeof avatarUrl === "string" ? avatarUrl.trim() : "";
+  if (!value) return { kind: "initials" };
+  if (value.startsWith("emoji:")) {
+    const emoji = value.slice(6).trim();
+    return emoji && Array.from(emoji).length <= 24 && !/[\u0000-\u001f<>]/.test(emoji) ? { kind: "emoji", emoji } : { kind: "initials" };
+  }
+  if (value.length <= 80000 && /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/i.test(value)) return { kind: "photo", src: value };
+  if (/^https:\/\/api\.dicebear\.com\/7\.x\/adventurer\/svg\?seed=[A-Za-z0-9_-]{1,40}$/.test(value)) return { kind: "image", src: value };
+  return { kind: "initials" };
+}
+/** Field assignees and a checklist item's assignee may tick items off; editors may change everything. */
+export function canToggleChecklistItem(access: ProjectAccessLike | null | undefined, field: Pick<ProjectField, "creator_id" | "assignee_id">, task: { assignee_id: string | null }, userId: string): boolean {
+  if (!access || !userId) return false;
+  return canEditField(access, field, userId) || field.assignee_id === userId || task.assignee_id === userId;
+}
 const AVATAR_TONES = ["cyan", "purple", "pink", "blue", "orange", "green"] as const;
 export function avatarTone(name: string): (typeof AVATAR_TONES)[number] {
   let hash = 0;

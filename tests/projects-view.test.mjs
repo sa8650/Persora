@@ -270,7 +270,13 @@ test('field detail modal shows comments with author actions', async () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
   });
   assert.ok(text().includes('First pass is up.'), 'comment body visible');
-  for (const label of ['Information', 'Description', 'Status & progress', 'Owner & assignee', 'Dates', 'Folder', 'Members & permissions']) assert.ok(text().includes(label), `${label} section is visible`);
+  const sectionTitles = [...document.querySelectorAll('.pj-modal .pj-detail-section > header h3')].map((heading) => heading.textContent);
+  assert.deepEqual(sectionTitles, ['Information', 'Description', 'Status & progress', 'Private attachments'], 'Folder, Members & permissions, Dates, and Owner & assignee are no longer separate sections');
+  const info = [...document.querySelectorAll('.pj-modal .pj-detail-info-grid > div')].map((cell) => cell.textContent.replace(/\s+/g, ' ').trim());
+  for (const label of ['Project', 'Project access', 'Comments', 'Created by', 'Assigned to', 'Due', 'Created', 'Last updated']) assert.ok(info.some((cell) => cell.startsWith(label)), `${label} lives in the Information grid`);
+  assert.ok(info.some((cell) => cell.startsWith('Created by') && cell.includes('Kris Ray')), 'field creator shown in Information');
+  assert.ok(info.some((cell) => cell.startsWith('Assigned to') && cell.includes('Amina Rahman')), 'assignee shown in Information');
+  assert.ok(!text().includes('Members & permissions') && !text().includes('Owner & assignee'), 'removed sections do not render');
   assert.ok(text().includes('Write a comment') || document.querySelector('.pj-comment-input'), 'composer renders');
   // The owner (not the comment author) must see moderation delete but not edit.
   const commentActions = [...document.querySelectorAll('.pj-comment-actions button')].map((btn) => btn.textContent);
@@ -472,4 +478,128 @@ test('project attachment client gate blocks unsupported and oversized files befo
   assert.ok(errors.some((message) => message.includes('1 MB')), 'upload limit follows the configured maximum');
   assert.equal(apiCalls.some((call) => call.method === 'POST' && call.target.endsWith('/attachments')), false, 'invalid files never reach the Worker');
   await unmount();
+});
+
+test('Notification preferences opens straight from the project list without opening a project', async () => {
+  ownerFixture();
+  fixtures['GET /api/projects/notification-preferences'] = { membership: true, assignments: true, requests: true, subtasks: true, comments: true, attachments: true, deadlines: true, updates: true };
+  window.history.replaceState({}, '', '/');
+  const { container, unmount } = await mount(userRecord(OWNER_ID, 'Amina Rahman'));
+  apiCalls.length = 0;
+  const button = [...container.querySelectorAll('.pj-list-head-actions button')].find((entry) => entry.textContent.includes('Notification preferences'));
+  assert.ok(button, 'list view shows the preferences button');
+  await press(button);
+  assert.ok(document.querySelector('.pj-modal'), 'the preferences modal opens immediately on the list view');
+  assert.ok(apiCalls.some((call) => call.method === 'GET' && call.target === '/api/projects/notification-preferences'), 'preferences load right away');
+  assert.ok(!apiCalls.some((call) => call.target === '/api/projects/proj-1'), 'no project needs to be opened first');
+  assert.ok(container.querySelector('.pj-project-grid'), 'the project list stays underneath');
+  await press(document.querySelector('.pj-modal [aria-label="Close dialog"]'));
+  assert.ok(!document.querySelector('.pj-modal'), 'the modal closes');
+  await click('.pj-project-card .magic-card-content', container);
+  assert.ok(!document.querySelector('.pj-modal'), 'opening a project afterwards does not resurrect a stale modal');
+  await unmount();
+  window.history.replaceState({}, '', '/');
+});
+
+test('assigned members check off checklist items in the view modal but cannot manage the checklist', async () => {
+  memberFixture();
+  const detail = fixtures['GET /api/projects/proj-1'];
+  const state = { mine: false };
+  detail.fields[0].subtasks = [
+    { id: 'task-mine', project_id: 'proj-1', field_id: 'fld-1', title: 'Shoot product photos', completed: false, sort_order: 10, assignee_id: MEMBER_ID, created_by: OWNER_ID, created_at: NOW, updated_at: NOW, assigneeName: 'Kris Ray', creatorName: 'Amina Rahman' },
+    { id: 'task-owner', project_id: 'proj-1', field_id: 'fld-1', title: 'Approve budget', completed: false, sort_order: 20, assignee_id: OWNER_ID, created_by: OWNER_ID, created_at: NOW, updated_at: NOW, assigneeName: 'Amina Rahman', creatorName: 'Amina Rahman' },
+  ];
+  fixtures['GET /api/projects/proj-1'] = () => ({ ...detail, fields: detail.fields.map((field) => ({ ...field, subtasks: field.subtasks.map((task) => task.id === 'task-mine' ? { ...task, completed: state.mine } : task) })) });
+  const bodies = [];
+  fixtures['PATCH /api/projects/proj-1/fields/fld-1/subtasks/task-mine'] = ({ init }) => { bodies.push(JSON.parse(init.body)); state.mine = true; return { subtask: { ...detail.fields[0].subtasks[0], completed: true } }; };
+  const { container, unmount } = await mount(userRecord(MEMBER_ID, 'Kris Ray'));
+  await openFieldsTab(container);
+  await press(container.querySelector('.pj-field-card'));
+  assert.ok(!document.querySelector('.pj-detail-actions .pj-primary-button'), 'a non-editor gets no Edit button');
+  const mine = document.querySelector('#project-subtask-task-mine [role="checkbox"]');
+  assert.ok(mine, 'the member can tick the item assigned to them');
+  assert.equal(mine.getAttribute('aria-checked'), 'false');
+  assert.equal(document.querySelector('#project-subtask-task-owner [role="checkbox"]'), null, "someone else's item stays read-only");
+  assert.ok(!document.querySelector('.pj-modal input[aria-label="New checklist item"]') && !document.querySelector('.pj-modal [aria-label^="Delete "]'), 'no add or delete controls in view mode');
+  await press(mine);
+  assert.deepEqual(bodies, [{ completed: true }], 'only the completion flag is sent');
+  assert.equal(document.querySelector('#project-subtask-task-mine [role="checkbox"]').getAttribute('aria-checked'), 'true', 'the reloaded item shows as complete');
+  assert.equal(document.querySelector('.pj-modal [aria-label="Field progress"]').getAttribute('aria-valuenow'), '50', 'progress recalculates from the checklist');
+  assert.equal(container.querySelector('.pj-field-card [aria-label="Field progress"]').getAttribute('aria-valuenow'), '50', 'the card behind the modal updates too');
+  await unmount();
+});
+
+test('the field assignee can check off every item; failed saves roll back with an error', async () => {
+  memberFixture();
+  const detail = fixtures['GET /api/projects/proj-1'];
+  detail.fields[0] = { ...detail.fields[0], assignee_id: MEMBER_ID, assigneeName: 'Kris Ray', subtasks: [
+    { id: 'task-a', project_id: 'proj-1', field_id: 'fld-1', title: 'Item A', completed: false, sort_order: 10, assignee_id: null, created_by: OWNER_ID, created_at: NOW, updated_at: NOW, assigneeName: null, creatorName: 'Amina Rahman' },
+    { id: 'task-b', project_id: 'proj-1', field_id: 'fld-1', title: 'Item B', completed: true, sort_order: 20, assignee_id: OWNER_ID, created_by: OWNER_ID, created_at: NOW, updated_at: NOW, assigneeName: 'Amina Rahman', creatorName: 'Amina Rahman' },
+  ] };
+  const errors = [];
+  delete fixtures['PATCH /api/projects/proj-1/fields/fld-1/subtasks/task-a']; // the stub API answers 404 → save fails
+  const { container, unmount } = await mount(userRecord(MEMBER_ID, 'Kris Ray'), { notify: (message, kind) => { if (kind === 'error') errors.push(message); } });
+  await openFieldsTab(container);
+  await press(container.querySelector('.pj-field-card'));
+  assert.equal(document.querySelectorAll('.pj-modal [role="checkbox"]').length, 2, 'field assignee may tick every item');
+  await press(document.querySelector('#project-subtask-task-a [role="checkbox"]'));
+  assert.equal(errors.length, 1, 'the failure is reported');
+  assert.equal(document.querySelector('#project-subtask-task-a [role="checkbox"]').getAttribute('aria-checked'), 'false', 'the optimistic tick is rolled back');
+  assert.equal(document.querySelector('.pj-modal [aria-label="Field progress"]').getAttribute('aria-valuenow'), '50');
+  await unmount();
+});
+
+test('avatars show each person’s chosen photo, emoji, or avatar and fall back to initials', async () => {
+  ownerFixture();
+  const photo = 'data:image/png;base64,iVBORw0KGgo=';
+  const detail = fixtures['GET /api/projects/proj-1'];
+  detail.owner = { ...detail.owner, avatarUrl: 'emoji:🦊' };
+  detail.members = [{ ...detail.members[0], avatarUrl: photo }];
+  detail.people = { [OWNER_ID]: { name: 'Amina Rahman', avatarUrl: 'emoji:🦊' }, [MEMBER_ID]: { name: 'Kris Ray', avatarUrl: photo }, 'user-left': { name: 'Old Member', avatarUrl: 'javascript:alert(1)' } };
+  detail.fields[0].comments = [...detail.fields[0].comments, { id: 'cmt-2', field_id: 'fld-1', author_id: 'user-left', author_name: 'Old Member', body: 'Legacy note', created_at: NOW, updated_at: NOW }];
+  const { container, unmount } = await mount(userRecord(OWNER_ID, 'Amina Rahman'));
+  await click('.pj-project-card .magic-card-content', container);
+  const team = [...container.querySelectorAll('.pj-people-list li')];
+  assert.equal(team[0].querySelector('.pj-avatar .pj-avatar-emoji')?.textContent, '🦊', 'owner shows their emoji');
+  assert.equal(team[1].querySelector('.pj-avatar img')?.getAttribute('src'), photo, 'member shows their uploaded photo');
+  await press([...container.querySelectorAll('.pj-section-nav button')].find((button) => button.textContent === 'Fields'));
+  const card = [...container.querySelectorAll('.pj-field-card')].find((entry) => entry.textContent.includes('Hero illustration'));
+  assert.equal(card.querySelector('.pj-people-inline [title^="Created by"] img')?.getAttribute('src'), photo, 'field cards use the creator photo');
+  assert.ok(card.querySelector('.pj-people-inline [title^="Assigned to"] .pj-avatar-emoji'), 'field cards use the assignee emoji');
+  await press(card);
+  const comments = [...document.querySelectorAll('.pj-comments li')];
+  assert.ok(comments[0].querySelector('.pj-avatar img'), 'comment author photo');
+  assert.equal(comments[1].querySelector('.pj-avatar').getAttribute('data-avatar'), 'initials', 'unsafe or missing pictures fall back to initials');
+  assert.equal(comments[1].querySelector('.pj-avatar').textContent, 'OM');
+  await unmount();
+});
+
+test('the signed-in user’s current profile picture is used even before the project reloads', async () => {
+  ownerFixture();
+  const { container, unmount } = await mount({ ...userRecord(OWNER_ID, 'Amina Rahman'), avatarUrl: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Felix' });
+  await click('.pj-project-card .magic-card-content', container);
+  const ownerAvatar = container.querySelector('.pj-people-list li .pj-avatar');
+  assert.equal(ownerAvatar.querySelector('img')?.getAttribute('src'), 'https://api.dicebear.com/7.x/adventurer/svg?seed=Felix');
+  assert.equal(container.querySelectorAll('.pj-people-list li')[1].querySelector('.pj-avatar').textContent, 'KR', 'people without a picture keep initials');
+  await unmount();
+});
+
+test('a folder filter from one project never hides another project’s fields', async () => {
+  ownerFixture();
+  const second = { ...fixtures['GET /api/projects'].projects[0], id: 'proj-2', name: 'Second project' };
+  fixtures['GET /api/projects'] = { projects: [fixtures['GET /api/projects'].projects[0], second] };
+  fixtures['GET /api/projects/proj-2'] = { ...fixtures['GET /api/projects/proj-1'], project: { ...fixtures['GET /api/projects/proj-1'].project, id: 'proj-2', name: 'Second project' }, folders: [], fields: [{ ...fixtures['GET /api/projects/proj-1'].fields[1], id: 'fld-9', project_id: 'proj-2', title: 'Second field' }] };
+  window.history.replaceState({}, '', '/');
+  const { container, unmount } = await mount(userRecord(OWNER_ID, 'Amina Rahman'));
+  await openFieldsTab(container);
+  await press(container.querySelector('.vault-folder-folder .vault-folder-open'));
+  assert.ok(!text().includes('Copy deck'), 'folder filter active in project one');
+  await press(container.querySelector('.pj-crumb-back'));
+  const cards = [...container.querySelectorAll('.pj-project-card .magic-card-content')];
+  await press(cards[1]);
+  await press([...container.querySelectorAll('.pj-section-nav button')].find((button) => button.textContent === 'Fields'));
+  assert.ok(text().includes('Second field'), 'the other project shows its fields');
+  assert.ok(container.querySelector('.vault-folder-all.is-selected'), 'All fields is selected again');
+  await unmount();
+  window.history.replaceState({}, '', '/');
 });

@@ -170,3 +170,80 @@ test('Worker rejects subtask writes for a member who is neither project owner no
   assert.equal(response.status, 403);
   assert.equal(mutationRpcCalls, 0, 'the unauthorized request is rejected before any mutation RPC');
 });
+
+function subtaskToggleDatabase({ fieldAssignee = null, taskAssignee = null } = {}) {
+  const MEMBER = '7c3d4e5f-6071-489a-9b2c-3d4e5f607182';
+  const FIELD = '7c3d4e5f-6071-489a-9b2c-3d4e5f607183';
+  const TASK = '7c3d4e5f-6071-489a-9b2c-3d4e5f607185';
+  const rpcCalls = [];
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(String(input));
+    if (url.pathname.endsWith('/projects') && url.searchParams.has('id')) return Response.json([record()]);
+    if (url.pathname.endsWith('/project_members')) return Response.json([{ role: 'viewer', can_create_fields: false }]);
+    if (url.pathname.endsWith('/project_fields')) return Response.json([{ id: FIELD, project_id: PROJECT, creator_id: OWNER, assignee_id: fieldAssignee, title: 'Owner field' }]);
+    if (url.pathname.endsWith('/project_subtasks')) return Response.json([{ id: TASK, field_id: FIELD, assignee_id: taskAssignee }]);
+    if (url.pathname.includes('/rpc/')) {
+      rpcCalls.push({ name: url.pathname.split('/').pop(), body: JSON.parse(init.body || '{}') });
+      return Response.json({ id: TASK, field_id: FIELD, title: 'Item', completed: true, assignee_id: taskAssignee, created_by: OWNER });
+    }
+    return Response.json([]);
+  };
+  const patch = (body) => handleProjects(new Request(`https://persora.example/api/projects/${PROJECT}/fields/${FIELD}/subtasks/${TASK}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  }), { id: MEMBER }, env, 'https://persora.example');
+  return { MEMBER, rpcCalls, patch };
+}
+
+test('the checklist item assignee may toggle completion — and nothing else — on a field they did not create', async () => {
+  const MEMBER = '7c3d4e5f-6071-489a-9b2c-3d4e5f607182';
+  const { rpcCalls, patch } = subtaskToggleDatabase({ taskAssignee: MEMBER });
+  const ok = await patch({ completed: true });
+  assert.equal(ok.status, 200);
+  assert.deepEqual(rpcCalls.map((call) => call.name), ['persora_project_subtask_update']);
+  assert.deepEqual(rpcCalls[0].body.p_payload, { completed: true });
+  const rename = await patch({ title: 'Renamed', completed: true });
+  assert.equal(rename.status, 403, 'renaming stays limited to the field creator and owner');
+  const reassign = await patch({ assigneeId: null });
+  assert.equal(reassign.status, 403, 'reassigning stays limited to the field creator and owner');
+  assert.equal(rpcCalls.length, 1, 'rejected edits never reach the database');
+});
+
+test('the field assignee may toggle any item; unrelated members may not', async () => {
+  const MEMBER = '7c3d4e5f-6071-489a-9b2c-3d4e5f607182';
+  const assigned = subtaskToggleDatabase({ fieldAssignee: MEMBER, taskAssignee: OWNER });
+  assert.equal((await assigned.patch({ completed: false })).status, 200);
+  const bystander = subtaskToggleDatabase({ fieldAssignee: OWNER, taskAssignee: OWNER });
+  const denied = await bystander.patch({ completed: true });
+  assert.equal(denied.status, 403);
+  assert.equal(bystander.rpcCalls.length, 0);
+});
+
+test('project detail returns each person’s safe profile picture for avatars', async () => {
+  const MEMBER = '7c3d4e5f-6071-489a-9b2c-3d4e5f607182';
+  const photo = 'data:image/png;base64,iVBORw0KGgo=';
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname.endsWith('/projects') && url.searchParams.has('id')) return Response.json([record()]);
+    if (url.pathname.endsWith('/project_members')) return Response.json([{ project_id: PROJECT, user_id: MEMBER, role: 'editor', can_create_fields: false, created_at: '2026-10-22T10:00:00Z' }]);
+    if (url.pathname.endsWith('/profiles')) return Response.json([
+      { id: OWNER, email: 'owner@example.test', full_name: 'Owner', avatar_url: 'emoji:🦊' },
+      { id: MEMBER, email: 'member@example.test', full_name: 'Member', avatar_url: photo },
+    ]);
+    return Response.json([]);
+  };
+  const response = await invoke(`/projects/${PROJECT}`);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.owner.avatarUrl, 'emoji:🦊');
+  assert.equal(body.members[0].avatarUrl, photo);
+  assert.deepEqual(body.people[MEMBER], { name: 'Member', avatarUrl: photo });
+
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname.endsWith('/projects') && url.searchParams.has('id')) return Response.json([record()]);
+    if (url.pathname.endsWith('/profiles')) return Response.json([{ id: OWNER, email: 'owner@example.test', full_name: 'Owner', avatar_url: 'javascript:alert(1)' }]);
+    return Response.json([]);
+  };
+  const unsafe = await (await invoke(`/projects/${PROJECT}`)).json();
+  assert.equal(unsafe.owner.avatarUrl, '', 'unsupported avatar values are never forwarded');
+});

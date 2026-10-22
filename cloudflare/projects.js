@@ -274,6 +274,24 @@ function displayName(profile, fallback = "A member") {
   const name = typeof profile?.full_name === "string" ? profile.full_name.trim() : "";
   return name || (typeof profile?.email === "string" ? profile.email : fallback);
 }
+/**
+ * The profile picture a person chose in Settings (uploaded photo, emoji, or a
+ * DiceBear Adventurer avatar). Mirrors the formats the profile endpoint accepts;
+ * anything else is dropped so the client falls back to initials.
+ */
+export function projectProfileAvatar(profile) {
+  const value = typeof profile?.avatar_url === "string" ? profile.avatar_url.trim() : "";
+  if (!value) return "";
+  if (value.length <= 80000 && /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/i.test(value)) return value;
+  if (value.length <= 80 && /^emoji:[^\u0000-\u001f<>]{1,24}$/u.test(value)) return value;
+  if (/^https:\/\/api\.dicebear\.com\/7\.x\/adventurer\/svg\?seed=[A-Za-z0-9_-]{1,40}$/.test(value)) return value;
+  return "";
+}
+function projectPeople(profiles) {
+  const people = {};
+  for (const [id, profile] of profiles) people[id] = { name: displayName(profile), avatarUrl: projectProfileAvatar(profile) };
+  return people;
+}
 
 // ---------------------------------------------------------------------------
 // Read shaping
@@ -389,7 +407,11 @@ async function projectDetail(projectId, userId, env) {
     ...fields.map((field) => field.assignee_id).filter(Boolean),
     ...subtaskRows.flatMap((row) => [row.assignee_id, row.created_by]).filter(Boolean),
     ...attachmentRows.map((row) => row.uploader_id).filter(Boolean),
-    ...fieldIds.length ? [userId] : [],
+    ...fields.map((field) => field.creator_id).filter(Boolean),
+    ...commentRows.map((row) => row.author_id).filter(Boolean),
+    ...activityRows.map((row) => row.actor_id).filter(Boolean),
+    ...requestRows.map((row) => row.requester_id).filter(Boolean),
+    userId,
   ];
   const profiles = await loadProfiles(profileIds, env);
   const ownerProfile = profiles.get(project.owner_id) || null;
@@ -401,7 +423,7 @@ async function projectDetail(projectId, userId, env) {
       canCreateFields: isOwner || Boolean(member?.can_create_fields),
       canRequest: !isOwner && !(member?.role === "editor" && member?.can_create_fields),
     },
-    owner: ownerProfile ? { id: ownerProfile.id, name: displayName(ownerProfile), email: ownerProfile.email || "", loginId: ownerProfile.login_id || "" } : null,
+    owner: ownerProfile ? { id: ownerProfile.id, name: displayName(ownerProfile), email: ownerProfile.email || "", loginId: ownerProfile.login_id || "", avatarUrl: projectProfileAvatar(ownerProfile) } : null,
     members: memberRows.map((row) => {
       const profile = profiles.get(row.user_id) || null;
       return {
@@ -413,6 +435,7 @@ async function projectDetail(projectId, userId, env) {
         name: displayName(profile),
         email: profile?.email || "",
         loginId: profile?.login_id || "",
+        avatarUrl: projectProfileAvatar(profile),
       };
     }),
     folders: folders.map((folder) => ({ ...folder, fieldCount: fields.filter((field) => field.folder_id === folder.id).length })),
@@ -436,6 +459,8 @@ async function projectDetail(projectId, userId, env) {
     })),
     requests: requestRows,
     activity: activityRows,
+    // Display name + chosen profile picture for everyone referenced above, keyed by user id.
+    people: projectPeople(profiles),
   };
 }
 
@@ -486,6 +511,15 @@ async function getEditableProjectField(projectId, fieldId, userId, env) {
   if (!field) throw new ProjectError("That field is not available.", 404);
   if (!access.isOwner && field.creator_id !== userId) throw new ProjectError("Only the project owner or the member who created this field can change it.", 403);
   return { ...access, field };
+}
+
+/** Field creator, project owner, field assignee, or the checklist item's own assignee may toggle completion. */
+async function assertCanToggleProjectSubtask(projectId, task, userId, env) {
+  const access = await loadProjectAccess(projectId, userId, env);
+  const field = await firstRow(`project_fields?id=eq.${encodeURIComponent(task.field_id)}&project_id=eq.${encodeURIComponent(projectId)}&select=id,creator_id,assignee_id`, env);
+  if (!field) throw new ProjectError("That field is not available.", 404);
+  if (access.isOwner || field.creator_id === userId || field.assignee_id === userId || task.assignee_id === userId) return { ...access, field };
+  throw new ProjectError("Only the people assigned to this field or checklist item can check it off.", 403);
 }
 
 async function processProjectAttachmentCleanup(fileKey, ownerId, env) {
@@ -796,10 +830,14 @@ export async function handleProjects(request, identity, env, origin, services = 
       }
       if (segments.length === 5 && isUuid(segments[2]) && segments[3] === "subtasks" && isUuid(segments[4])) {
         const subtaskId = segments[4];
-        const task = await firstRow(`project_subtasks?id=eq.${encodeURIComponent(subtaskId)}&project_id=eq.${encodeURIComponent(projectId)}&field_id=eq.${encodeURIComponent(segments[2])}&select=id,field_id`, env);
+        const task = await firstRow(`project_subtasks?id=eq.${encodeURIComponent(subtaskId)}&project_id=eq.${encodeURIComponent(projectId)}&field_id=eq.${encodeURIComponent(segments[2])}&select=id,field_id,assignee_id`, env);
         if (!task) throw new ProjectError("That subtask is not available.", 404);
         if (request.method === "PATCH") {
           const payload = sanitizeProjectSubtaskInput(await readBody(), { allowPartial: true });
+          // Checking an item off is open to the field's assignee and the item's assignee;
+          // every other subtask change stays limited to the field creator and project owner.
+          if (Object.keys(payload).length === 1 && payload.completed !== undefined) await assertCanToggleProjectSubtask(projectId, task, userId, env);
+          else await getEditableProjectField(projectId, task.field_id, userId, env);
           const subtask = await rpc("persora_project_subtask_update", { p_user: userId, p_subtask: subtaskId, p_payload: payload }, env);
           const profiles = await loadProfiles([subtask.assignee_id, subtask.created_by].filter(Boolean), env);
           return json({ subtask: { ...subtask, assigneeName: subtask.assignee_id ? displayName(profiles.get(subtask.assignee_id)) : null, creatorName: displayName(profiles.get(subtask.created_by)) } }, 200, origin);
