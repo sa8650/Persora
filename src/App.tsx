@@ -11,7 +11,7 @@ import PublicInfoPage from "./components/PublicInfoPage";
 import { ConfirmDialog, ItemDetailDialog, ItemEditorDialog, TodoEditorDialog, ToastNotice } from "./components/VaultDialogs";
 import ShareRecordDialog from "./components/ShareRecordDialog";
 import { ADD_DOCUMENT_DESTINATION_EVENT, ADD_DOCUMENT_HANDOFF_EVENT } from "./types";
-import type { ActiveScheduleAlert, AddDocumentFlowDraft, AppUser, BusinessCardDraft, ContactDraft, ContactImportProgress, DigitalBusinessCard, DocumentTypeOption, MedicalRecord, MedicalRecordDraft, MedicalRecordFile, NotesRecordKind, PersoraContact, SectionId, ShareComment, ShareNotification, SharePermission, SharedVaultEntry, RecordShareEntry, SiteContent, SubscriptionPlan, TimelineDraft, TimelineEvent, TransferProgress, SmartScanResult, VaultFilePreview, VaultItem, ViewId } from "./types";
+import type { ActiveScheduleAlert, AddDocumentFlowDraft, AppUser, BusinessCardDraft, ContactDraft, ContactImportProgress, DigitalBusinessCard, DocumentTypeOption, MedicalRecord, MedicalRecordDraft, MedicalRecordFile, NotesRecordKind, PersoraContact, SectionId, ShareComment, ShareNotification, SharePermission, SharedVaultEntry, RecordShareEntry, SiteContent, SubscriptionPlan, TimelineDraft, TimelineEvent, TrashEntry, TrashSpace, TransferProgress, SmartScanResult, VaultFilePreview, VaultItem, ViewId } from "./types";
 import { DEFAULT_SITE_CONTENT } from "./data/siteContent";
 import PersoraBootScreen from "./components/PersoraBootScreen";
 import {
@@ -59,7 +59,12 @@ import {
   deleteUnattachedMedicalRecordFile,
   fetchMedicalRecordFile,
   downloadMedicalRecordFile,
+  loadTrashEntries,
+  restoreTrashEntry,
+  deleteTrashEntryForever,
+  emptyTrashEntries,
 } from "./lib/backend";
+import { buildTrashEntry, clearLocalTrash, loadLocalTrash, pushLocalTrash, removeLocalTrash } from "./lib/local-trash";
 import { loadAdminBootstrapStatus, loadDocumentTypes, loadPublicPlans, loadPublicSiteContent, sendEmailVerificationCode, verifyEmailVerificationCode } from "./lib/cloud";
 import { signIn, signOut, signUp, getCurrentUser } from "./lib/auth";
 import { getLocalAvatar, getLocalBusinessCards, getLocalContacts, getLocalItems, getLocalProfile, putLocalAvatar, putLocalBusinessCards, putLocalContacts, putLocalItems, putLocalProfile } from "./lib/local-store";
@@ -69,6 +74,7 @@ type EditorDraft = Omit<VaultItem, "id" | "createdAt" | "updatedAt"> & { id?: st
 type AppPath = "/" | "/admin" | "/privacy" | "/terms" | "/contact";
 type PublicPage = "privacy" | "terms" | "contact";
 const PUBLIC_PATHS: Record<string, PublicPage> = { "/privacy": "privacy", "/terms": "terms", "/contact": "contact" };
+const TRASH_SPACE_ALIASES: Record<string, TrashSpace> = { contacts: "contacts", business_cards: "business-cards", medical_records: "medical-records", timeline: "timeline" };
 const baseDocumentTypes = SECTION_BY_ID.documents.fields.find((field) => field.key === "type")?.options || [];
 const normalizePath = (path: string) => path.replace(/\/+$/, "") || "/";
 
@@ -128,6 +134,8 @@ export default function App() {
   const [focusedItem, setFocusedItem] = useState<VaultItem | null>(null);
   const [filePreview, setFilePreview] = useState<VaultFilePreview | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<VaultItem | null>(null);
+  const [trashEntries, setTrashEntries] = useState<TrashEntry[]>([]);
+  const [trashBusy, setTrashBusy] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [documentTypes, setDocumentTypes] = useState<string[]>(baseDocumentTypes);
   const [publicPlans, setPublicPlans] = useState<SubscriptionPlan[]>([]);
@@ -153,6 +161,126 @@ export default function App() {
     catch (error) { if ((typeof navigator !== "undefined" && !navigator.onLine) || error instanceof TypeError) setTimelineOnline(false); }
     finally { timelineSyncInFlight.current = false; }
   }, [user?.id, user?.demo]);
+
+  // ------------------------------------------------------------------
+  // Global Trash: cloud accounts use the server-side trash pipeline;
+  // the demo account mirrors the same 7-day lifecycle in browser storage.
+  // ------------------------------------------------------------------
+  const refreshTrash = useCallback(async () => {
+    if (!user) { setTrashEntries([]); return; }
+    if (user.demo) { setTrashEntries(loadLocalTrash(user.id)); return; }
+    if (!isPagesApiConfigured) { setTrashEntries([]); return; }
+    setTrashBusy(true);
+    try {
+      const rows = await loadTrashEntries();
+      setTrashEntries(rows.map((row) => ({
+        id: row.id,
+        kind: row.kind,
+        title: row.title,
+        space: (TRASH_SPACE_ALIASES[row.space || ""] || (row.space && row.space in SECTION_BY_ID ? row.space : null)) as TrashSpace | null,
+        folder: row.folder,
+        eventDate: row.eventDate,
+        recordType: row.recordType,
+        hasFiles: row.hasFiles,
+        deletedAt: row.deletedAt,
+        expiresAt: row.expiresAt,
+      })));
+    } finally { setTrashBusy(false); }
+  }, [user?.id, user?.demo]);
+
+  useEffect(() => { void refreshTrash().catch(() => { /* The Trash badge stays stale until the next refresh. */ }); }, [refreshTrash]);
+
+  const moveDemoItemToTrash = (input: Parameters<typeof buildTrashEntry>[0]) => {
+    if (!user || !user.demo) return;
+    pushLocalTrash(user.id, buildTrashEntry(input));
+    setTrashEntries(loadLocalTrash(user.id));
+  };
+
+  const refreshAfterTrashRestore = async (kind: TrashEntry["kind"]) => {
+    if (kind === "vault_item") {
+      setItems(await loadVaultItems());
+      await refreshSharing().catch(() => {});
+      void refreshTimeline();
+    } else if (kind === "contact") {
+      commitContacts(await loadContacts());
+      await refreshSharing().catch(() => {});
+    } else if (kind === "business_card") {
+      commitBusinessCards(await loadBusinessCards());
+      await refreshSharing().catch(() => {});
+    } else if (kind === "medical_record") {
+      commitMedicalRecords(await loadMedicalRecords());
+    } else if (kind === "timeline_event") {
+      await refreshTimeline();
+    }
+  };
+
+  const restoreDemoTrashEntry = (entry: TrashEntry) => {
+    if (!user) return;
+    const stored = loadLocalTrash(user.id).find((candidate) => candidate.id === entry.id && candidate.kind === entry.kind);
+    if (!stored) throw new Error("That item is no longer in the Trash.");
+    if (stored.kind === "vault_item") {
+      const item = stored.payload as VaultItem;
+      const next = [item, ...items.filter((existing) => existing.id !== item.id)];
+      setItems(next); putLocalItems(next);
+    } else if (stored.kind === "contact") {
+      const contact = stored.payload as PersoraContact;
+      const next = [contact, ...contactsRef.current.filter((existing) => existing.id !== contact.id)];
+      commitContacts(next); putLocalContacts(user.id, next);
+    } else if (stored.kind === "business_card") {
+      const card = stored.payload as DigitalBusinessCard;
+      const next = [card, ...businessCardsRef.current.filter((existing) => existing.id !== card.id)];
+      commitBusinessCards(next); putLocalBusinessCards(user.id, next);
+    } else if (stored.kind === "medical_record") {
+      const record = stored.payload as MedicalRecord;
+      commitMedicalRecords([record, ...medicalRecordsRef.current.filter((existing) => existing.id !== record.id)]);
+      if (record.file?.localOnly) demoMedicalFiles.current.delete(record.id);
+    } else {
+      throw new Error("This Trash entry can't be restored here.");
+    }
+    removeLocalTrash(user.id, [stored.id]);
+    setTrashEntries(loadLocalTrash(user.id));
+  };
+
+  const handleTrashRefresh = async () => { await refreshTrash(); };
+  const handleTrashRestore = async (entry: TrashEntry) => {
+    if (!user) return;
+    if (user.demo) { restoreDemoTrashEntry(entry); notify(`Restored “${entry.title}”.`); return; }
+    const result = await restoreTrashEntry(entry.id);
+    await Promise.all([refreshTrash().catch(() => {}), refreshAfterTrashRestore(entry.kind)]);
+    notify(result.note ? `Restored “${entry.title}”. ${result.note}` : `Restored “${entry.title}”.`);
+  };
+  const handleTrashDeleteForever = async (entry: TrashEntry) => {
+    if (!user) return;
+    if (user.demo) {
+      const url = localFiles.current.get(entry.id);
+      if (url) URL.revokeObjectURL(url);
+      localFiles.current.delete(entry.id);
+      removeLocalTrash(user.id, [entry.id]);
+      setTrashEntries(loadLocalTrash(user.id));
+      notify("Permanently deleted.");
+      return;
+    }
+    await deleteTrashEntryForever(entry.id);
+    setTrashEntries((current) => current.filter((candidate) => candidate.id !== entry.id));
+    notify("Permanently deleted.");
+  };
+  const handleTrashEmpty = async () => {
+    if (!user) return;
+    if (user.demo) {
+      for (const entry of loadLocalTrash(user.id)) {
+        const url = localFiles.current.get(entry.id);
+        if (url) URL.revokeObjectURL(url);
+        localFiles.current.delete(entry.id);
+      }
+      clearLocalTrash(user.id);
+      setTrashEntries([]);
+      notify("Trash emptied.");
+      return;
+    }
+    await emptyTrashEntries();
+    setTrashEntries([]);
+    notify("Trash emptied.");
+  };
   const automaticTimelineEvents = useMemo(() => deriveAutomaticTimelineEvents(items, user?.timezone), [items, user?.timezone, timelineClock]);
   const displayTimelineEvents = useMemo(() => mergeTimelineEvents(timelineEvents, automaticTimelineEvents, timelineOnline), [timelineEvents, automaticTimelineEvents, timelineOnline]);
 
@@ -223,7 +351,10 @@ export default function App() {
       let ownerId = DEMO_USER.id;
       if (remembered.startsWith("demo:")) {
         const [, email, fullName] = remembered.split(":");
-        ownerId = `demo-${email}`;
+        // Keep the built-in demo profile on the same stable id it had when the
+        // demo was first opened, so per-user local stores (password vault,
+        // favorites, pins, folders, contacts) stay consistent across reloads.
+        ownerId = email === DEMO_USER.email ? DEMO_USER.id : `demo-${email}`;
         setUser({ ...DEMO_USER, id: ownerId, email, fullName: fullName || DEMO_USER.fullName, role: "user", avatarUrl: getLocalAvatar(ownerId) });
       } else if (remembered === DEMO_USER.email) {
         setUser({ ...DEMO_USER, avatarUrl: getLocalAvatar(DEMO_USER.id) });
@@ -493,27 +624,23 @@ commitContacts(getLocalContacts(DEMO_USER.id));
   const handleDeleteItem = async () => {
     if (!deleteTarget || !user) return;
     const target = deleteTarget;
-    let cleanupMessage = "";
     try {
       if (user.demo) {
         const next = items.filter((entry) => entry.id !== target.id);
         setItems(next); putLocalItems(next);
-        const url = localFiles.current.get(target.id);
-        if (url) URL.revokeObjectURL(url);
-        localFiles.current.delete(target.id);
+        // Keep the local object URL alive — a restore needs it; permanent
+        // deletion from the Trash releases it then.
+        moveDemoItemToTrash({ id: target.id, kind: "vault_item", title: target.title, space: target.section, folder: null, hasFiles: Boolean(target.file), payload: target });
       } else {
         await removeVaultItem(target.id);
         setItems((current) => current.filter((entry) => entry.id !== target.id));
-        if (target.file?.key) {
-          try { await deleteVaultFile(target.file.key); }
-          catch (error) { cleanupMessage = error instanceof Error ? `Record removed, but file cleanup needs attention: ${error.message}` : "Record removed, but file cleanup needs attention."; }
-        }
+        void refreshTrash().catch(() => {});
       }
       setSharedByMe((current) => current.filter((entry) => entry.item.id !== target.id));
       setDeleteTarget(null);
       setFocusedItem(null);
-      notify(cleanupMessage || "The record has been removed from your vault.", cleanupMessage ? "error" : "success");
-    } catch (error) { notify(error instanceof Error ? error.message : "Couldn't remove that record. Please try again.", "error"); }
+      notify("Moved to the Trash — restorable for 7 days.");
+    } catch (error) { notify(error instanceof Error ? error.message : "Couldn't move that record to the Trash. Please try again.", "error"); }
   };
 
   const handleToggleFavorite = async (item: VaultItem, favorite: boolean) => {
@@ -697,7 +824,12 @@ commitContacts(getLocalContacts(DEMO_USER.id));
 
   const handleDeleteContact = async (contact: PersoraContact) => {
     if (!user) throw new Error("Please sign in before deleting contacts.");
-    if (!user.demo) await deleteContactRecord(contact.id);
+    if (!user.demo) {
+      await deleteContactRecord(contact.id);
+      void refreshTrash().catch(() => {});
+    } else {
+      moveDemoItemToTrash({ id: contact.id, kind: "contact", title: contact.name, space: "contacts", hasFiles: Boolean(contact.photoDataUrl || contact.photoKey), payload: contact });
+    }
     const next = contactsRef.current.filter((entry) => entry.id !== contact.id);
     commitContacts(next);
     if (user.demo) putLocalContacts(user.id, next);
@@ -818,7 +950,12 @@ commitContacts(getLocalContacts(DEMO_USER.id));
 
   const handleDeleteBusinessCard = async (card: DigitalBusinessCard) => {
     if (!user) throw new Error("Please sign in before deleting business cards.");
-    if (!user.demo) await deleteBusinessCard(card.id);
+    if (!user.demo) {
+      await deleteBusinessCard(card.id);
+      void refreshTrash().catch(() => {});
+    } else {
+      moveDemoItemToTrash({ id: card.id, kind: "business_card", title: card.fullName || card.company || "Business card", space: "business-cards", hasFiles: Boolean(card.profilePhotoDataUrl || card.businessLogoDataUrl), payload: card });
+    }
     const next = businessCardsRef.current.filter((entry) => entry.id !== card.id);
     commitBusinessCards(next);
     if (user.demo) putLocalBusinessCards(user.id, next);
@@ -868,8 +1005,13 @@ commitContacts(getLocalContacts(DEMO_USER.id));
 
   const handleDeleteMedicalRecord = async (record: MedicalRecord) => {
     if (!user) throw new Error("Sign in before deleting medical records.");
-    if (!user.demo) await deleteMedicalRecord(record.id);
-    else demoMedicalFiles.current.delete(record.id);
+    if (!user.demo) {
+      await deleteMedicalRecord(record.id);
+      void refreshTrash().catch(() => {});
+    } else {
+      moveDemoItemToTrash({ id: record.id, kind: "medical_record", title: record.title, space: "medical-records", recordType: record.recordType, hasFiles: Boolean(record.file), payload: record });
+      // Demo attachment stays cached for a possible restore.
+    }
     commitMedicalRecords(medicalRecordsRef.current.filter((entry) => entry.id !== record.id));
   };
 
@@ -920,7 +1062,8 @@ commitContacts(getLocalContacts(DEMO_USER.id));
     if (!user || user.demo || event.eventType !== "manual") throw new Error("Only manual posts in your cloud timeline can be deleted.");
     await deleteTimelineEvent(event.id);
     setTimelineEvents((current) => current.filter((entry) => entry.id !== event.id));
-    notify("Timeline event deleted.");
+    void refreshTrash().catch(() => {});
+    notify("Moved to the Trash — restorable for 7 days.");
   };
 
   const refreshSharing = async () => {
@@ -1172,6 +1315,12 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       onDeleteTimelineEvent={handleDeleteTimelineEvent}
       onOpenTimelineAttachment={(event) => { void downloadTimelineAttachment(event.id).catch((error) => notify(error instanceof Error ? error.message : "Couldn't open timeline attachment.", "error")); }}
       medicalRecords={medicalRecords}
+      trashEntries={trashEntries}
+      trashBusy={trashBusy}
+      onTrashRefresh={handleTrashRefresh}
+      onTrashRestore={handleTrashRestore}
+      onTrashDeleteForever={handleTrashDeleteForever}
+      onTrashEmpty={handleTrashEmpty}
       maxUploadMb={maxUploadMb}
       onSaveMedicalRecord={handleSaveMedicalRecord}
       onDeleteMedicalRecord={handleDeleteMedicalRecord}
@@ -1260,8 +1409,8 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       onRevokeShare={handleRevokeShare}
       onClose={() => setShareTarget(null)}
     />}
-    {deleteTarget && <ConfirmDialog title="Remove this from your vault?" confirmLabel="Delete record" onCancel={() => setDeleteTarget(null)} onConfirm={() => void handleDeleteItem()}>
-      <p><b>{deleteTarget.title}</b> will be removed from your Persora vault. This can't be undone.</p>
+    {deleteTarget && <ConfirmDialog title="Move this to the Trash?" confirmLabel="Move to Trash" onCancel={() => setDeleteTarget(null)} onConfirm={() => void handleDeleteItem()}>
+      <p><b>{deleteTarget.title}</b> will go to the Trash. You can restore it within 7 days; after that it's permanently deleted.</p>
     </ConfirmDialog>}
     {toast && <ToastNotice key={toast.id} message={toast.message} kind={toast.kind} onClose={() => setToast(null)} />}
   </>;

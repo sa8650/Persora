@@ -160,3 +160,10 @@
 .smart-scan-admin-grid .admin-alert { margin:0 0 8px; }.smart-scan-admin-grid .admin-alert code { font-size:8px; }
 @media (max-width: 900px) { .smart-scan-admin-grid { grid-template-columns:1fr; } }
 @media (max-width: 470px) { .smart-scan-admin-metrics { grid-template-columns:1fr; }.smart-scan-admin-metrics > div { display:grid; grid-template-columns:1fr auto; }.smart-scan-admin-metrics small { grid-column:1/-1; } }
+
+/* ---- AI controls page (2026-10-22) ------------------------------------- */
+.ai-controls-admin-grid { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); align-items: start; }
+.admin-ai-placements { display: grid; gap: 0.55rem; }
+.admin-ai-placements > div { display: grid; gap: 0.15rem; padding: 0.7rem 0.9rem; border: 1px solid var(--admin-line, rgba(148, 163, 184, 0.22)); border-radius: 12px; background: var(--admin-panel-soft, rgba(148, 163, 184, 0.06)); }
+.admin-ai-placements b { font-size: 0.85rem; }
+.admin-ai-placements small { color: var(--admin-muted, #7c8aa5); font-size: 0.76rem; line-height: 1.45; }

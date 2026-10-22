@@ -53,4 +53,11 @@ export {
   downloadMedicalRecordFile,
   sendPasswordRecoveryCode,
   resetPasswordWithRecoveryCode,
+  loadTrashEntries,
+  restoreTrashEntry,
+  deleteTrashEntryForever,
+  emptyTrashEntries,
+  generateAiPasswordSuggestions,
 } from "./cloud";
+
+export type { RemoteTrashEntry, AIPasswordStyle } from "./cloud";

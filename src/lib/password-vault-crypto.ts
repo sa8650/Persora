@@ -1,4 +1,4 @@
-export type VaultEntry = { id:string; title:string; login:string; password:string; url:string; notes:string; questions:{question:string;answer:string}[]; folder:string; favorite:boolean; pinned:boolean; updated:number };
+export type VaultEntry = { id:string; title:string; login:string; password:string; url:string; notes:string; questions:{question:string;answer:string}[]; folder:string; favorite:boolean; pinned:boolean; updated:number; trash?:{deletedAt:number;expiresAt:number} };
 export type VaultEnvelopeV2 = {version:2; kdf:"PBKDF2-SHA-256"; iterations:number; masterSalt:string; recoverySalt:string; dataIv:string; dataCiphertext:string; masterIv:string; masterWrap:string; recoveryIv:string; recoveryWrap:string};
 const ITERATIONS=310000;
 const encoder=new TextEncoder();

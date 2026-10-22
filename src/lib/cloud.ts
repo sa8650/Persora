@@ -1,4 +1,4 @@
-import type { AdminConsoleSnapshot, AdminMetrics, AlarmRingtone, BillingSnapshot, BusinessCardDraft, BusinessSocialLink, DigitalBusinessCard, DocumentTypeOption, MedicalRecord, MedicalRecordDraft, MedicalRecordFile, MedicalRecordLink, PersoraContact, PaymentRecord, PublicDigitalBusinessCard, ShareComment, ShareNotification, SharePermission, SharedDirection, SharedVaultEntry, RecordShareEntry, SiteContent, SmartScanFieldDefinition, SmartScanResult, SubscriptionPlan, TimelineAttachment, TimelineDraft, TimelineEvent, TransferProgress, VaultFile, VaultFolder, VaultFolderDraft, VaultFolderScope, VaultItem } from "../types";
+import type { AdminConsoleSnapshot, AdminMetrics, AiControls, AlarmRingtone, BillingSnapshot, BusinessCardDraft, BusinessSocialLink, DigitalBusinessCard, DocumentTypeOption, MedicalRecord, MedicalRecordDraft, MedicalRecordFile, MedicalRecordLink, PersoraContact, PaymentRecord, ProjectDetail, ProjectField, ProjectFieldComment, ProjectFieldRequest, ProjectFolder, ProjectFolderColor, ProjectFieldStatus, ProjectKind, ProjectMemberRole, ProjectRecord, ProjectSummary, PublicDigitalBusinessCard, ShareComment, ShareNotification, SharePermission, SharedDirection, SharedVaultEntry, RecordShareEntry, SiteContent, SmartScanFieldDefinition, SmartScanResult, SubscriptionPlan, TimelineAttachment, TimelineDraft, TimelineEvent, TransferProgress, VaultFile, VaultFolder, VaultFolderDraft, VaultFolderScope, VaultItem } from "../types";
 import { DEFAULT_SITE_CONTENT } from "../data/siteContent";
 
 // Cloudflare Pages always serves the authenticated Functions API from /api in production.
@@ -584,10 +584,12 @@ export async function loadAdminConsole(): Promise<AdminConsoleSnapshot> {
     siteContent: { ...DEFAULT_SITE_CONTENT, ...(snapshot.siteContent || {}) },
     emailSettings: snapshot.emailSettings || { verificationEnabled: true, senderName: "Persora", senderEmail: "", replyToEmail: "", replyToName: "Persora Support" },
     smartScan: snapshot.smartScan || { enabled: true, usageAvailable: false, totals: { scans: 0, ocrRuns: 0, aiExtractions: 0 }, byUser: {} },
+    aiControls: snapshot.aiControls || { passwordSuggestions: true, smartScanOcr: true, smartScanExtraction: true },
+    aiProviders: snapshot.aiProviders || { workersAiConfigured: false, azureDocumentIntelligenceConfigured: false },
   };
 }
 
-export async function savePlatformSetting(key: "billing" | "storage" | "payment_methods" | "site_content" | "email" | "smart_scan", value: unknown): Promise<void> {
+export async function savePlatformSetting(key: "billing" | "storage" | "payment_methods" | "site_content" | "email" | "smart_scan" | "ai_controls", value: unknown): Promise<void> {
   await postJson("/admin/settings", { key, value });
 }
 
@@ -664,6 +666,137 @@ export async function sendPasswordRecoveryCode(identifier: string): Promise<{ ok
   return postJson("/auth/recover/send", { identifier });
 }
 
+// ---------------------------------------------------------------------------
+// Global Trash + AI password suggestions
+// ---------------------------------------------------------------------------
+
+export interface RemoteTrashEntry {
+  id: string;
+  kind: "vault_item" | "contact" | "business_card" | "medical_record" | "timeline_event";
+  title: string;
+  space: string | null;
+  folder: string | null;
+  eventDate: string | null;
+  recordType: string | null;
+  hasFiles: boolean;
+  deletedAt: string;
+  expiresAt: string;
+}
+
+export async function loadTrashEntries(): Promise<RemoteTrashEntry[]> {
+  const body = await pagesApiJson<{ items?: RemoteTrashEntry[] }>("/trash", { method: "GET" });
+  return Array.isArray(body.items) ? body.items : [];
+}
+
+export async function restoreTrashEntry(id: string): Promise<{ ok: boolean; kind: string; note?: string | null }> {
+  return postJson("/trash/restore", { id });
+}
+
+export async function deleteTrashEntryForever(id: string): Promise<{ ok: boolean; deleted: number }> {
+  return pagesApiJson(`/trash?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export async function emptyTrashEntries(): Promise<{ ok: boolean; deleted: number }> {
+  return postJson("/trash/empty", {});
+}
+
+export type AIPasswordStyle = "rhythmic" | "pronounceable" | "poetic" | "sonnet" | "passphrase";
+
+export async function generateAiPasswordSuggestions(style: AIPasswordStyle, count: number, maxLength: number): Promise<{ candidates: string[]; source: "ai" | "offline"; reason?: string }> {
+  const body = await postJson<{ candidates?: unknown; source?: unknown; reason?: unknown }>("/ai/password-suggestions", { style, count, maxLength });
+  const candidates = Array.isArray(body.candidates) ? body.candidates.filter((value): value is string => typeof value === "string") : [];
+  return { candidates, source: body.source === "ai" && candidates.length ? "ai" : "offline", reason: typeof body.reason === "string" ? body.reason : undefined };
+}
+
 export async function resetPasswordWithRecoveryCode(identifier: string, code: string, newPassword: string): Promise<{ ok: boolean; message?: string }> {
   return postJson("/auth/recover/reset", { identifier, code, newPassword });
+}
+
+// ---------------------------------------------------------------------------
+// AI controls + Projects API (2026-10-22)
+// ---------------------------------------------------------------------------
+export async function saveAiControls(controls: AiControls): Promise<void> {
+  await savePlatformSetting("ai_controls", controls);
+}
+
+async function patchJson<T>(path: string, body: unknown): Promise<T> {
+  return pagesApiJson<T>(path, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+}
+async function deleteJson<T>(path: string): Promise<T> {
+  return pagesApiJson<T>(path, { method: "DELETE" });
+}
+
+export async function listProjects(): Promise<ProjectSummary[]> {
+  const data = await pagesApiJson<{ projects: ProjectSummary[] }>("/projects");
+  return data.projects;
+}
+export async function createProject(input: { name: string; description?: string; kind?: ProjectKind }): Promise<ProjectRecord> {
+  const data = await postJson<{ project: ProjectRecord }>("/projects", input);
+  return data.project;
+}
+export async function loadProjectDetail(projectId: string): Promise<ProjectDetail> {
+  return pagesApiJson<ProjectDetail>(`/projects/${encodeURIComponent(projectId)}`);
+}
+export async function updateProject(projectId: string, patch: { name?: string; description?: string; kind?: ProjectKind }): Promise<ProjectRecord> {
+  const data = await patchJson<{ project: ProjectRecord }>(`/projects/${encodeURIComponent(projectId)}`, patch);
+  return data.project;
+}
+export async function deleteProject(projectId: string): Promise<void> {
+  await deleteJson(`/projects/${encodeURIComponent(projectId)}`);
+}
+export async function addProjectMember(projectId: string, input: { recipient: string; role?: ProjectMemberRole; canCreateFields?: boolean }): Promise<void> {
+  await postJson(`/projects/${encodeURIComponent(projectId)}/members`, input);
+}
+export async function updateProjectMember(projectId: string, userId: string, patch: { role?: ProjectMemberRole; canCreateFields?: boolean }): Promise<void> {
+  await patchJson(`/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}`, patch);
+}
+export async function removeProjectMember(projectId: string, userId: string): Promise<void> {
+  await deleteJson(`/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}`);
+}
+export async function createProjectFolder(projectId: string, input: { name: string; color?: ProjectFolderColor }): Promise<ProjectFolder> {
+  const data = await postJson<{ folder: ProjectFolder }>(`/projects/${encodeURIComponent(projectId)}/folders`, input);
+  return data.folder;
+}
+export async function updateProjectFolder(projectId: string, folderId: string, patch: { name?: string; color?: ProjectFolderColor }): Promise<void> {
+  await patchJson(`/projects/${encodeURIComponent(projectId)}/folders/${encodeURIComponent(folderId)}`, patch);
+}
+export async function deleteProjectFolder(projectId: string, folderId: string): Promise<void> {
+  await deleteJson(`/projects/${encodeURIComponent(projectId)}/folders/${encodeURIComponent(folderId)}`);
+}
+export interface ProjectFieldInput { title?: string; description?: string; folderId?: string | null; status?: ProjectFieldStatus; progress?: number; assigneeId?: string | null; dueDate?: string | null }
+export async function createProjectField(projectId: string, input: ProjectFieldInput): Promise<ProjectField> {
+  const data = await postJson<{ field: ProjectField }>(`/projects/${encodeURIComponent(projectId)}/fields`, input);
+  return data.field;
+}
+export async function updateProjectField(projectId: string, fieldId: string, input: ProjectFieldInput): Promise<ProjectField> {
+  const data = await patchJson<{ field: ProjectField }>(`/projects/${encodeURIComponent(projectId)}/fields/${encodeURIComponent(fieldId)}`, input);
+  return data.field;
+}
+export async function deleteProjectField(projectId: string, fieldId: string): Promise<void> {
+  await deleteJson(`/projects/${encodeURIComponent(projectId)}/fields/${encodeURIComponent(fieldId)}`);
+}
+export async function reactToProjectField(projectId: string, fieldId: string, reaction: { pinned: boolean; favourite: boolean }): Promise<void> {
+  await postJson(`/projects/${encodeURIComponent(projectId)}/fields/${encodeURIComponent(fieldId)}/react`, reaction);
+}
+export async function addProjectComment(projectId: string, fieldId: string, body: string): Promise<ProjectFieldComment> {
+  const data = await postJson<{ comment: ProjectFieldComment }>(`/projects/${encodeURIComponent(projectId)}/fields/${encodeURIComponent(fieldId)}/comments`, { body });
+  return data.comment;
+}
+export async function updateProjectComment(projectId: string, fieldId: string, commentId: string, body: string): Promise<ProjectFieldComment> {
+  const data = await patchJson<{ comment: ProjectFieldComment }>(`/projects/${encodeURIComponent(projectId)}/fields/${encodeURIComponent(fieldId)}/comments/${encodeURIComponent(commentId)}`, { body });
+  return data.comment;
+}
+export async function deleteProjectComment(projectId: string, fieldId: string, commentId: string): Promise<void> {
+  await deleteJson(`/projects/${encodeURIComponent(projectId)}/fields/${encodeURIComponent(fieldId)}/comments/${encodeURIComponent(commentId)}`);
+}
+export async function requestProjectField(projectId: string, input: ProjectFieldInput & { note?: string }): Promise<ProjectFieldRequest> {
+  const { note, ...payload } = input;
+  const data = await postJson<{ request: ProjectFieldRequest }>(`/projects/${encodeURIComponent(projectId)}/requests`, { payload, note: note || "" });
+  return data.request;
+}
+export async function cancelProjectFieldRequest(projectId: string, requestId: string): Promise<void> {
+  await deleteJson(`/projects/${encodeURIComponent(projectId)}/requests/${encodeURIComponent(requestId)}`);
+}
+export async function resolveProjectFieldRequest(projectId: string, requestId: string, decision: "approved" | "rejected", note?: string): Promise<void> {
+  await postJson(`/projects/${encodeURIComponent(projectId)}/requests/${encodeURIComponent(requestId)}/resolve`, { decision, note: note || "" });
 }

@@ -1,5 +1,8 @@
 import { handleTimeline, loadTimelineExport, readTimelineExportAttachment } from "./timeline.js";
 import { SmartScanError, MAX_SMART_SCAN_FILE_BYTES, extractDocumentFields, runAzureDocumentIntelligenceOcr, smartScanMimeType } from "./smart-scan.js";
+import { AIPasswordError, aiPasswordCandidates } from "./ai-password.js";
+import { DEFAULT_AI_CONTROLS, resolveAiControls } from "./ai-controls.js";
+import { handleProjects, PROJECTS_ROUTE_PREFIX } from "./projects.js";
 
 const DEFAULT_SETTINGS = {
   billing: { currency: "BDT", manualInstructions: "Follow the account details shown for your selected payment method.", billingEnabled: false, minTermMonths: 1, maxTermMonths: 12 },
@@ -8,6 +11,7 @@ const DEFAULT_SETTINGS = {
   siteContent: {},
   email: { verificationEnabled: true, senderName: "Persora", senderEmail: "", replyToEmail: "", replyToName: "Persora Support" },
   smartScan: { enabled: true },
+  aiControls: { ...DEFAULT_AI_CONTROLS },
   alarmRingtones: [],
 };
 const MAX_CONFIGURABLE_UPLOAD_MB = 150;
@@ -34,7 +38,7 @@ const ALARM_RINGTONE_FORMATS = {
 class HttpError extends Error { constructor(message, status = 400) { super(message); this.status = status; } }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const requestOrigin = request.headers.get("Origin") || "";
     const url = new URL(request.url);
     // Pages Functions serve the API on the same origin. Derive that origin automatically
@@ -65,6 +69,7 @@ export default {
       if (url.pathname === "/auth/me" && request.method === "GET") {
         const identity = await authorize(request, env);
         if (!identity) return json({ error: "Your session expired. Sign in again." }, 401, origin);
+        scheduleTrashSweep(env, ctx);
         return json({ user: await publicUser(identity, env) }, 200, origin);
       }
       if (url.pathname === "/auth/logout" && request.method === "POST") {
@@ -159,12 +164,8 @@ export default {
         if (!identity) return json({ error: "Sign in is required." }, 401, origin);
         const id = url.searchParams.get("id") || "";
         if (!isUuid(id)) return json({ error: "Choose a valid business card." }, 400, origin);
-        const rows = await restRows(`business_cards?id=eq.${encodeURIComponent(id)}&user_id=eq.${encodeURIComponent(identity.id)}&select=profile_photo_key,business_logo_key`, env);
-        await supabaseAdminFetch(`/rest/v1/record_shares?resource_type=eq.business_card&resource_id=eq.${encodeURIComponent(id)}&owner_id=eq.${encodeURIComponent(identity.id)}`, env, { method: "DELETE", headers: { Prefer: "return=minimal" } });
-        const result = await supabaseAdminFetch(`/rest/v1/business_cards?id=eq.${encodeURIComponent(id)}&user_id=eq.${encodeURIComponent(identity.id)}`, env, { method: "DELETE", headers: { Prefer: "return=minimal" } });
-        if (!result.ok) return upstreamError(result, origin);
-        for (const key of [rows[0]?.profile_photo_key, rows[0]?.business_logo_key]) await deleteBusinessCardPhotoIfUnreferenced(identity.id, key, env);
-        return json({ ok: true }, 200, origin);
+        // Soft-delete: the card (with photo keys and every share) moves to the Trash.
+        return json(await moveOwnedItemToTrash(identity, "business_card", id, env), 200, origin);
       }
       if (url.pathname === "/contacts" && request.method === "GET") {
         const identity = await authorize(request, env);
@@ -201,12 +202,8 @@ export default {
         if (!identity) return json({ error: "Sign in is required." }, 401, origin);
         const id = url.searchParams.get("id") || "";
         if (!isUuid(id)) return json({ error: "Choose a valid contact." }, 400, origin);
-        const rows = await restRows(`contacts?id=eq.${encodeURIComponent(id)}&user_id=eq.${encodeURIComponent(identity.id)}&select=photo_key`, env);
-        await supabaseAdminFetch(`/rest/v1/record_shares?resource_type=eq.contact&resource_id=eq.${encodeURIComponent(id)}&owner_id=eq.${encodeURIComponent(identity.id)}`, env, { method: "DELETE", headers: { Prefer: "return=minimal" } });
-        const response = await supabaseAdminFetch(`/rest/v1/contacts?id=eq.${encodeURIComponent(id)}&user_id=eq.${encodeURIComponent(identity.id)}`, env, { method: "DELETE", headers: { Prefer: "return=minimal" } });
-        if (!response.ok) return upstreamError(response, origin);
-        await deleteContactPhotoIfUnreferenced(identity.id, rows[0]?.photo_key, env);
-        return json({ ok: true }, 200, origin);
+        // Soft-delete: the contact (with photo key and every share) moves to the Trash.
+        return json(await moveOwnedItemToTrash(identity, "contact", id, env), 200, origin);
       }
       if (url.pathname === "/vault/items" && request.method === "GET") {
         const identity = await authorize(request, env);
@@ -226,9 +223,9 @@ export default {
         if (!identity) return json({ error: "Sign in is required." }, 401, origin);
         const id = url.searchParams.get("id") || "";
         if (!isUuid(id)) return json({ error: "Choose a valid vault item." }, 400, origin);
-        const result = await supabaseAdminFetch(`/rest/v1/vault_items?id=eq.${encodeURIComponent(id)}&user_id=eq.${encodeURIComponent(identity.id)}`, env, { method: "DELETE", headers: { Prefer: "return=minimal" } });
-        if (!result.ok) return upstreamError(result, origin);
-        return json({ ok: true }, 200, origin);
+        // Soft-delete: the item (with its file reference, shares, comments, and
+        // timeline links) moves to the Trash. The R2 file stays until permanent deletion.
+        return json(await moveOwnedItemToTrash(identity, "vault_item", id, env), 200, origin);
       }
       if (url.pathname === "/vault/folders" && request.method === "GET") {
         const identity = await authorize(request, env);
@@ -258,6 +255,7 @@ export default {
         if (!identity) return json({ error: "Sign in to scan a private document." }, 401, origin);
         if (!(await isSmartScanEnabled(identity.id, env))) return json({ error: "Smart Scan is currently disabled for this account by an administrator." }, 403, origin);
         if (!(await hasActivePaidUploadPlan(identity.id, env))) throw uploadPlanRequiredError();
+        const aiControls = (await loadSettings(env)).aiControls;
         const contentLength = Number(request.headers.get("content-length") || 0);
         if (contentLength > MAX_SMART_SCAN_FILE_BYTES + 512 * 1024) return json({ error: "Smart Scan supports files up to 7 MB." }, 413, origin);
         let form;
@@ -294,6 +292,13 @@ export default {
         let warnings = Array.isArray(cachedPayload?.warnings) ? cachedPayload.warnings.filter((entry) => typeof entry === "string").slice(0, 10) : [];
         const ocrCached = Boolean(ocrText);
         if (!ocrCached) {
+          if (!aiControls.smartScanOcr) {
+            return json(
+              { error: "Smart Scan OCR is currently turned off by an administrator. Cached scans still work.", retryable: false, phase: "ocr" },
+              403,
+              origin,
+            );
+          }
           try {
             await recordSmartScanUsage(identity.id, { ocrRuns: 1 }, env);
             const ocr = await runAzureDocumentIntelligenceOcr(bytes, mimeType, env);
@@ -307,6 +312,13 @@ export default {
             if (error instanceof SmartScanError) return json({ error: error.message, retryable: error.retryable, phase: error.phase }, error.status, origin);
             throw error;
           }
+        }
+        if (!aiControls.smartScanExtraction) {
+          return json(
+            { error: "Smart Scan AI extraction is currently turned off by an administrator.", retryable: false, phase: "extraction", ocrCached, ...(cacheWarning ? { cacheWarning } : {}) },
+            403,
+            origin,
+          );
         }
         let extracted;
         try {
@@ -558,12 +570,77 @@ export default {
         const name = row.file_name || object.customMetadata?.originalName || "medical-record";
         return new Response(object.body, { status: 200, headers: { "Content-Type": safeContentType(row.file_type || object.httpMetadata?.contentType || "application/octet-stream"), "Content-Length": String(object.size), "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(name)}`, "X-File-Name": encodeURIComponent(name), "Cache-Control": "private, no-store, max-age=0", ...corsHeaders(origin) } });
       }
+      if (url.pathname === "/trash" && request.method === "GET") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required." }, 401, origin);
+        return json({ items: await listTrashItems(identity, env) }, 200, origin);
+      }
+      if (url.pathname === "/trash/restore" && request.method === "POST") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required." }, 401, origin);
+        const body = await readBody(request);
+        const id = typeof body.id === "string" ? body.id : "";
+        if (!isUuid(id)) return json({ error: "Choose a valid Trash entry." }, 400, origin);
+        return json(await restoreTrashEntry(identity, id, env), 200, origin);
+      }
+      if (url.pathname === "/trash" && request.method === "DELETE") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required." }, 401, origin);
+        const id = url.searchParams.get("id") || "";
+        if (!isUuid(id)) return json({ error: "Choose a valid Trash entry." }, 400, origin);
+        // User-requested permanent delete, ahead of the 7-day expiry. Irreversible.
+        return json(await deleteTrashEntriesForever(identity, [id], env), 200, origin);
+      }
+      if (url.pathname === "/trash/empty" && request.method === "POST") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required." }, 401, origin);
+        const owner = encodeURIComponent(identity.id);
+        const rows = await restRows(`trash_items?owner_id=eq.${owner}&status=eq.active&select=id&limit=400`, env);
+        const ids = rows.map((row) => row.id).filter((value) => typeof value === "string");
+        if (!ids.length) return json({ ok: true, deleted: 0 }, 200, origin);
+        return json(await deleteTrashEntriesForever(identity, ids, env), 200, origin);
+      }
+      if (url.pathname === "/internal/trash-purge" && request.method === "POST") {
+        // For external schedulers (e.g. Android cron jobs): enabled only when the
+        // TRASH_PURGE_TOKEN secret is configured; otherwise behaves as 404.
+        const token = String(env.TRASH_PURGE_TOKEN || "").trim();
+        const supplied = String(request.headers.get("x-persora-cron-token") || "");
+        if (!token || !constantTimeEqual(supplied, token)) return json({ error: "Not found." }, 404, origin);
+        return json({ ok: true, ...(await runTrashSweep(env)) }, 200, origin);
+      }
+      if (url.pathname === "/ai/password-suggestions" && request.method === "POST") {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required." }, 401, origin);
+        const body = await readBody(request);
+        try {
+          const settings = await loadSettings(env);
+          if (!settings.aiControls.passwordSuggestions) {
+            // Admin turned AI suggestions off platform-wide: report offline so the
+            // client falls back to fully local generation without an error.
+            return json({ candidates: [], source: "offline", reason: "disabled" }, 200, origin);
+          }
+          return json({ candidates: await aiPasswordCandidates(env, body), source: "ai" }, 200, origin);
+        } catch (error) {
+          if (error instanceof AIPasswordError) {
+            // Offline/unavailable/invalid output never blocks the user: the client
+            // falls back to fully local generation with the same intent.
+            if (error.status === 503) return json({ candidates: [], source: "offline" }, 200, origin);
+            return json({ error: error.message }, error.status, origin);
+          }
+          throw error;
+        }
+      }
       if (url.pathname === "/timeline" || url.pathname.startsWith("/timeline/")) {
         const identity = await authorize(request, env);
         if (!identity) return json({ error: "Sign in is required to access your private timeline." }, 401, origin);
         if (url.pathname === "/timeline/attachment" && request.method === "POST" && !(await hasActivePaidUploadPlan(identity.id, env))) throw uploadPlanRequiredError();
         const timelineSettings = url.pathname === "/timeline/attachment" && request.method === "POST" ? await loadSettings(env) : null;
         return await handleTimeline(request, identity, env, origin, userStorageUsage, timelineSettings?.storage.maxUploadMb);
+      }
+      if (url.pathname === PROJECTS_ROUTE_PREFIX || url.pathname.startsWith(PROJECTS_ROUTE_PREFIX + "/")) {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required to open projects." }, 401, origin);
+        return await handleProjects(request, identity, env, origin);
       }
       if (url.pathname === "/upload" && request.method === "POST") {
         const identity = await authorize(request, env);
@@ -1470,6 +1547,208 @@ async function callRpc(name, params, env) {
   if (!response.ok) throw new Error(`Database action ${name} failed (${response.status}).`);
   return response.json();
 }
+
+// ---------------------------------------------------------------------------
+// Global Trash: soft-delete, 7-day restore window, scheduled purge.
+// Row lifecycle lives in Postgres RPCs (single-transaction moves and restores);
+// D2/R2 object cleanup happens here, where the VAULT_FILES binding is available.
+// ---------------------------------------------------------------------------
+const TRASH_SWEEP_INTERVAL_MS = 15 * 60 * 1000;
+const TRASH_SWEEP_BATCH = 25;
+
+async function callTrashRpc(name, params, env) {
+  const response = await supabaseAdminFetch(`/rest/v1/rpc/${name}`, env, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(params),
+  });
+  if (!response.ok) {
+    const detail = await response.json().catch(() => null);
+    const code = typeof detail?.code === "string" ? detail.code : "";
+    const message = typeof detail?.message === "string" && detail.message ? detail.message : `The Trash service rejected that action (${response.status}).`;
+    const status = code === "P0404" ? 404 : code === "P0409" ? 409 : code === "P0400" ? 400 : response.status >= 500 ? 502 : 400;
+    throw new HttpError(message, status);
+  }
+  return response.json();
+}
+
+async function moveOwnedItemToTrash(identity, kind, id, env) {
+  await callTrashRpc("persora_trash_move", { p_owner: identity.id, p_kind: kind, p_id: id, p_file_keys: null }, env);
+  return { ok: true, trashed: true };
+}
+
+async function listTrashItems(identity, env) {
+  const owner = encodeURIComponent(identity.id);
+  const now = encodeURIComponent(new Date().toISOString());
+  // Only unexpired entries are restorable, so only those are listed. Expired
+  // rows are owned by the purge pipeline.
+  const rows = await restRows(`trash_items?owner_id=eq.${owner}&status=eq.active&expires_at=gt.${now}&select=id,kind,title,context,file_keys,deleted_at,expires_at&order=deleted_at.desc&limit=300`, env);
+  const folderIds = [...new Set(rows.map((row) => row.context?.folderId).filter((value) => typeof value === "string" && isUuid(value)))];
+  const folderNames = new Map();
+  if (folderIds.length) {
+    const folders = await restRows(`vault_folders?user_id=eq.${owner}&id=in.(${folderIds.map(encodeURIComponent).join(",")})&select=id,name`, env);
+    for (const folder of folders) folderNames.set(folder.id, folder.name);
+  }
+  return rows.map((row) => ({
+    id: row.id,
+    kind: row.kind,
+    title: row.title,
+    space: row.context?.space || null,
+    folder: row.context?.folderId ? folderNames.get(row.context.folderId) || null : null,
+    eventDate: row.context?.eventDate || null,
+    recordType: row.context?.recordType || null,
+    hasFiles: Array.isArray(row.file_keys) && row.file_keys.length > 0,
+    deletedAt: row.deleted_at,
+    expiresAt: row.expires_at,
+  }));
+}
+
+// Deletes an R2 object during permanent removal only when nothing references it:
+// no live record, and no other active/restoring Trash entry (a file shared with
+// another record, or shared content re-uploaded elsewhere, is never touched).
+async function deleteTrashFileIfUnreferenced(userId, key, env) {
+  if (typeof key !== "string" || !ownsKey(userId, key)) return;
+  const encoded = encodeURIComponent(key);
+  const owner = encodeURIComponent(userId);
+  const stillTrashed = encodeURIComponent(`["${key}"]`);
+  const [items, medical, contacts, cardsByPhoto, cardsByLogo, otherTrash] = await Promise.all([
+    restRows(`vault_items?user_id=eq.${owner}&file_key=eq.${encoded}&select=id&limit=1`, env),
+    restRows(`medical_records?user_id=eq.${owner}&file_key=eq.${encoded}&select=id&limit=1`, env),
+    restRows(`contacts?user_id=eq.${owner}&photo_key=eq.${encoded}&select=id&limit=1`, env),
+    restRows(`business_cards?user_id=eq.${owner}&profile_photo_key=eq.${encoded}&select=id&limit=1`, env),
+    restRows(`business_cards?user_id=eq.${owner}&business_logo_key=eq.${encoded}&select=id&limit=1`, env),
+    restRows(`trash_items?owner_id=eq.${owner}&file_keys=cs.${stillTrashed}&status=in.(active,restoring)&select=id&limit=1`, env),
+  ]);
+  if (items.length || medical.length || contacts.length || cardsByPhoto.length || cardsByLogo.length || otherTrash.length) return;
+  const object = await env.VAULT_FILES.head(key);
+  if (!object) return;
+  if (object.customMetadata?.ownerId && object.customMetadata.ownerId !== userId) {
+    console.error(`Refusing to remove ${key}: stored owner metadata does not match the requesting account.`);
+    return;
+  }
+  await env.VAULT_FILES.delete(key);
+}
+
+// Purges claimed Trash rows: files first, then the rows. Any file failure
+// releases the row back to 'active' so nothing is ever deleted prematurely and
+// the sweep (or the user's next attempt) retries.
+async function purgeClaimedTrashRows(rows, env, { strict = false } = {}) {
+  const finalizedIds = [];
+  for (const row of rows) {
+    const keys = Array.isArray(row.file_keys) ? row.file_keys.filter((value) => typeof value === "string" && value) : [];
+    let failed = false;
+    for (const key of keys) {
+      try {
+        await deleteTrashFileIfUnreferenced(row.owner_id, key, env);
+      } catch (error) {
+        failed = true;
+        console.error("Persora trash file cleanup failed", safeError(error));
+      }
+    }
+    if (failed) await callTrashRpc("persora_trash_release_purge", { p_ids: [row.id] }, env).catch(() => {});
+    else finalizedIds.push(row.id);
+  }
+  if (finalizedIds.length) await callTrashRpc("persora_trash_finalize_purge", { p_ids: finalizedIds }, env);
+  if (strict && rows.length && finalizedIds.length !== rows.length) {
+    const kept = rows.length - finalizedIds.length;
+    const error = new HttpError(
+      kept === rows.length
+        ? "Attached files could not be removed right now, so nothing was permanently deleted. Your items stayed in the Trash — try again."
+        : `${kept} of ${rows.length} items could not be permanently deleted and stayed in the Trash.`,
+      503,
+    );
+    error.partialCount = finalizedIds.length;
+    throw error;
+  }
+  return finalizedIds.length;
+}
+
+async function restoreTrashEntry(identity, id, env) {
+  return callTrashRpc("persora_trash_restore", { p_owner: identity.id, p_trash_id: id }, env);
+}
+
+async function deleteTrashEntriesForever(identity, ids, env) {
+  const claimed = await callTrashRpc("persora_trash_claim_for_owner", { p_owner: identity.id, p_ids: ids }, env);
+  const rows = Array.isArray(claimed) ? claimed : [];
+  if (!rows.length && ids.length) throw new HttpError("That Trash entry is no longer available. Refresh the Trash and try again.", 404);
+  const deleted = await purgeClaimedTrashRows(rows, env, { strict: true });
+  return { ok: true, deleted };
+}
+
+// Scheduled expiry pipeline. Safe to run any number of times: claiming uses
+// row-level locks, the database cron performs the same hard purge, and file
+// deletions are reference-checked. Runs from (a) pg_cron hourly, (b) this
+// throttled best-effort sweep triggered by app activity, and (c) the protected
+// internal endpoint for external schedulers (Android cron, uptime jobs, CI).
+async function runTrashSweep(env) {
+  let purged = 0;
+  try {
+    const claimed = await callTrashRpc("persora_trash_claim_purge", { p_limit: TRASH_SWEEP_BATCH }, env);
+    purged = await purgeClaimedTrashRows(Array.isArray(claimed) ? claimed : [], env);
+  } catch (error) {
+    console.error("Persora trash sweep could not claim expired items", safeError(error));
+  }
+  // Hard-purge any rows beyond this sweep's claim batch (or all of them on
+  // environments without pg_cron). File keys are queued for the release drain.
+  let dbPurged = 0;
+  try {
+    dbPurged = Number(await callTrashRpc("persora_trash_purge_expired_rows", { p_limit: 200 }, env)) || 0;
+  } catch (error) {
+    console.error("Persora trash database purge failed", safeError(error));
+  }
+  // Drain file releases queued by database-side purges.
+  let released = 0;
+  try {
+    const releases = await restRows(`trash_file_releases?select=id,owner_id,file_key&order=released_at.asc&limit=${TRASH_SWEEP_BATCH}`, env);
+    const done = [];
+    for (const release of releases) {
+      try {
+        await deleteTrashFileIfUnreferenced(release.owner_id, release.file_key, env);
+        done.push(release.id);
+      } catch (error) {
+        console.error("Persora released-file cleanup failed", safeError(error));
+      }
+    }
+    if (done.length) {
+      const response = await supabaseAdminFetch(`/rest/v1/trash_file_releases?id=in.(${done.map(encodeURIComponent).join(",")})`, env, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      if (response.ok) released = done.length;
+      else console.error("Persora trash release queue delete failed", response.status);
+    }
+  } catch (error) {
+    console.error("Persora trash release drain failed", safeError(error));
+  }
+  return { purged, dbPurged, released };
+}
+
+async function readPlatformSetting(env, key) {
+  const rows = await restRows(`platform_settings?setting_key=eq.${encodeURIComponent(key)}&select=value&limit=1`, env);
+  return rows[0]?.value && typeof rows[0].value === "object" ? rows[0].value : {};
+}
+
+// Best-effort expiry sweep on app activity. Claiming the throttle slot before the
+// work burst runs means concurrent sessions cannot stampede the pipeline. With an
+// execution context the work continues after the response via waitUntil.
+function scheduleTrashSweep(env, ctx) {
+  const work = (async () => {
+    try {
+      const state = await readPlatformSetting(env, "trash_sweep_state");
+      const lastRun = Date.parse(state.lastRunAt || "") || 0;
+      if (Date.now() - lastRun < TRASH_SWEEP_INTERVAL_MS) return;
+      await upsertPlatformSettingValue(env, "trash_sweep_state", { lastRunAt: new Date().toISOString() });
+      await runTrashSweep(env);
+    } catch (error) {
+      console.error("Persora trash sweep failed", safeError(error));
+    }
+  })();
+  if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(work);
+}
+
+async function upsertPlatformSettingValue(env, key, value) {
+  const response = await supabaseAdminFetch("/rest/v1/platform_settings?on_conflict=setting_key", env, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" },
+    body: JSON.stringify([{ setting_key: key, value }]),
+  });
+  if (!response.ok) throw new HttpError(`The Trash sweep state could not be recorded (${response.status}).`, 502);
+}
 async function authorize(request, env) {
   const token = readSessionCookie(request);
   if (!token || token.length > 200) return null;
@@ -2157,12 +2436,9 @@ async function saveMedicalRecord(identity, body, env) {
   return { ...saved, links: links.map((link) => ({ record_type: link.recordType, record_id: link.recordId, link_kind: link.linkKind })) };
 }
 async function removeMedicalRecord(identity, id, env) {
-  const owner = encodeURIComponent(identity.id);
-  const rows = await restRows(`medical_records?id=eq.${encodeURIComponent(id)}&user_id=eq.${owner}&select=id,file_key&limit=1`, env);
-  if (!rows.length) throw new HttpError("That medical record isn't available in your account.", 404);
-  const response = await supabaseAdminFetch(`/rest/v1/medical_records?id=eq.${encodeURIComponent(id)}&user_id=eq.${owner}`, env, { method: "DELETE", headers: { Prefer: "return=minimal" } });
-  if (!response.ok) throw new HttpError("The medical record could not be deleted.", response.status >= 400 ? response.status : 502);
-  if (rows[0].file_key) await deleteMedicalFileIfUnreferenced(identity.id, rows[0].file_key, env);
+  // Soft-delete: the record (with links and file reference) moves to the Trash.
+  // The R2 file stays until the Trash entry is permanently deleted or purged.
+  return moveOwnedItemToTrash(identity, "medical_record", id, env);
 }
 
 const CONTACT_CATEGORIES = new Set(["Family", "Friends", "Work", "Clients", "Suppliers", "Students", "Other"]);
@@ -2445,6 +2721,7 @@ async function loadSettings(env) {
     siteContent: stored.site_content && typeof stored.site_content === "object" && !Array.isArray(stored.site_content) ? stored.site_content : DEFAULT_SETTINGS.siteContent,
     email: { ...DEFAULT_SETTINGS.email, ...(stored.email && typeof stored.email === "object" && !Array.isArray(stored.email) ? stored.email : {}) },
     smartScan: { ...DEFAULT_SETTINGS.smartScan, ...(stored.smart_scan && typeof stored.smart_scan === "object" && !Array.isArray(stored.smart_scan) ? stored.smart_scan : {}) },
+    aiControls: resolveAiControls(stored.ai_controls),
     alarmRingtones: Array.isArray(stored.alarm_ringtones) ? stored.alarm_ringtones : DEFAULT_SETTINGS.alarmRingtones,
   };
 }
@@ -2632,6 +2909,16 @@ async function savePlatformSetting(key, value, actorId, env) {
   } else if (key === "smart_scan") {
     if (!value || typeof value !== "object" || Array.isArray(value) || typeof value.enabled !== "boolean") throw new HttpError("Choose whether Smart Scan is enabled globally.", 400);
     value = { enabled: value.enabled };
+  } else if (key === "ai_controls") {
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new HttpError("Invalid AI controls.", 400);
+    const cleaned = {};
+    let changed = 0;
+    for (const flag of Object.keys(DEFAULT_AI_CONTROLS)) {
+      if (typeof value[flag] === "boolean") { cleaned[flag] = value[flag]; changed += 1; }
+    }
+    if (!changed) throw new HttpError("Choose at least one AI control to change.", 400);
+    const current = await loadSettings(env);
+    value = { ...current.aiControls, ...cleaned };
   } else if (key === "alarm_ringtones") {
     value = cleanAlarmRingtoneSetting(value);
   } else if (key === "site_content") {
@@ -2878,6 +3165,14 @@ async function loadAdminConsole(env) {
   return {
     metrics: { totalAccounts, activeAccounts, vaultEntries, pendingPayments },
     smartScan: { enabled: settings.smartScan.enabled !== false, usageAvailable: Array.isArray(smartScanUsageRows), totals: smartScanTotals, byUser: smartScanByUser },
+    aiControls: settings.aiControls,
+    aiProviders: {
+      workersAiConfigured: Boolean(env.AI),
+      azureDocumentIntelligenceConfigured: Boolean(
+        (typeof env.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT === "string" && env.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT.trim())
+        && (typeof env.AZURE_DOCUMENT_INTELLIGENCE_KEY === "string" && env.AZURE_DOCUMENT_INTELLIGENCE_KEY.trim()),
+      ),
+    },
     profiles: profileRows.map((profile) => ({ ...profile, storage_bytes: combinedByUser[profile.id]?.totalBytes || 0, storage_file_bytes: combinedByUser[profile.id]?.bytes || 0, storage_database_bytes: combinedByUser[profile.id]?.databaseBytes || 0 })),
     events: eventRows,
     plans: plans.map((plan) => publicPlan(plan, billing.currency)),

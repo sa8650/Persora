@@ -205,9 +205,19 @@ async function deleteEvent(eventId, identity, env) {
   const current = await rows(`timeline_events?id=eq.${encodeURIComponent(eventId)}&user_id=eq.${encodeURIComponent(identity.id)}&event_type=eq.manual&select=id,encrypted_payload&limit=1`, env);
   if (!current[0]) throw new TimelineError("Only your manual timeline posts can be deleted.", 404);
   const payload = await decryptPayload(current[0].encrypted_payload, identity.id, env);
-  const deleted = await dbFetch(`timeline_events?id=eq.${encodeURIComponent(eventId)}&user_id=eq.${encodeURIComponent(identity.id)}&event_type=eq.manual`, env, { method: "DELETE", headers: { Prefer: "return=minimal" } });
-  if (!deleted.ok) throw new Error(`The timeline post could not be deleted (${deleted.status}).`);
-  if (payload?.attachment?.key) await env.VAULT_FILES.delete(payload.attachment.key).catch(() => {});
+  // Soft-delete: the post (with its encrypted payload, links, and attachment key)
+  // moves to the Trash for 7 days. The R2 attachment is kept so restore keeps
+  // working and is only removed once the Trash entry is purged permanently.
+  const fileKeys = payload?.attachment?.key ? [payload.attachment.key] : [];
+  const moved = await dbFetch("rpc/persora_trash_move", env, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Prefer: "return=representation" },
+    body: JSON.stringify({ p_owner: identity.id, p_kind: "timeline_event", p_id: eventId, p_file_keys: { keys: fileKeys } }),
+  });
+  if (!moved.ok) {
+    const detail = await moved.json().catch(() => null);
+    throw new Error(detail?.message || `The timeline post could not be moved to the Trash (${moved.status}).`);
+  }
   return { ok: true };
 }
 async function uploadAttachment(request, identity, env, storageUsage, maxUploadMb = 25) {

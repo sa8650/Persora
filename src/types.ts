@@ -15,7 +15,30 @@ export type SectionId =
   | "notes"
   | "personal-finance";
 
-export type ViewId = "dashboard" | SectionId | "contacts" | "settings" | "billing" | "shared" | "timeline" | "medical-records" | "password-manager";
+export type ViewId = "dashboard" | SectionId | "contacts" | "settings" | "billing" | "shared" | "timeline" | "medical-records" | "password-manager" | "trash" | "projects";
+
+/** Content families that flow through the global Trash. */
+export type TrashKind = "vault_item" | "contact" | "business_card" | "medical_record" | "timeline_event" | "password_entry";
+
+/** Space keys used by Trash entries: vault section ids plus whole-app spaces. */
+export type TrashSpace = SectionId | "contacts" | "business-cards" | "medical-records" | "timeline" | "password-manager";
+
+export interface TrashEntry {
+  /** Stable id of the original record (restoration re-uses it). */
+  id: string;
+  kind: TrashKind;
+  title: string;
+  /** Where it came from: vault section id, or an app space like "contacts". */
+  space: TrashSpace | null;
+  /** Display name of the original folder, when known. */
+  folder: string | null;
+  /** Timeline posts also carry the event date (content itself stays encrypted). */
+  eventDate?: string | null;
+  recordType?: string | null;
+  hasFiles?: boolean;
+  deletedAt: string;
+  expiresAt: string;
+}
 export type NotesRecordKind = "todo" | "reminder" | "alarm";
 export const MEDICAL_RECORD_TYPES = ["Prescription", "Medical Report", "Lab Test", "Imaging / Scan", "Doctor Visit", "Hospital Record", "Vaccination", "Medical Certificate", "Discharge Summary", "Other"] as const;
 export type MedicalRecordType = typeof MEDICAL_RECORD_TYPES[number];
@@ -373,9 +396,13 @@ export interface PaymentRecord {
 export interface StorageUsage { bytesUsed: number; fileBytes: number; databaseBytes: number; databaseRecordCount: number; objectCount: number; storageLimitBytes: number; storageLimitGb: number; planName: string }
 export interface SmartScanUsage { enabled: boolean; scans: number; ocrRuns: number; aiExtractions: number; lastScannedAt: string | null }
 export interface SmartScanAdminSnapshot { enabled: boolean; usageAvailable: boolean; totals: { scans: number; ocrRuns: number; aiExtractions: number }; byUser: Record<string, SmartScanUsage> }
+export interface AiControls { passwordSuggestions: boolean; smartScanOcr: boolean; smartScanExtraction: boolean }
+export interface AiProvidersSnapshot { workersAiConfigured: boolean; azureDocumentIntelligenceConfigured: boolean }
 export interface AdminConsoleSnapshot {
   metrics: AdminMetrics;
   smartScan: SmartScanAdminSnapshot;
+  aiControls?: AiControls;
+  aiProviders?: AiProvidersSnapshot;
   profiles: AdminProfile[];
   events: AdminAuditEvent[];
   plans: SubscriptionPlan[];
@@ -398,4 +425,42 @@ export interface BillingSnapshot {
   billingSettings: BillingSettings;
   paymentMethods: PaymentMethod[];
   maxUploadMb: number;
+}
+
+// ---------------------------------------------------------------------------
+// Projects (2026-10-22)
+// ---------------------------------------------------------------------------
+export type ProjectKind = "personal" | "shared";
+export type ProjectFieldStatus = "planning" | "in-progress" | "in-review" | "blocked" | "completed";
+export type ProjectMemberRole = "editor" | "commenter" | "viewer";
+export type ProjectAccessRole = ProjectMemberRole | "owner";
+export type ProjectFolderColor = "cyan" | "purple" | "pink" | "blue" | "orange" | "green";
+export interface ProjectRecord { id: string; owner_id: string; name: string; description: string; kind: ProjectKind; created_at: string; updated_at: string }
+export interface ProjectAccess { owner: boolean; role: ProjectAccessRole; canCreateFields: boolean; canRequest?: boolean }
+export interface ProjectStats { fields: number; completed: number; inReview: number; members: number; pendingRequests: number }
+export interface ProjectSummary extends ProjectRecord { access: { owner: boolean; role: ProjectAccessRole; canCreateFields: boolean }; stats: ProjectStats }
+export interface ProjectMember { userId: string; role: ProjectMemberRole; canCreateFields: boolean; invitedBy: string | null; createdAt: string; name: string; email: string; loginId: string }
+export interface ProjectFolder { id: string; project_id: string; name: string; color: ProjectFolderColor; created_by: string | null; created_at: string; updated_at: string; fieldCount?: number }
+export interface ProjectFieldComment { id: string; field_id: string; author_id: string; author_name: string; body: string; created_at: string; updated_at: string }
+export interface ProjectField {
+  id: string; project_id: string; folder_id: string | null; title: string; description: string;
+  status: ProjectFieldStatus; progress: number; creator_id: string; creator_name: string;
+  assignee_id: string | null; due_date: string | null; created_at: string; updated_at: string;
+  assigneeName?: string | null; mine?: { pinned: boolean; favourite: boolean }; commentCount?: number; comments?: ProjectFieldComment[];
+}
+export interface ProjectFieldRequest {
+  id: string; project_id: string; requester_id: string; requester_name: string; note: string;
+  payload: { title?: string; description?: string; folder_id?: string; status?: ProjectFieldStatus; progress?: number; assignee_id?: string; due_date?: string };
+  status: "pending" | "approved" | "rejected"; resolution_note: string; field_id: string | null; created_at: string; resolved_at: string | null;
+}
+export interface ProjectActivity { id: string; actor_id: string | null; actor_name: string; action: string; target: string; created_at: string }
+export interface ProjectDetail {
+  project: ProjectRecord;
+  access: ProjectAccess;
+  owner: { id: string; name: string; email: string; loginId: string } | null;
+  members: ProjectMember[];
+  folders: ProjectFolder[];
+  fields: ProjectField[];
+  requests: ProjectFieldRequest[];
+  activity: ProjectActivity[];
 }
