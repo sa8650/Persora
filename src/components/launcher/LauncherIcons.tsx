@@ -56,6 +56,21 @@ const ICONS: Record<LauncherModuleId, Draw> = {
     <rect x="29.5" y="32.5" width="5.5" height="5" rx="1.6" fill="#d5e1f4" />
   </>,
 
+  habits: (id) => <>
+    <defs>
+      <Lg id={id("a")} from="#2dd4bf" to="#16a34a" />
+      <Lg id={id("b")} from="#5be09a" to="#15924a" />
+      <Lg id={id("c")} from="#ffd166" to="#f59e0b" />
+    </defs>
+    {/* Progress ring: track + a three-quarter arc from 12 o'clock, ending in a streak node. */}
+    <circle cx="24" cy="24" r="15" stroke="#d3f3e2" strokeWidth="5" />
+    <path d="M24 9a15 15 0 1 1-15 15" stroke={`url(#${id("a")})`} strokeWidth="5" strokeLinecap="round" />
+    <circle cx="24" cy="24" r="9.6" fill={`url(#${id("b")})`} style={gap} strokeWidth="2" />
+    <path d="M19.4 24.3l3.2 3.2 6.1-6.6" stroke="#fff" strokeWidth="2.7" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M18.6 19.8a6.4 6.4 0 0 1 3.6-2.4" stroke="#fff" strokeOpacity=".45" strokeWidth="1.5" strokeLinecap="round" />
+    <circle cx="9" cy="24" r="4" fill={`url(#${id("c")})`} style={gap} strokeWidth="1.8" />
+  </>,
+
   timeline: (id) => <>
     <defs>
       <Lg id={id("a")} from="#b49cff" to="#7c3aed" />

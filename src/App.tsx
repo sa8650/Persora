@@ -66,6 +66,8 @@ import {
 } from "./lib/backend";
 import { buildTrashEntry, clearLocalTrash, loadLocalTrash, pushLocalTrash, removeLocalTrash } from "./lib/local-trash";
 import { CALENDAR_CHANGED_EVENT, loadCalendarReminders, markCalendarReminderRead } from "./lib/calendar-api";
+import { HABITS_CHANGED_EVENT, HABITS_RESTORED_EVENT, importHabitBackup, loadHabitReminders, markHabitReminderRead } from "./lib/habit-api";
+import type { HabitReminder } from "./lib/habit-api";
 import type { CalendarReminder } from "./lib/calendar-api";
 import { localDateOf, safeTimeZone } from "../cloudflare/calendar-rules.js";
 import { loadAdminBootstrapStatus, loadDocumentTypes, loadProjectNotifications, loadPublicPlans, loadPublicSiteContent, markProjectNotificationRead, markProjectNotificationsRead, sendEmailVerificationCode, verifyEmailVerificationCode } from "./lib/cloud";
@@ -122,6 +124,7 @@ export default function App() {
   const [shareNotifications, setShareNotifications] = useState<ShareNotification[]>([]);
   const [projectNotifications, setProjectNotifications] = useState<ShareNotification[]>([]);
   const [calendarNotifications, setCalendarNotifications] = useState<ShareNotification[]>([]);
+  const [habitNotifications, setHabitNotifications] = useState<ShareNotification[]>([]);
   const [localScheduleNotifications, setLocalScheduleNotifications] = useState<ShareNotification[]>([]);
   const [ringingSchedules, setRingingSchedules] = useState<ActiveScheduleAlert[]>([]);
   const [scheduleNotificationOwner, setScheduleNotificationOwner] = useState("");
@@ -466,6 +469,49 @@ export default function App() {
       window.removeEventListener(CALENDAR_CHANGED_EVENT, refresh); window.removeEventListener("focus", refresh);
     };
   }, [user?.id, user?.demo, user?.timezone]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Habit reminders: the server's dispatcher (same scheduler and email service
+  // as calendar reminders) decides delivery — it skips habits already done that
+  // day — so this poll only lists delivered ones in the bell and raises one
+  // desktop notification per reminder while Persora is open.
+  useEffect(() => {
+    setHabitNotifications([]);
+    if (!user || user.demo || !isPagesApiConfigured) return;
+    let active = true;
+    const seenKey = `persora-habit-notified:${user.id}`;
+    const message = (reminder: HabitReminder) => `Habit reminder · ${new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${reminder.localDate}T12:00:00Z`))}`;
+    const toNotification = (reminder: HabitReminder): ShareNotification => ({
+      id: `habit:${reminder.id}`, kind: "habit", itemTitle: reminder.habitName, actorName: reminder.habitName,
+      message: message(reminder), createdAt: reminder.remindAt, readAt: reminder.readAt || undefined, habitDate: reminder.localDate,
+    });
+    const fire = (reminder: HabitReminder) => {
+      let seen: string[] = [];
+      try { seen = JSON.parse(localStorage.getItem(seenKey) || "[]") as string[]; } catch { seen = []; }
+      if (seen.includes(reminder.id)) return;
+      try { localStorage.setItem(seenKey, JSON.stringify([...seen, reminder.id].slice(-300))); } catch { /* best-effort dedupe */ }
+      if (!active) return;
+      notify(`Habit reminder: ${reminder.habitName}`);
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        try { new Notification(reminder.habitName, { body: "Time for your habit.", tag: `persora-habit-${reminder.id}` }); } catch { /* the bell entry remains */ }
+      }
+    };
+    const refresh = () => {
+      void loadHabitReminders().then((rows) => {
+        if (!active) return;
+        setHabitNotifications(rows.map(toNotification));
+        const now = Date.now();
+        for (const row of rows) if (!row.readAt && now - Date.parse(row.remindAt) < 15 * 60_000) fire(row);
+      }).catch(() => { /* retried on the next poll; 503 until the habits migration is applied */ });
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 30_000);
+    window.addEventListener(HABITS_CHANGED_EVENT, refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      active = false; window.clearInterval(timer);
+      window.removeEventListener(HABITS_CHANGED_EVENT, refresh); window.removeEventListener("focus", refresh);
+    };
+  }, [user?.id, user?.demo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!user || user.demo || !isPagesApiConfigured) return;
@@ -1175,8 +1221,10 @@ commitContacts(getLocalContacts(DEMO_USER.id));
     setShareNotifications((current) => current.map((entry) => ({ ...entry, readAt: entry.readAt || now })));
     setProjectNotifications((current) => current.map((entry) => ({ ...entry, readAt: entry.readAt || now })));
     setCalendarNotifications((current) => current.map((entry) => ({ ...entry, readAt: entry.readAt || now })));
+    setHabitNotifications((current) => current.map((entry) => ({ ...entry, readAt: entry.readAt || now })));
     if (!user || user.demo || !isPagesApiConfigured) return;
     if (calendarNotifications.some((entry) => !entry.readAt)) void markCalendarReminderRead().catch(() => { /* re-synced on the next poll */ });
+    if (habitNotifications.some((entry) => !entry.readAt)) void markHabitReminderRead().catch(() => { /* re-synced on the next poll */ });
     try { await Promise.all([markShareNotificationsRead(), markProjectNotificationsRead()]); await refreshSharing(); }
     catch (error) {
       notify(error instanceof Error ? error.message : "Couldn't update notifications.", "error");
@@ -1191,6 +1239,12 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       const now = new Date().toISOString();
       setCalendarNotifications((current) => current.map((entry) => entry.id === notificationId ? { ...entry, readAt: entry.readAt || now } : entry));
       if (user && !user.demo && isPagesApiConfigured) void markCalendarReminderRead(notificationId.slice("calendar:".length)).catch(() => { /* re-synced on the next poll */ });
+      return;
+    }
+    if (notificationId.startsWith("habit:")) {
+      const now = new Date().toISOString();
+      setHabitNotifications((current) => current.map((entry) => entry.id === notificationId ? { ...entry, readAt: entry.readAt || now } : entry));
+      if (user && !user.demo && isPagesApiConfigured) void markHabitReminderRead(notificationId.slice("habit:".length)).catch(() => { /* re-synced on the next poll */ });
       return;
     }
     if (!notificationId.startsWith("project:")) return;
@@ -1303,8 +1357,22 @@ commitContacts(getLocalContacts(DEMO_USER.id));
     notify("Your complete demo records have been downloaded as JSON.");
   };
 
-  const handleImport = async (file: File) => {
-    const raw = JSON.parse(await file.text()) as { format?: string; items?: unknown };
+  const handleImport = async (file: File): Promise<string | void> => {
+    const raw = JSON.parse(await file.text()) as { format?: string; items?: unknown; data?: unknown };
+    if (raw && raw.format === "persora-complete-export-v1") {
+      // persora-export.json from a complete backup: restores Habit Tracker data
+      // (habits + check-ins) into this account. Merges; never overwrites.
+      if (!user) throw new Error("Please sign in before importing data.");
+      const data = raw.data && typeof raw.data === "object" ? raw.data as { habits?: unknown; habitCheckins?: unknown } : {};
+      const habits = Array.isArray(data.habits) ? data.habits : [];
+      if (!habits.length) throw new Error("This complete backup has no Habit Tracker data to restore. Complete backups can restore habits and their check-ins here.");
+      if (user.demo || !isPagesApiConfigured) throw new Error("Sign in to your Persora account to restore Habit Tracker data.");
+      const result = await importHabitBackup(habits, Array.isArray(data.habitCheckins) ? data.habitCheckins : []);
+      window.dispatchEvent(new Event(HABITS_RESTORED_EVENT));
+      window.dispatchEvent(new Event(HABITS_CHANGED_EVENT));
+      const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
+      return `Habit Tracker restored: ${plural(result.habitsCreated, "habit")} added${result.habitsMatched ? `, ${plural(result.habitsMatched, "habit")} already here` : ""}, ${plural(result.checkinsAdded, "check-in")} added.`;
+    }
     if (!raw || raw.format !== "persora-export-v1" || !Array.isArray(raw.items)) throw new Error("Choose a valid Persora JSON backup.");
     if (!user) throw new Error("Please sign in before importing data.");
     const allowedSections = new Set(SECTION_DEFINITIONS.map((section) => section.id));
@@ -1402,7 +1470,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       recordSharesWithMe={recordSharesWithMe}
       contacts={contacts}
       businessCards={businessCards}
-      notifications={[...localScheduleNotifications, ...shareNotifications, ...projectNotifications, ...calendarNotifications].sort((a, b) => b.createdAt.localeCompare(a.createdAt))}
+      notifications={[...localScheduleNotifications, ...shareNotifications, ...projectNotifications, ...calendarNotifications, ...habitNotifications].sort((a, b) => b.createdAt.localeCompare(a.createdAt))}
       ringingSchedules={ringingSchedules}
       sharingAvailable={!user.demo && isPagesApiConfigured}
       timelineEvents={displayTimelineEvents}
@@ -1514,11 +1582,12 @@ commitContacts(getLocalContacts(DEMO_USER.id));
   </>;
 }
 
-/** Deep links: ?project=… opens Projects; ?view=calendar (reminder emails) opens the Calendar. */
+/** Deep links: ?project=… opens Projects; ?view=calendar / ?view=habits (reminder emails) open the Calendar / Habit Tracker. */
 function initialWorkspaceView(): ViewId {
   const params = new URLSearchParams(window.location.search);
   if (params.has("project")) return "projects";
   if (params.get("view") === "calendar") return "calendar";
+  if (params.get("view") === "habits") return "habits";
   return "dashboard";
 }
 

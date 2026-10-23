@@ -526,7 +526,8 @@ async function savePreferences(identity, body, env) {
 // Reminders
 // ---------------------------------------------------------------------------
 
-function emailAvailability(identity, services) {
+/** Whether reminder emails can be sent to this member (shared with Habit Tracker). */
+export function emailAvailability(identity, services) {
   if (!services?.emailConfigured?.()) return { available: false, reason: "Email reminders aren't set up on this Persora server yet." };
   if (!identity.email_verified_at) return { available: false, reason: "Verify your email address in Settings to get reminders by email." };
   return { available: true, reason: null };

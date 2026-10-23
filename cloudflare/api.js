@@ -7,6 +7,7 @@ import { handlePhotoStudio, handleSharedPhotoFile, backgroundProviders, PHOTO_ST
 import { handlePdfStudio, PDF_STUDIO_ROUTE_PREFIX } from "./pdf-studio.js";
 import { handlePasswordVault, PASSWORD_VAULT_ROUTE_PREFIX } from "./password-vault.js";
 import { handleCalendar, dispatchCalendarReminders, scheduleCalendarDispatch, exportCalendarData, CALENDAR_ROUTE_PREFIX } from "./calendar.js";
+import { handleHabits, dispatchHabitReminders, scheduleHabitDispatch, exportHabitData, HABITS_ROUTE_PREFIX } from "./habits.js";
 import { handleWorkspacePreferences, exportWorkspacePreferences, WORKSPACE_PREFERENCES_PATH } from "./workspace-preferences.js";
 
 const DEFAULT_SETTINGS = {
@@ -76,6 +77,7 @@ export default {
         if (!identity) return json({ error: "Your session expired. Sign in again." }, 401, origin);
         scheduleTrashSweep(env, ctx);
         scheduleCalendarDispatch(env, ctx, calendarServices(env), `${url.origin}/?view=calendar`);
+        scheduleHabitDispatch(env, ctx, calendarServices(env), `${url.origin}/?view=habits`);
         return json({ user: await publicUser(identity, env) }, 200, origin);
       }
       if (url.pathname === "/auth/logout" && request.method === "POST") {
@@ -624,12 +626,28 @@ export default {
           for (const key of Object.keys(totals)) totals[key] += result[key];
           if (result.claimed < 50) break;
         }
-        return json({ ok: true, ...totals }, 200, origin);
+        // Habit reminders ride the same tick, token and email service.
+        const habits = { claimed: 0, delivered: 0, skipped: 0, emailed: 0, emailFailed: 0, emailSkipped: 0 };
+        try {
+          for (let batch = 0; batch < 4; batch += 1) {
+            const result = await dispatchHabitReminders(env, calendarServices(env), { limit: 50, appUrl: `${url.origin}/?view=habits` });
+            for (const key of Object.keys(habits)) habits[key] += result[key];
+            if (result.claimed < 50) break;
+          }
+        } catch (error) {
+          if (error?.status !== 503) throw error; // habits migration not applied yet
+        }
+        return json({ ok: true, ...totals, habits }, 200, origin);
       }
       if (url.pathname === CALENDAR_ROUTE_PREFIX || url.pathname.startsWith(CALENDAR_ROUTE_PREFIX + "/")) {
         const identity = await authorize(request, env);
         if (!identity) return json({ error: "Sign in to open your calendar." }, 401, origin);
         return await handleCalendar(request, identity, env, origin, calendarServices(env));
+      }
+      if (url.pathname === HABITS_ROUTE_PREFIX || url.pathname.startsWith(HABITS_ROUTE_PREFIX + "/")) {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in to open your habits." }, 401, origin);
+        return await handleHabits(request, identity, env, origin, calendarServices(env));
       }
       if (url.pathname === WORKSPACE_PREFERENCES_PATH) {
         const identity = await authorize(request, env);
@@ -1765,7 +1783,7 @@ async function readPlatformSetting(env, key) {
 // Best-effort expiry sweep on app activity. Claiming the throttle slot before the
 // work burst runs means concurrent sessions cannot stampede the pipeline. With an
 // execution context the work continues after the response via waitUntil.
-/** Email delivery for calendar reminders, through the existing Brevo setup. */
+/** Email delivery for calendar and habit reminders, through the existing Brevo setup. */
 function calendarServices(env) {
   return {
     emailConfigured: () => Boolean(String(env.BREVO_API_KEY || "").trim()),
@@ -3065,7 +3083,7 @@ async function reviewPayment(body, identity, env) {
 async function createAccountExport(identity, env) {
   if (!env.VAULT_FILES) throw new Error("Private file storage is unavailable for this export.");
   const owner = encodeURIComponent(identity.id);
-  const [profileRows, items, contacts, cards, medicalRecords, medicalRecordLinks, documentShares, recordShares, notifications, authoredComments, subscriptions, payments, files, timelineExport, calendarExport, workspacePreferences] = await Promise.all([
+  const [profileRows, items, contacts, cards, medicalRecords, medicalRecordLinks, documentShares, recordShares, notifications, authoredComments, subscriptions, payments, files, timelineExport, calendarExport, workspacePreferences, habitExport] = await Promise.all([
     restRows(`profiles?id=eq.${owner}&select=id,login_id,email,full_name,timezone,avatar_url,created_at,updated_at`, env),
     restRowsPaged(`vault_items?user_id=eq.${owner}&select=*&order=id.asc`, env),
     restRowsPaged(`contacts?user_id=eq.${owner}&select=*&order=id.asc`, env),
@@ -3082,6 +3100,7 @@ async function createAccountExport(identity, env) {
     loadTimelineExport(identity, env),
     exportCalendarData(identity.id, env),
     exportWorkspacePreferences(identity.id, env),
+    exportHabitData(identity.id, env),
   ]);
   const ordinaryFiles = files.filter((file) => !file.key.startsWith(`${identity.id}/timeline/`));
   const indexedFiles = [
@@ -3095,7 +3114,7 @@ async function createAccountExport(identity, env) {
   const manifest = {
     format: "persora-complete-export-v1", exportedAt: new Date().toISOString(),
     account: profileRows[0] || { login_id: identity.login_id || "", email: identity.email || "", full_name: identity.full_name || "" },
-    data: { vaultItems: items, contacts, businessCards: cards, medicalRecords, medicalRecordLinks, documentShares, recordShares, notifications, authoredShareComments: authoredComments, subscriptions, paymentHistory: payments, timelineEvents: timelineExport.events, calendarEvents: calendarExport.events, calendarReminders: calendarExport.reminders, calendarPreferences: calendarExport.preferences, workspacePreferences },
+    data: { vaultItems: items, contacts, businessCards: cards, medicalRecords, medicalRecordLinks, documentShares, recordShares, notifications, authoredShareComments: authoredComments, subscriptions, paymentHistory: payments, timelineEvents: timelineExport.events, calendarEvents: calendarExport.events, calendarReminders: calendarExport.reminders, calendarPreferences: calendarExport.preferences, workspacePreferences, habits: habitExport.habits, habitCheckins: habitExport.checkins, habitReminders: habitExport.reminders },
     attachments: attachmentManifest,
     note: "Private attachment bytes, including medical-record files, are included under files/. Timeline text is decrypted only for this authenticated account export; timeline attachment files are decrypted into the archive. Session tokens, password hashes, and other accounts' private records are excluded.",
   };

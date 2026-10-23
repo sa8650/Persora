@@ -33,6 +33,7 @@ export interface LauncherModule {
 const VIEW_MODULES: Partial<Record<LauncherModuleId, { label: string; hint: string }>> = {
   dashboard: { label: "Overview", hint: "Your private workspace at a glance" },
   calendar: { label: "Calendar", hint: "Events, tasks and appointments" },
+  habits: { label: "Habit Tracker", hint: "Daily routines, streaks and reminders" },
   timeline: { label: "Life Timeline", hint: "Milestones and memories in order" },
   "medical-records": { label: "Medical Records", hint: "Health history and reports" },
   contacts: { label: "Contacts", hint: "The people in your life" },

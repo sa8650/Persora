@@ -34,7 +34,7 @@ If Git is already set up, keep its existing history and remote. Do not commit `.
 1. Create a Supabase project and wait for it to finish provisioning.
 2. Open that project’s **SQL Editor**.
 3. Open `supabase/schema.sql`, copy the entire file into the SQL Editor, and run it. It creates Persora profiles, seven-digit login IDs, password hashes, server-side sessions, rate-limit state, vault/billing/admin tables, private medical-record tables, RLS policies, and restricted Postgres functions.
-4. For an already-running Persora database, apply the outstanding files under `supabase/migrations/` in date order. At minimum, existing deployments need the Life Timeline, medical records, vault folders/wallet cards, billing-term, personal-finance, Smart Scan cache, `20261006_email_verification_upload_entitlements.sql`, `202610060001_ensure_default_free_plan.sql`, `202610210001_password_vault_recovery.sql`, `202610220001_password_manager_folder_scope.sql`, `202610230009_password_vault_sync.sql` and `202610240001_password_vault_master_password.sql` migrations before deploying the matching features. Calendar needs `202610250001_calendar.sql`, then `202610260001_calendar_items.sql` for smart scheduling (see [Calendar reminders](#calendar-reminders)). `202610240002_password_vault_drop_legacy_encryption.sql` is applied last, only after the Password Manager upgrade steps in [`PASSWORD_VAULT.md`](./PASSWORD_VAULT.md#runbook-production) report nothing pending. On a brand-new database it simply succeeds. The folder-scope migration adds Password Manager as an allowed folder scope for existing databases.
+4. For an already-running Persora database, apply the outstanding files under `supabase/migrations/` in date order. At minimum, existing deployments need the Life Timeline, medical records, vault folders/wallet cards, billing-term, personal-finance, Smart Scan cache, `20261006_email_verification_upload_entitlements.sql`, `202610060001_ensure_default_free_plan.sql`, `202610210001_password_vault_recovery.sql`, `202610220001_password_manager_folder_scope.sql`, `202610230009_password_vault_sync.sql` and `202610240001_password_vault_master_password.sql` migrations before deploying the matching features. Calendar needs `202610250001_calendar.sql`, then `202610260001_calendar_items.sql` for smart scheduling (see [Calendar reminders](#calendar-reminders)). The app launcher needs `202610270001_workspace_preferences.sql`, and Habit Tracker needs `202610280001_habits.sql` (see [Habit Tracker](#habit-tracker)). `202610240002_password_vault_drop_legacy_encryption.sql` is applied last, only after the Password Manager upgrade steps in [`PASSWORD_VAULT.md`](./PASSWORD_VAULT.md#runbook-production) report nothing pending. On a brand-new database it simply succeeds. The folder-scope migration adds Password Manager as an allowed folder scope for existing databases.
 5. In **Project Settings → API Keys** (sometimes shown as **Settings → API**), copy and keep ready:
    - The **Project URL**, e.g. `https://abcdefghijkl.supabase.co`.
    - A server-only **Secret key**, usually beginning `sb_secret_...`. If your project still uses the legacy service-role JWT, use that value in the same Pages secret described below.
@@ -75,7 +75,7 @@ In the Pages project, open **Settings → Variables and Secrets** (may appear as
 | `ADMIN_BOOTSTRAP_SECRET` | A newly generated random value | **Encrypted secret; temporary** | Allows the first trusted owner to claim administrator access once. Remove after step 8. |
 | `PASSWORD_VAULT_ESCROW_PRIVATE_KEY` | Only if it already exists from the earlier encrypted Password Manager | **Encrypted secret; temporary** | Used once to convert records saved by the retired encrypted release, then deleted (see `PASSWORD_VAULT.md`). New deployments do not set it. The Password Manager needs no key or extra secret of its own. |
 | `BREVO_API_KEY` | Brevo API v3 key with transactional-email access | **Encrypted secret** | Sends email-verification OTPs and admin test emails. Server-only; never use a `VITE_` prefix. |
-| `CALENDAR_REMINDER_TOKEN` | Optional; a long random value, e.g. `openssl rand -hex 32` | **Encrypted secret** | Lets pg_cron/pg_net or an external scheduler trigger Calendar reminder delivery (see [Calendar reminders](#calendar-reminders)). Without it, `/api/internal/calendar-reminders` is a 404. |
+| `CALENDAR_REMINDER_TOKEN` | Optional; a long random value, e.g. `openssl rand -hex 32` | **Encrypted secret** | Lets pg_cron/pg_net or an external scheduler trigger Calendar and Habit Tracker reminder delivery (see [Calendar reminders](#calendar-reminders)). Without it, `/api/internal/calendar-reminders` is a 404. |
 | `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT` | Azure Document Intelligence resource's base HTTPS endpoint | **Encrypted secret** | Server-side Smart Scan OCR endpoint; never use a `VITE_` prefix. |
 | `AZURE_DOCUMENT_INTELLIGENCE_KEY` | Azure Document Intelligence resource key | **Encrypted secret** | Authenticates server-side Smart Scan OCR requests; never use a `VITE_` prefix. |
 
@@ -177,6 +177,23 @@ No new binding or npm dependency is needed. Email reminders reuse `BREVO_API_KEY
 - The launcher works before the migration is applied. Favorites are then kept on each device, the drawer reports that it isn't synced, and `/api/workspace/preferences` answers 503 with the migration name.
 - There are no new secrets, bindings or environment variables.
 
+### Habit Tracker
+
+**Migration.** Apply `supabase/migrations/202610280001_habits.sql` after the earlier migrations, including `202610250001_calendar.sql`, whose reminder tick it extends.
+- It creates `habits` (with a versioned schedule history, so edits never rewrite past days), `habit_checkins` (one row per habit and date, enforced by a unique constraint, and deleted with its habit), and `habit_reminders` (a delivery queue with a unique dedupe key per habit and day). It also adds their indexes and owner-scoped SECURITY DEFINER functions.
+- RLS is on with no policies, and `anon`/`authenticated` have no table or function privileges. The Pages API calls the functions with the service role and passes the signed-in member's id; every statement is scoped to that member.
+- It replaces `persora_calendar_dispatch_ping()` so the existing every-minute pg_cron job also wakes the dispatcher for due habit reminders. Calendar behaviour is unchanged.
+- It is additive and rerunnable: it alters no existing table and drops no data.
+- Until it is applied, the Habit Tracker page reports that the migration is missing (`/api/habits` answers 503 with the migration name). Nothing else is affected.
+
+**Reminders.** There are no new secrets, bindings, environment variables or npm dependencies. Habit reminders use the same scheduling options as [Calendar reminders](#calendar-reminders): the pg_cron/pg_net tick with the same Vault secrets, an external scheduler calling `POST /api/internal/calendar-reminders` with the same `CALENDAR_REMINDER_TOKEN` (its response now includes `habits.delivered`), or the built-in fallback.
+- Each reminder goes to the bell at most once per habit and day. It is skipped when the habit is not scheduled that day, is already done, or its weekly goal is met.
+- Email uses `BREVO_API_KEY` and the Admin → Email sender, goes only to verified addresses, and is skipped when it would arrive more than two hours late.
+- Desktop notifications need the member's browser permission and appear only while a Persora tab is open.
+- Reminders never complete a habit.
+
+**Verify.** Create a daily habit with a reminder a few minutes ahead. Check it in and undo it, then switch to Week and Month and correct yesterday. Archive and restore it (its history remains), then delete it after the confirmation. Confirm a second account sees none of it, and that a backup from **Settings** imported into another account restores the habits and check-ins (importing the same file twice adds nothing).
+
 ### Preview deployments
 
 For the simplest launch, configure Production first and leave Preview variables/bindings unset. If you later need working branch previews, use a separate Supabase staging project and test R2 bucket. Add staging versions of `SUPABASE_URL` and encrypted `SUPABASE_SECRET_KEY`, set `VITE_USE_PAGES_FUNCTIONS=true`, bind `VAULT_FILES` to the test bucket, and leave the bootstrap secret unset unless you intentionally need a separate one-time staging admin. Never expose production data or secrets to untrusted preview builds.
@@ -225,6 +242,7 @@ All future administrator access requires a real Persora account with the admin r
 - Post a manual timeline event with an attachment, edit it, download the file, and delete the event. Confirm timeline title/description/URL are ciphertext in `timeline_events.encrypted_payload` and the R2 object bytes are encrypted; date/type/link metadata remains queryable.
 - Keep `TIMELINE_ENCRYPTION_KEY` stable and test authenticated account export includes readable timeline data and attachments.
 - Calendar: apply `202610250001_calendar.sql`, then create a weekly event. Edit one occurrence (**This event**) and check the others are unchanged; delete one occurrence; switch Week/Month/Day/Agenda. Confirm a second account sees none of it. For reminders, run the check in [Calendar reminders](#calendar-reminders).
+- Habit Tracker: apply `202610280001_habits.sql`, then run the check in [Habit Tracker](#habit-tracker).
 - Change the account password in Settings and verify the new password works.
 - Confirm the R2 bucket remains private.
 - Visit `/admin` as the claimed owner. Check account management, plans, payment methods/review, document types, editable Privacy/Terms/Contact pages, storage settings, service status, and audit history.

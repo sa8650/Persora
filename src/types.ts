@@ -15,7 +15,7 @@ export type SectionId =
   | "notes"
   | "personal-finance";
 
-export type ViewId = "dashboard" | SectionId | "contacts" | "settings" | "billing" | "shared" | "timeline" | "medical-records" | "password-manager" | "trash" | "projects" | "photo-studio" | "pdf-studio" | "calendar";
+export type ViewId = "dashboard" | SectionId | "contacts" | "settings" | "billing" | "shared" | "timeline" | "medical-records" | "password-manager" | "trash" | "projects" | "photo-studio" | "pdf-studio" | "calendar" | "habits";
 
 /** Content families that flow through the global Trash. */
 export type TrashKind = "vault_item" | "contact" | "business_card" | "medical_record" | "timeline_event" | "password_entry" | "photo_studio_photo" | "pdf_studio_document";
@@ -128,9 +128,11 @@ export interface SharedItemAccess {
 
 export interface ShareNotification {
   id: string;
-  kind: "shared" | "permission_changed" | "unshared" | "reminder" | "alarm" | "project" | "access_removed" | "calendar";
+  kind: "shared" | "permission_changed" | "unshared" | "reminder" | "alarm" | "project" | "access_removed" | "calendar" | "habit";
   /** Calendar reminders: the local date to open. */
   calendarDate?: string;
+  /** Habit reminders: the local date the reminder was for. */
+  habitDate?: string;
   itemTitle: string;
   actorName: string;
   message: string;
