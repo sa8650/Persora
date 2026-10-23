@@ -206,12 +206,14 @@ export interface BoxOverlay { id: string; type: "highlight" | "rect" | "ellipse"
 export interface LineOverlay { id: string; type: "line" | "arrow"; x1: number; y1: number; x2: number; y2: number; color: string; strokeWidth: number }
 export interface InkOverlay { id: string; type: "ink"; points: number[]; color: string; strokeWidth: number }
 export interface ImageOverlay { id: string; type: "image"; imageId: string; x: number; y: number; w: number; h: number; signature: boolean }
+/** Underline / strike-through: a straight stroke, usually snapped to a line of the page's own text. */
+export interface MarkupOverlay { id: string; type: "underline" | "strike"; x1: number; y1: number; x2: number; y2: number; color: string; strokeWidth: number }
 /**
  * Something drawn ON TOP of a page. Coordinates are PDF points in the page's
  * displayed (rotated) space: origin top-left, y pointing down. Overlays never
  * modify the page's original content.
  */
-export type Overlay = TextOverlay | BoxOverlay | LineOverlay | InkOverlay | ImageOverlay;
+export type Overlay = TextOverlay | BoxOverlay | LineOverlay | MarkupOverlay | InkOverlay | ImageOverlay;
 
 export interface WorkingPage {
   id: string;
@@ -226,7 +228,7 @@ export interface WorkingPage {
   overlays: Overlay[];
 }
 
-export interface DocState { pages: WorkingPage[]; rev: number }
+export interface DocState { pages: WorkingPage[]; rev: number; watermark: Watermark | null }
 
 export function totalRotation(page: Pick<WorkingPage, "baseRotation" | "rotation">): Rotation {
   return normalizeRotation(page.baseRotation + page.rotation);
@@ -244,7 +246,7 @@ export function overlayBounds(overlay: Overlay, measureText?: (overlay: TextOver
       const size = measureText ? measureText(overlay) : estimateTextBox(overlay);
       return { x: overlay.x, y: overlay.y, w: size.width, h: size.height };
     }
-    case "line": case "arrow": {
+    case "line": case "arrow": case "underline": case "strike": {
       const x = Math.min(overlay.x1, overlay.x2); const y = Math.min(overlay.y1, overlay.y2);
       return { x, y, w: Math.abs(overlay.x2 - overlay.x1), h: Math.abs(overlay.y2 - overlay.y1) };
     }
@@ -284,7 +286,7 @@ function rotatePoint(x: number, y: number, clockwise: boolean, oldWidth: number,
 export function rotateOverlay(overlay: Overlay, clockwise: boolean, oldWidth: number, oldHeight: number, textSize?: { width: number; height: number }): Overlay {
   const turn = (x: number, y: number) => rotatePoint(x, y, clockwise, oldWidth, oldHeight);
   switch (overlay.type) {
-    case "line": case "arrow": {
+    case "line": case "arrow": case "underline": case "strike": {
       const [x1, y1] = turn(overlay.x1, overlay.y1); const [x2, y2] = turn(overlay.x2, overlay.y2);
       return { ...overlay, x1, y1, x2, y2 };
     }
@@ -579,4 +581,231 @@ export function hexToRgb01(hex: string): { r: number; g: number; b: number } {
   const match = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
   const value = match ? parseInt(match[1], 16) : 0;
   return { r: ((value >> 16) & 255) / 255, g: ((value >> 8) & 255) / 255, b: (value & 255) / 255 };
+}
+
+// ---------------------------------------------------------------------------
+// Underline & strike-through
+// ---------------------------------------------------------------------------
+/** A run of the page's own text in view space (points, y down): baseline-left origin, width and font size. */
+export interface TextRun { x: number; baseline: number; width: number; size: number }
+
+/** Top/bottom of a run's glyph box (approximate Latin ascent/descent). */
+const runTop = (run: TextRun) => run.baseline - run.size * 0.78;
+const runBottom = (run: TextRun) => run.baseline + run.size * 0.22;
+
+export function markupStroke(size: number): number {
+  return Math.round(Math.max(0.75, Math.min(4, size * 0.075)) * 100) / 100;
+}
+
+/**
+ * Turns a dragged rectangle into underline / strike-through strokes. When the
+ * page has real text, each touched line gets its own stroke, placed just under
+ * the baseline (underline) or through the middle of the lowercase letters
+ * (strike-through) and clipped to the dragged span. Scanned pages without text
+ * fall back to the rectangle's bottom edge / middle.
+ */
+export function markupSegments(
+  runs: readonly TextRun[], rect: { x: number; y: number; w: number; h: number }, kind: "underline" | "strike",
+): { x1: number; y1: number; x2: number; y2: number; strokeWidth: number }[] {
+  const left = rect.x; const right = rect.x + rect.w;
+  if (rect.w < 2) return [];
+  const thin = rect.h < 4;
+  const touched = runs.filter((run) => {
+    if (run.width <= 0 || run.size <= 0) return false;
+    if (run.x + run.width <= left || run.x >= right) return false;
+    const top = runTop(run); const bottom = runBottom(run);
+    if (thin) return rect.y + rect.h / 2 >= top && rect.y + rect.h / 2 <= bottom;
+    const overlap = Math.min(bottom, rect.y + rect.h) - Math.max(top, rect.y);
+    return overlap >= (bottom - top) * 0.4;
+  });
+  if (!touched.length) {
+    if (rect.h < 2 && !thin) return [];
+    const y = kind === "underline" ? rect.y + rect.h : rect.y + rect.h / 2;
+    return [{ x1: left, y1: y, x2: right, y2: y, strokeWidth: markupStroke(Math.max(8, rect.h)) }];
+  }
+  // Group runs into lines by baseline (runs within 30% of the font size share a line).
+  const lines: TextRun[][] = [];
+  for (const run of [...touched].sort((a, b) => a.baseline - b.baseline || a.x - b.x)) {
+    const line = lines.find((entry) => Math.abs(entry[0].baseline - run.baseline) <= Math.max(entry[0].size, run.size) * 0.3);
+    if (line) line.push(run); else lines.push([run]);
+  }
+  return lines.map((line) => {
+    const size = Math.max(...line.map((run) => run.size));
+    const baseline = line.reduce((sum, run) => sum + run.baseline, 0) / line.length;
+    const x1 = Math.max(left, Math.min(...line.map((run) => run.x)));
+    const x2 = Math.min(right, Math.max(...line.map((run) => run.x + run.width)));
+    const y = kind === "underline" ? baseline + size * 0.12 : baseline - size * 0.3;
+    return { x1, y1: y, x2, y2: y, strokeWidth: markupStroke(size) };
+  }).filter((segment) => segment.x2 - segment.x1 >= 1);
+}
+
+// ---------------------------------------------------------------------------
+// Watermark
+// ---------------------------------------------------------------------------
+export type WatermarkFont = "helvetica" | "helvetica-bold" | "times" | "times-bold" | "courier" | "courier-bold";
+export type WatermarkPosition = "center" | "diagonal" | "top-left" | "top-right" | "bottom-left" | "bottom-right" | "custom" | "tiled";
+/** Which pages carry the watermark. "all" includes pages added later; "pages" follows the chosen pages as they move. */
+export type WatermarkPages = { mode: "all" } | { mode: "pages"; pageIds: string[]; label: string };
+
+interface WatermarkCommon {
+  /** 0.05 – 1 */
+  opacity: number;
+  /** Counter-clockwise degrees (ignored for "diagonal", which follows the page's own diagonal). */
+  rotation: number;
+  position: WatermarkPosition;
+  /** Centre for "custom", as fractions of the displayed page (0–1, from the top-left). */
+  customX: number;
+  customY: number;
+  /** Distance from the edge for the corner positions, in points. */
+  margin: number;
+  /** Space between repeats for "tiled", in points. */
+  tileGap: number;
+  pages: WatermarkPages;
+}
+export interface TextWatermark extends WatermarkCommon {
+  kind: "text";
+  text: string;
+  font: WatermarkFont;
+  color: string;
+  /** "fixed": `fontSize` points. "fit": the text spans `scale`% of each page's width. */
+  sizeMode: "fixed" | "fit";
+  fontSize: number;
+  scale: number;
+}
+export interface ImageWatermark extends WatermarkCommon {
+  kind: "image";
+  imageId: string;
+  /** Natural pixel size, for the aspect ratio. */
+  imageWidth: number;
+  imageHeight: number;
+  /** Width as a percentage of each page's width (height keeps the aspect ratio). */
+  scale: number;
+}
+export type Watermark = TextWatermark | ImageWatermark;
+
+export const WATERMARK_FONTS: Record<WatermarkFont, { label: string; css: string; weight: number; capHeight: number }> = {
+  // capHeight = the PDF standard font's CapHeight / 1000, used to centre text on its capitals.
+  helvetica: { label: "Helvetica", css: "Helvetica, Arial, \"Liberation Sans\", sans-serif", weight: 400, capHeight: 0.718 },
+  "helvetica-bold": { label: "Helvetica Bold", css: "Helvetica, Arial, \"Liberation Sans\", sans-serif", weight: 700, capHeight: 0.718 },
+  times: { label: "Times", css: "\"Times New Roman\", Times, \"Liberation Serif\", serif", weight: 400, capHeight: 0.662 },
+  "times-bold": { label: "Times Bold", css: "\"Times New Roman\", Times, \"Liberation Serif\", serif", weight: 700, capHeight: 0.676 },
+  courier: { label: "Courier", css: "\"Courier New\", Courier, \"Liberation Mono\", monospace", weight: 400, capHeight: 0.571 },
+  "courier-bold": { label: "Courier Bold", css: "\"Courier New\", Courier, \"Liberation Mono\", monospace", weight: 700, capHeight: 0.571 },
+};
+
+export const WATERMARK_LIMITS = { opacityMin: 0.05, fontMin: 6, fontMax: 400, scaleMin: 5, scaleMax: 150, gapMax: 400, marginMax: 300, maxTiles: 400, textMax: 120 } as const;
+
+export function defaultTextWatermark(): TextWatermark {
+  return { kind: "text", text: "CONFIDENTIAL", font: "helvetica-bold", color: "#dc2626", sizeMode: "fit", fontSize: 60, scale: 60, opacity: 0.25, rotation: 45, position: "diagonal", customX: 0.5, customY: 0.5, margin: 36, tileGap: 60, pages: { mode: "all" } };
+}
+
+const clampNumber = (value: number, min: number, max: number, fallback: number) => (Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback);
+
+/** Keeps every watermark setting inside safe bounds (used before preview and export). */
+export function normalizeWatermark<T extends Watermark>(spec: T): T {
+  const base = {
+    ...spec,
+    opacity: clampNumber(spec.opacity, WATERMARK_LIMITS.opacityMin, 1, 0.25),
+    rotation: clampNumber(spec.rotation, -180, 180, 0),
+    customX: clampNumber(spec.customX, 0, 1, 0.5),
+    customY: clampNumber(spec.customY, 0, 1, 0.5),
+    margin: clampNumber(spec.margin, 0, WATERMARK_LIMITS.marginMax, 36),
+    tileGap: clampNumber(spec.tileGap, 0, WATERMARK_LIMITS.gapMax, 60),
+    scale: clampNumber(spec.scale, WATERMARK_LIMITS.scaleMin, WATERMARK_LIMITS.scaleMax, 50),
+  };
+  if (base.kind === "text") return { ...base, text: base.text.replace(/[\r\n\t]+/g, " ").slice(0, WATERMARK_LIMITS.textMax), fontSize: clampNumber(base.fontSize, WATERMARK_LIMITS.fontMin, WATERMARK_LIMITS.fontMax, 60) } as T;
+  return base as T;
+}
+
+/** Whether the watermark is drawn on a page. */
+export function watermarkOnPage(spec: Watermark | null | undefined, pageId: string): boolean {
+  if (!spec) return false;
+  return spec.pages.mode === "all" || spec.pages.pageIds.includes(pageId);
+}
+
+/** True when the watermark has something to draw. */
+export function watermarkIsEmpty(spec: Watermark): boolean {
+  return spec.kind === "text" ? !spec.text.trim() : !spec.imageId;
+}
+
+/** Size of one watermark (before rotation) on a page of the given view size. `textWidthAt1pt` is the text's width at 1 pt. */
+export function watermarkItemSize(spec: Watermark, page: { width: number; height: number }, textWidthAt1pt: number): { width: number; height: number; fontSize: number } {
+  if (spec.kind === "image") {
+    const ratio = spec.imageHeight > 0 && spec.imageWidth > 0 ? spec.imageHeight / spec.imageWidth : 1;
+    let width = page.width * spec.scale / 100;
+    let height = width * ratio;
+    // An image never grows past 1.5× the page in either direction.
+    const limit = Math.min(page.width * 1.5 / width, page.height * 1.5 / height, 1);
+    width *= limit; height *= limit;
+    return { width, height, fontSize: 0 };
+  }
+  const perPoint = Math.max(0.01, textWidthAt1pt);
+  const fontSize = spec.sizeMode === "fit" ? Math.max(WATERMARK_LIMITS.fontMin, Math.min(WATERMARK_LIMITS.fontMax, page.width * spec.scale / 100 / perPoint)) : spec.fontSize;
+  return { width: perPoint * fontSize, height: fontSize * WATERMARK_FONTS[spec.font].capHeight, fontSize };
+}
+
+/** The angle actually used on a page (diagonal follows the page's own bottom-left → top-right diagonal). */
+export function watermarkAngle(spec: Watermark, page: { width: number; height: number }): number {
+  if (spec.position === "diagonal") return Math.round(Math.atan2(page.height, page.width) * 180 / Math.PI * 100) / 100;
+  return spec.rotation;
+}
+
+/**
+ * Centres (view space: points, y down) and angle (degrees counter-clockwise)
+ * of every copy of the watermark on a page. Shared by the on-screen preview
+ * and the PDF export so both always agree.
+ */
+export function watermarkPlacements(spec: Watermark, page: { width: number; height: number }, item: { width: number; height: number }): { cx: number; cy: number; angle: number }[] {
+  const angle = watermarkAngle(spec, page);
+  const radians = angle * Math.PI / 180;
+  const cos = Math.cos(radians); const sin = Math.sin(radians);
+  // Rotated bounding box of one copy.
+  const boxW = Math.abs(item.width * cos) + Math.abs(item.height * sin);
+  const boxH = Math.abs(item.width * sin) + Math.abs(item.height * cos);
+  const { width: W, height: H } = page;
+  const m = spec.margin;
+  const inset = (value: number, half: number, size: number) => (half * 2 + m * 2 > size ? size / 2 : value);
+  switch (spec.position) {
+    case "center": case "diagonal": return [{ cx: W / 2, cy: H / 2, angle }];
+    case "custom": return [{ cx: spec.customX * W, cy: spec.customY * H, angle }];
+    case "top-left": return [{ cx: inset(m + boxW / 2, boxW / 2, W), cy: inset(m + boxH / 2, boxH / 2, H), angle }];
+    case "top-right": return [{ cx: inset(W - m - boxW / 2, boxW / 2, W), cy: inset(m + boxH / 2, boxH / 2, H), angle }];
+    case "bottom-left": return [{ cx: inset(m + boxW / 2, boxW / 2, W), cy: inset(H - m - boxH / 2, boxH / 2, H), angle }];
+    case "bottom-right": return [{ cx: inset(W - m - boxW / 2, boxW / 2, W), cy: inset(H - m - boxH / 2, boxH / 2, H), angle }];
+    case "tiled": {
+      // A staggered grid laid out along the watermark's own (rotated) axes, covering the whole page.
+      const stepU = Math.max(8, item.width + spec.tileGap);
+      const stepV = Math.max(8, item.height + spec.tileGap);
+      const reach = Math.hypot(W, H) / 2 + Math.max(boxW, boxH);
+      const cols = Math.ceil(reach / stepU) + 1; const rows = Math.ceil(reach / stepV) + 1;
+      const out: { cx: number; cy: number; angle: number }[] = [];
+      // In view space (y down) a counter-clockwise turn maps the text direction to (cos, -sin) and "up" to (-sin, -cos).
+      for (let row = -rows; row <= rows; row += 1) {
+        const shift = row % 2 ? stepU / 2 : 0;
+        for (let col = -cols; col <= cols; col += 1) {
+          const u = col * stepU + shift; const v = row * stepV;
+          const cx = W / 2 + u * cos - v * sin;
+          const cy = H / 2 - u * sin - v * cos;
+          if (cx + boxW / 2 < 0 || cx - boxW / 2 > W || cy + boxH / 2 < 0 || cy - boxH / 2 > H) continue;
+          out.push({ cx, cy, angle });
+          if (out.length >= WATERMARK_LIMITS.maxTiles) return out;
+        }
+      }
+      return out;
+    }
+  }
+}
+
+/** Resolves the "pages" choice of the watermark panel into a stored selection. */
+export function resolveWatermarkPages(choice: "all" | "current" | "range", rangeInput: string, pages: readonly { id: string }[], currentIndex: number): { pages: WatermarkPages | null; error: string } {
+  if (choice === "all") return { pages: { mode: "all" }, error: "" };
+  if (choice === "current") {
+    const page = pages[currentIndex];
+    return page ? { pages: { mode: "pages", pageIds: [page.id], label: `page ${currentIndex + 1}` }, error: "" } : { pages: null, error: "There is no current page." };
+  }
+  const parsed = parsePageRanges(rangeInput, pages.length);
+  if (parsed.error) return { pages: null, error: parsed.error };
+  const indexes = flattenGroups(parsed.groups);
+  if (!indexes.length) return { pages: null, error: "Enter the pages, for example 1-3, 5." };
+  return { pages: { mode: "pages", pageIds: indexes.map((index) => pages[index].id), label: `${indexes.length === 1 ? "page" : "pages"} ${describePages(indexes)}` }, error: "" };
 }

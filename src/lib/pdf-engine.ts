@@ -3,12 +3,14 @@
 // editor / Create PDF flow, so pdf-lib never weighs on the initial app load.
 
 import {
-  BlendMode, LineCapStyle, PDFDocument, StandardFonts, concatTransformationMatrix, degrees, popGraphicsState, pushGraphicsState, rgb,
-  type PDFFont, type PDFImage, type PDFPage,
+  BlendMode, LineCapStyle, PDFDocument, StandardFontEmbedder, StandardFonts, beginText, concatTransformationMatrix, degrees, drawImage as drawImageOperators, endText,
+  popGraphicsState, pushGraphicsState, rgb, rotateAndSkewTextRadiansAndTranslate, setFillingColor, setFontAndSize, setGraphicsState, showText,
+  type PDFFont, type PDFImage, type PDFPage, type PDFRef,
 } from "pdf-lib";
 import {
-  PdfProcessingError, MARGINS, TEXT_ASCENT, arrowHead, TEXT_LINE_HEIGHT, cleanTextForPdf, hexToRgb01, isWinAnsi, layoutImagePage, normalizeRotation, textPageSize, viewToUserMatrix, wrapText,
-  type MarginId, type Orientation, type Overlay, type PageSizeId, type TextOverlay, type WorkingPage,
+  PdfProcessingError, MARGINS, TEXT_ASCENT, arrowHead, TEXT_LINE_HEIGHT, cleanTextForPdf, hexToRgb01, isWinAnsi, layoutImagePage, normalizeRotation, normalizeWatermark, textPageSize, viewToUserMatrix,
+  watermarkIsEmpty, watermarkItemSize, watermarkOnPage, watermarkPlacements, wrapText,
+  type MarginId, type Orientation, type Overlay, type PageSizeId, type TextOverlay, type TextWatermark, type Watermark, type WatermarkFont, type WorkingPage,
 } from "./pdf-studio";
 
 export const PDF_PRODUCER = "Persora PDF Studio";
@@ -29,7 +31,7 @@ export async function loadPdfForEditing(bytes: Uint8Array, name = "This PDF"): P
     const kind = error instanceof Error ? error.name || error.constructor.name : "";
     const message = error instanceof Error ? error.message : "";
     if (kind === "EncryptedPDFError" || /encrypted/i.test(message)) {
-      throw new PdfProcessingError(`${name} is encrypted or has editing restrictions, so PDF Studio can't change it. Remove the protection in the app that created it, then try again.`);
+      throw new PdfProcessingError(`${name} is encrypted or has editing restrictions, so it can't be edited yet. If you know the password, remove it in PDF Studio → PDF Security → Unlock PDF, then open the unlocked copy.`);
     }
     throw new PdfProcessingError(`${name} couldn't be read. It may be damaged or not a real PDF.`);
   }
@@ -55,6 +57,14 @@ export interface BuildOptions {
 }
 
 export interface TextPageImage { png: Uint8Array; width: number; height: number }
+
+/** Reference font size used to lay out device-font (non-Latin) watermark text. */
+export const WATERMARK_RASTER_SIZE = 100;
+/**
+ * Device-font watermark text: `width`/`height` are the image box in points and
+ * `advance` the text width, all at WATERMARK_RASTER_SIZE; the box is centred on the text.
+ */
+export interface WatermarkRaster extends TextPageImage { advance: number }
 
 export interface BuildHooks {
   /**
@@ -155,6 +165,11 @@ export interface ExportImage { bytes: Uint8Array; mime: "image/jpeg" | "image/pn
 export interface ExportHooks {
   /** Rasterises a text overlay that PDF standard fonts can't encode. Size is in points. */
   rasterizeText?: (overlay: TextOverlay) => Promise<TextPageImage>;
+  /**
+   * Rasterises watermark text that PDF standard fonts can't encode, laid out
+   * at WATERMARK_RASTER_SIZE pt (see WatermarkRaster).
+   */
+  rasterizeWatermarkText?: (spec: TextWatermark) => Promise<WatermarkRaster>;
   onProgress?: (done: number, total: number) => void;
 }
 
@@ -163,13 +178,15 @@ export interface ExportInput {
   pages: WorkingPage[];
   images: Map<string, ExportImage>;
   title?: string;
+  /** Drawn over the original content (under annotations) on the pages it applies to. */
+  watermark?: Watermark | null;
   /** Re-used across exports so large sources are parsed once per session. */
   cache?: Map<string, Promise<PDFDocument>>;
 }
 
 interface DrawContext {
   doc: PDFDocument;
-  fonts: Partial<Record<"regular" | "bold", PDFFont>>;
+  fonts: Partial<Record<"regular" | "bold" | WatermarkFont, PDFFont>>;
   images: Map<string, ExportImage>;
   embedded: Map<string, PDFImage>;
   hooks: ExportHooks;
@@ -240,6 +257,10 @@ async function drawOverlay(page: PDFPage, overlay: Overlay, viewHeight: number, 
       page.drawLine({ start: { x: overlay.x1, y: flip(overlay.y1) }, end: { x: end[0], y: flip(end[1]) }, thickness: overlay.strokeWidth, color: color(overlay.color), lineCap: LineCapStyle.Round });
       return;
     }
+    case "underline":
+    case "strike":
+      page.drawLine({ start: { x: overlay.x1, y: flip(overlay.y1) }, end: { x: overlay.x2, y: flip(overlay.y2) }, thickness: overlay.strokeWidth, color: color(overlay.color), lineCap: LineCapStyle.Butt });
+      return;
     case "ink": {
       if (overlay.points.length < 4) return;
       let path = `M ${overlay.points[0]} ${overlay.points[1]}`;
@@ -253,6 +274,104 @@ async function drawOverlay(page: PDFPage, overlay: Overlay, viewHeight: number, 
       return;
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Watermark
+// ---------------------------------------------------------------------------
+const WATERMARK_PDF_FONTS: Record<WatermarkFont, StandardFonts> = {
+  helvetica: StandardFonts.Helvetica, "helvetica-bold": StandardFonts.HelveticaBold,
+  times: StandardFonts.TimesRoman, "times-bold": StandardFonts.TimesRomanBold,
+  courier: StandardFonts.Courier, "courier-bold": StandardFonts.CourierBold,
+};
+
+/**
+ * Width of watermark text at 1 pt in its PDF standard font, or null when the
+ * text needs device fonts (non-Latin) — the preview then measures with canvas.
+ * Uses the same font metrics as the export, so preview and PDF line up.
+ */
+export function watermarkTextWidthAt1pt(text: string, font: WatermarkFont): number | null {
+  const clean = cleanTextForPdf(text).trim();
+  if (!clean || !isWinAnsi(clean)) return null;
+  return StandardFontEmbedder.for(WATERMARK_PDF_FONTS[font] as never).widthOfTextAtSize(clean, 1);
+}
+
+/** Bottom-left origin (PDF space, y up) that puts a w×h box rotated by `angle` around its centre at (cx, cy). */
+function rotatedOrigin(cx: number, cy: number, width: number, height: number, angle: number): [number, number] {
+  const radians = angle * Math.PI / 180;
+  const cos = Math.cos(radians); const sin = Math.sin(radians);
+  const dx = -width / 2; const dy = -height / 2;
+  return [cx + dx * cos - dy * sin, cy + dx * sin + dy * cos];
+}
+
+interface WatermarkResources { opacity?: PDFRef; font?: PDFFont; image?: PDFImage; raster?: { image: PDFImage; data: WatermarkRaster }; text?: string }
+
+/** Embeds what the watermark needs once per document (font or image and one transparency state). */
+async function prepareWatermark(spec: Watermark, context: DrawContext, cache: Map<string, WatermarkResources>): Promise<WatermarkResources | null> {
+  const cached = cache.get("wm");
+  if (cached) return cached;
+  const opacity = context.doc.context.register(context.doc.context.obj({ Type: "ExtGState", ca: spec.opacity, CA: spec.opacity }));
+  let resources: WatermarkResources | null = null;
+  if (spec.kind === "image") {
+    const image = await imageFor(context, spec.imageId);
+    if (!image) throw new PdfProcessingError("The watermark image is missing. Choose it again.");
+    resources = { opacity, image };
+  } else {
+    const text = cleanTextForPdf(spec.text).trim();
+    if (isWinAnsi(text)) {
+      context.fonts[spec.font] ||= await context.doc.embedFont(WATERMARK_PDF_FONTS[spec.font]);
+      resources = { opacity, font: context.fonts[spec.font], text };
+    } else {
+      // Non-Latin text: drawn with the device's fonts as an image (looks right, not selectable).
+      if (!context.hooks.rasterizeWatermarkText) throw new PdfProcessingError("This watermark text needs your device's fonts. Try again in a supported browser.");
+      const data = await context.hooks.rasterizeWatermarkText(spec);
+      resources = { opacity, raster: { image: await context.doc.embedPng(data.png), data } };
+    }
+  }
+  cache.set("wm", resources);
+  return resources;
+}
+
+/** Draws every copy of the watermark on a page (inside the view-space transform set up by exportDocument). */
+async function drawWatermark(page: PDFPage, spec: Watermark, view: { width: number; height: number }, context: DrawContext, cache: Map<string, WatermarkResources>) {
+  const resources = await prepareWatermark(spec, context, cache);
+  if (!resources?.opacity) return;
+  const gs = page.node.newExtGState("PersoraWm", resources.opacity);
+  const flipY = (y: number) => view.height - y;
+  if (resources.font && resources.text) {
+    const font = resources.font;
+    const item = watermarkItemSize(spec, view, font.widthOfTextAtSize(resources.text, 1));
+    const fontKey = page.node.newFontDictionary(font.name, font.ref);
+    const encoded = font.encodeText(resources.text);
+    // One text object for every copy on the page keeps tiled watermarks compact.
+    const operators = [pushGraphicsState(), setGraphicsState(gs), beginText(), setFillingColor(color((spec as TextWatermark).color)), setFontAndSize(fontKey, item.fontSize)];
+    for (const placement of watermarkPlacements(spec, view, item)) {
+      const [x, y] = rotatedOrigin(placement.cx, flipY(placement.cy), item.width, item.height, placement.angle);
+      const radians = placement.angle * Math.PI / 180;
+      operators.push(rotateAndSkewTextRadiansAndTranslate(radians, 0, 0, x, y), showText(encoded));
+    }
+    page.pushOperators(...operators, endText(), popGraphicsState());
+    return;
+  }
+  let item: { width: number; height: number };
+  let image: PDFImage;
+  if (resources.raster) {
+    const { data } = resources.raster;
+    const { fontSize } = watermarkItemSize(spec, view, data.advance / WATERMARK_RASTER_SIZE);
+    const factor = fontSize / WATERMARK_RASTER_SIZE;
+    item = { width: data.width * factor, height: data.height * factor };
+    image = resources.raster.image;
+  } else if (resources.image) {
+    item = watermarkItemSize(spec, view, 0);
+    image = resources.image;
+  } else return;
+  const name = page.node.newXObject("PersoraWmImage", image.ref);
+  const operators = [pushGraphicsState(), setGraphicsState(gs)];
+  for (const placement of watermarkPlacements(spec, view, item)) {
+    const [x, y] = rotatedOrigin(placement.cx, flipY(placement.cy), item.width, item.height, placement.angle);
+    operators.push(...drawImageOperators(name, { x, y, width: item.width, height: item.height, rotate: degrees(placement.angle), xSkew: degrees(0), ySkew: degrees(0) }));
+  }
+  page.pushOperators(...operators, popGraphicsState());
 }
 
 /**
@@ -290,11 +409,14 @@ export async function exportDocument(input: ExportInput, hooks: ExportHooks = {}
   }
 
   const context: DrawContext = { doc: out, fonts: {}, images: input.images, embedded: new Map(), hooks };
+  const watermark = input.watermark && !watermarkIsEmpty(input.watermark) ? normalizeWatermark(input.watermark) : null;
+  const watermarkCache = new Map<string, WatermarkResources>();
   for (const [position, working] of input.pages.entries()) {
     const page = out.addPage(copies[position]);
     const rotation = normalizeRotation(page.getRotation().angle + working.rotation);
     page.setRotation(degrees(rotation));
-    if (working.overlays.length) {
+    const marked = watermark && watermarkOnPage(watermark, working.id) ? watermark : null;
+    if (working.overlays.length || marked) {
       // Isolate the original content so its graphics state can't leak into the overlays.
       const start = out.context.register(out.context.contentStream([pushGraphicsState()]));
       const end = out.context.register(out.context.contentStream([popGraphicsState()]));
@@ -302,6 +424,8 @@ export async function exportDocument(input: ExportInput, hooks: ExportHooks = {}
       const box = page.getCropBox();
       const viewHeight = rotation % 180 === 0 ? box.height : box.width;
       page.pushOperators(pushGraphicsState(), concatTransformationMatrix(...viewToUserMatrix(rotation, box)));
+      // Watermark first, so annotations stay on top of it.
+      if (marked) await drawWatermark(page, marked, { width: rotation % 180 === 0 ? box.width : box.height, height: viewHeight }, context, watermarkCache);
       for (const overlay of working.overlays) await drawOverlay(page, overlay, viewHeight, context);
       page.pushOperators(popGraphicsState());
     }

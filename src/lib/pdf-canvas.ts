@@ -3,10 +3,11 @@
 // overlays onto rendered pages (image export and previews).
 
 import {
-  IMAGE_MAX_BYTES, PdfProcessingError, TEXT_ASCENT, arrowHead, TEXT_LINE_HEIGHT, readImageSize, readJpegOrientation, sniffFileKind, wrapText,
-  type InputKind, type Overlay, type TextOverlay,
+  IMAGE_MAX_BYTES, PdfProcessingError, TEXT_ASCENT, arrowHead, TEXT_LINE_HEIGHT, WATERMARK_FONTS, cleanTextForPdf, readImageSize, readJpegOrientation, sniffFileKind, watermarkIsEmpty,
+  watermarkItemSize, watermarkPlacements, wrapText,
+  type InputKind, type Overlay, type TextOverlay, type TextWatermark, type Watermark,
 } from "./pdf-studio";
-import type { PreparedImage, TextPageImage } from "./pdf-engine";
+import { WATERMARK_RASTER_SIZE, watermarkTextWidthAt1pt, type PreparedImage, type TextPageImage, type WatermarkRaster } from "./pdf-engine";
 
 /** Same family the SVG overlay layer uses, close to PDF Helvetica. */
 export const OVERLAY_FONT_FAMILY = "Helvetica, Arial, \"Noto Sans\", \"Nirmala UI\", \"Noto Sans Bengali\", sans-serif";
@@ -163,6 +164,109 @@ export async function rasterizeTextPages(text: string, title: string, page: { wi
 
 export type ImageSourceLookup = (imageId: string) => Promise<CanvasImageSource | null>;
 
+// ---------------------------------------------------------------------------
+// Watermark (preview, image export and thumbnails — the PDF export lives in pdf-engine)
+// ---------------------------------------------------------------------------
+/** Padding (fraction of the font size) around device-font watermark text, matching the raster box. */
+const WATERMARK_RASTER_PAD_X = 0.1;
+const WATERMARK_RASTER_HEIGHT = 1.3;
+
+const watermarkFontString = (spec: TextWatermark, size: number) => `${WATERMARK_FONTS[spec.font].weight} ${size}px ${WATERMARK_FONTS[spec.font].css}, ${OVERLAY_FONT_FAMILY}`;
+
+export interface WatermarkLayout {
+  /** "pdf" = PDF standard font (box = text width × cap height, baseline at +height/2); "device" = device fonts, vertically centred; "image". */
+  mode: "pdf" | "device" | "image";
+  width: number;
+  height: number;
+  fontSize: number;
+  text: string;
+  placements: { cx: number; cy: number; angle: number }[];
+}
+
+/**
+ * Size and placements of a watermark on a page in view space. Uses the same
+ * metrics as exportDocument (PDF font widths, or the device-font raster box),
+ * so the preview matches the downloaded file.
+ */
+export function layoutWatermark(spec: Watermark, page: { width: number; height: number }): WatermarkLayout | null {
+  if (watermarkIsEmpty(spec)) return null;
+  if (spec.kind === "image") {
+    const item = watermarkItemSize(spec, page, 0);
+    return { mode: "image", ...item, text: "", placements: watermarkPlacements(spec, page, item) };
+  }
+  const text = cleanTextForPdf(spec.text).trim();
+  const pdfWidth = watermarkTextWidthAt1pt(text, spec.font);
+  if (pdfWidth !== null) {
+    const item = watermarkItemSize(spec, page, pdfWidth);
+    return { mode: "pdf", ...item, text, placements: watermarkPlacements(spec, page, item) };
+  }
+  const advance = measureWatermarkAdvance(spec, text);
+  const { fontSize } = watermarkItemSize(spec, page, advance / WATERMARK_RASTER_SIZE);
+  const factor = fontSize / WATERMARK_RASTER_SIZE;
+  const item = { width: (advance + WATERMARK_RASTER_SIZE * WATERMARK_RASTER_PAD_X * 2) * factor, height: WATERMARK_RASTER_SIZE * WATERMARK_RASTER_HEIGHT * factor };
+  return { mode: "device", ...item, fontSize, text, placements: watermarkPlacements(spec, page, item) };
+}
+
+/** Text advance at WATERMARK_RASTER_SIZE px with the device's fonts. */
+function measureWatermarkAdvance(spec: TextWatermark, text: string): number {
+  const context = measurer();
+  if (!context) return text.length * WATERMARK_RASTER_SIZE * 0.6;
+  context.font = watermarkFontString(spec, WATERMARK_RASTER_SIZE);
+  return Math.max(1, context.measureText(text).width);
+}
+
+/** Device-font watermark text as a PNG (export hook for text PDF standard fonts can't encode). */
+export async function rasterizeWatermarkText(spec: TextWatermark): Promise<WatermarkRaster> {
+  const text = cleanTextForPdf(spec.text).trim();
+  const advance = measureWatermarkAdvance(spec, text);
+  const width = advance + WATERMARK_RASTER_SIZE * WATERMARK_RASTER_PAD_X * 2;
+  const height = WATERMARK_RASTER_SIZE * WATERMARK_RASTER_HEIGHT;
+  // ~4 px per point at the reference size, capped so long text stays within canvas limits.
+  const scale = Math.max(1, Math.min(4, 8192 / width));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.ceil(width * scale); canvas.height = Math.ceil(height * scale);
+  const context = canvas.getContext("2d");
+  if (!context) throw new PdfProcessingError("Your browser couldn't draw the watermark text.");
+  context.scale(scale, scale);
+  context.font = watermarkFontString(spec, WATERMARK_RASTER_SIZE);
+  context.fillStyle = spec.color;
+  context.textAlign = "center"; context.textBaseline = "middle";
+  context.fillText(text, width / 2, height / 2);
+  try { return { png: await canvasToBytes(canvas, "image/png"), width, height, advance }; }
+  finally { releaseCanvas(canvas); }
+}
+
+/** Draws a watermark onto a 2D context whose units are page points (view space, y down). */
+export async function drawWatermarkOnCanvas(context: CanvasRenderingContext2D, spec: Watermark, page: { width: number; height: number }, lookupImage: ImageSourceLookup) {
+  const layout = layoutWatermark(spec, page);
+  if (!layout || !layout.placements.length) return;
+  const image = spec.kind === "image" ? await lookupImage(spec.imageId) : null;
+  if (spec.kind === "image" && !image) return;
+  context.save();
+  context.globalAlpha = spec.opacity;
+  let squeeze = 1;
+  if (spec.kind === "text") {
+    context.font = watermarkFontString(spec, layout.fontSize);
+    context.fillStyle = spec.color;
+    if (layout.mode === "pdf") {
+      // Fit device-font glyphs to the PDF font's width so the copy matches the PDF.
+      const measured = context.measureText(layout.text).width;
+      if (measured > 0) squeeze = layout.width / measured;
+      context.textAlign = "left"; context.textBaseline = "alphabetic";
+    } else { context.textAlign = "center"; context.textBaseline = "middle"; }
+  }
+  for (const placement of layout.placements) {
+    context.save();
+    context.translate(placement.cx, placement.cy);
+    context.rotate(-placement.angle * Math.PI / 180);
+    if (image) context.drawImage(image, -layout.width / 2, -layout.height / 2, layout.width, layout.height);
+    else if (layout.mode === "pdf") { context.scale(squeeze, 1); context.fillText(layout.text, -layout.width / 2 / squeeze, layout.height / 2); }
+    else context.fillText(layout.text, 0, 0);
+    context.restore();
+  }
+  context.restore();
+}
+
 /** Draws overlays onto a 2D context whose units are page points (view space, y down). */
 export async function drawOverlaysOnCanvas(context: CanvasRenderingContext2D, overlays: Overlay[], lookupImage: ImageSourceLookup) {
   for (const overlay of overlays) {
@@ -183,6 +287,10 @@ export async function drawOverlaysOnCanvas(context: CanvasRenderingContext2D, ov
         else context.ellipse(overlay.x + overlay.w / 2, overlay.y + overlay.h / 2, Math.max(0.5, overlay.w / 2), Math.max(0.5, overlay.h / 2), 0, 0, Math.PI * 2);
         if (overlay.fill) { context.globalAlpha = 0.35; context.fillStyle = overlay.fill; context.fill(); context.globalAlpha = 1; }
         context.strokeStyle = overlay.color; context.lineWidth = overlay.strokeWidth; context.stroke();
+        break;
+      case "underline": case "strike":
+        context.strokeStyle = overlay.color; context.lineWidth = overlay.strokeWidth; context.lineCap = "butt";
+        context.beginPath(); context.moveTo(overlay.x1, overlay.y1); context.lineTo(overlay.x2, overlay.y2); context.stroke();
         break;
       case "line": case "arrow": {
         let end: [number, number] = [overlay.x2, overlay.y2];

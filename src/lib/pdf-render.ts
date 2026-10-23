@@ -3,7 +3,7 @@
 // fonts, image decoders) come from the app's own origin and only when needed.
 
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from "pdfjs-dist";
-import { PdfProcessingError, normalizeRotation, type Rotation } from "./pdf-studio";
+import { PdfProcessingError, normalizeRotation, type Rotation, type TextRun } from "./pdf-studio";
 
 type PdfJs = typeof import("pdfjs-dist");
 let pdfjs: Promise<PdfJs> | null = null;
@@ -132,4 +132,28 @@ export async function renderThumbnailDataUrl(bytes: Uint8Array): Promise<string 
   } finally {
     void doc?.destroy();
   }
+}
+
+/**
+ * Horizontal text runs on a page in view space (points, y down, after the
+ * page's own rotation plus `extraRotation`), used to snap underline and
+ * strike-through to real text lines. Pages without a text layer (scans)
+ * return an empty list and the markup falls back to the dragged box.
+ */
+export async function readTextRuns(page: PDFPageProxy, extraRotation: number): Promise<TextRun[]> {
+  const lib = await loadPdfJs();
+  const viewport = page.getViewport({ scale: 1, rotation: normalizeRotation(page.rotate + extraRotation) });
+  const content = await page.getTextContent();
+  const runs: TextRun[] = [];
+  for (const item of content.items) {
+    if (!("str" in item) || !item.str.trim() || !(item.width > 0)) continue;
+    const tx = lib.Util.transform(viewport.transform, item.transform);
+    // Only (nearly) horizontal, left-to-right text in the current view.
+    if (tx[0] <= 0 || Math.abs(Math.atan2(tx[1], tx[0])) > 2 * Math.PI / 180) continue;
+    const size = Math.hypot(tx[2], tx[3]);
+    if (!(size > 0.5)) continue;
+    // item.width is already in points along the text direction; scale 1 keeps it unchanged.
+    runs.push({ x: tx[4], baseline: tx[5], width: item.width, size });
+  }
+  return runs;
 }

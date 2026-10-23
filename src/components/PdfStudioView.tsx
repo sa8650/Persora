@@ -1,5 +1,6 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from "react";
+import { Suspense, lazy, useCallback, useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import { AlertTriangle, ArrowDownUp, Download, FilePlus2, FileStack, FileText, FolderOpen, FolderInput, Image as ImageIcon, Info, Lock, Pencil, RefreshCw, Search, ShieldCheck, Trash2, Upload, WandSparkles } from "lucide-react";
+import PdfSecurityPanel, { type SecurityMode } from "./PdfSecurityPanel";
 import type { AppUser, PdfStudioDocument, PdfStudioFileMeta, PdfStudioSaveInput, TransferProgress, VaultFolder } from "../types";
 import { deletePdfStudioDocument, isPagesApiConfigured, listPdfStudioDocuments, loadPdfStudioFile, replacePdfStudioFile, savePdfStudioDocument, updatePdfStudioDocument } from "../lib/cloud";
 import { CREATE_ACCEPT, PDF_ACCEPT, SUPPORTED_INPUTS_LABEL, filterDocuments, folderCounts, formatBytes, pageCountLabel, pdfDownloadName, type PdfSort } from "../lib/pdf-studio";
@@ -43,28 +44,42 @@ function hasFiles(event: DragEvent) {
   return Array.from(event.dataTransfer?.types || []).includes("Files");
 }
 
-/** A work-area card that accepts dropped files. */
-function DropCard({ icon, tone, title, copy, chips, dropLabel, onFiles, children }: { icon: ReactNode; tone: string; title: string; copy: string; chips: string[]; dropLabel: string; onFiles: (files: File[]) => void; children: ReactNode }) {
+type StudioTool = "create" | "edit" | "security";
+const TOOL_STORAGE_KEY = "persora.pdfStudio.tool";
+const STUDIO_TOOLS: { id: StudioTool; label: string; icon: typeof FilePlus2 }[] = [
+  { id: "create", label: "Create PDF", icon: FilePlus2 },
+  { id: "edit", label: "Edit PDF", icon: WandSparkles },
+  { id: "security", label: "PDF Security", icon: ShieldCheck },
+];
+
+function initialTool(): StudioTool {
+  try { const saved = window.localStorage.getItem(TOOL_STORAGE_KEY); if (saved === "create" || saved === "edit" || saved === "security") return saved; } catch { /* storage unavailable */ }
+  return "create";
+}
+
+/** The active tool's panel: one compact row that also accepts dropped files. */
+function ToolPanel({ id, labelledBy, icon, tone, title, copy, chips, dropLabel, onFiles, children }: { id: string; labelledBy: string; icon: ReactNode; tone: string; title: string; copy: string; chips?: string[]; dropLabel: string; onFiles: (files: File[]) => void; children: ReactNode }) {
   const [over, setOver] = useState(false);
   const depth = useRef(0);
-  return <section
-    className={`pdfs-workarea ${over ? "is-dragover" : ""}`}
-    aria-label={title}
+  return <div
+    id={id} role="tabpanel" aria-labelledby={labelledBy}
+    className={`pdfs-tool-panel ${over ? "is-dragover" : ""}`}
     onDragEnter={(event) => { if (!hasFiles(event)) return; event.preventDefault(); depth.current += 1; setOver(true); }}
     onDragOver={(event) => { if (!hasFiles(event)) return; event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }}
     onDragLeave={() => { depth.current = Math.max(0, depth.current - 1); if (!depth.current) setOver(false); }}
     onDrop={(event) => { if (!hasFiles(event)) return; event.preventDefault(); depth.current = 0; setOver(false); const files = Array.from(event.dataTransfer.files || []); if (files.length) onFiles(files); }}
   >
-    <div className="pdfs-workarea-head">
-      <span className={`pdfs-workarea-icon ${tone}`}>{icon}</span>
-      <div><h3>{title}</h3><p>{copy}</p></div>
+    <div className="pdfs-tool-panel-head">
+      <span className={`pdfs-tool-panel-icon ${tone}`}>{icon}</span>
+      <div className="pdfs-tool-panel-copy">
+        <h3>{title}</h3>
+        <p>{copy}</p>
+        {chips && <div className="pdfs-tool-panel-chips">{chips.map((chip) => <span key={chip}>{chip}</span>)}</div>}
+      </div>
     </div>
-    <div className="pdfs-workarea-drop" aria-hidden={!over}>
-      <Upload size={16}/><span>{over ? "Release to add" : dropLabel}</span>
-    </div>
-    <div className="pdfs-workarea-chips">{chips.map((chip) => <span key={chip}>{chip}</span>)}</div>
-    <div className="pdfs-workarea-actions">{children}</div>
-  </section>;
+    {children}
+    <span className="pdfs-tool-panel-drop" aria-hidden="true"><Upload size={13}/>{over ? "Release to add" : dropLabel}</span>
+  </div>;
 }
 
 export default function PdfStudioView({ user, canUpload, maxUploadMb, onUpgrade, onTrashChanged, notify }: Props) {
@@ -85,6 +100,11 @@ export default function PdfStudioView({ user, canUpload, maxUploadMb, onUpgrade,
   const [deleting, setDeleting] = useState(false);
   const openInputRef = useRef<HTMLInputElement>(null);
   const createInputRef = useRef<HTMLInputElement>(null);
+  const [tool, setTool] = useState<StudioTool>(initialTool);
+  const [securityMode, setSecurityMode] = useState<SecurityMode>("lock");
+  const [securityDrop, setSecurityDrop] = useState<File[] | null>(null);
+  const tabIds = useId();
+  const tabRefs = useRef(new Map<StudioTool, HTMLButtonElement>());
 
   const saveBlockedReason = !available
     ? "Saving to Persora needs a signed-in Persora account. You can still download your PDF."
@@ -181,17 +201,29 @@ export default function PdfStudioView({ user, canUpload, maxUploadMb, onUpgrade,
     finally { setDeleting(false); }
   };
 
-  const heading = <div className="section-page-heading">
+  const selectTool = (next: StudioTool, focus = false) => {
+    setTool(next);
+    if (focus) tabRefs.current.get(next)?.focus();
+    try { window.localStorage.setItem(TOOL_STORAGE_KEY, next); } catch { /* storage unavailable */ }
+  };
+  // Arrow keys move between the tool tabs (WAI-ARIA tabs pattern, automatic activation).
+  const onTabKey = (event: KeyboardEvent<HTMLButtonElement>) => {
+    const index = STUDIO_TOOLS.findIndex((entry) => entry.id === tool);
+    const target = event.key === "ArrowRight" ? index + 1 : event.key === "ArrowLeft" ? index - 1 : event.key === "Home" ? 0 : event.key === "End" ? STUDIO_TOOLS.length - 1 : null;
+    if (target === null) return;
+    event.preventDefault();
+    selectTool(STUDIO_TOOLS[(target + STUDIO_TOOLS.length) % STUDIO_TOOLS.length].id, true);
+  };
+  const tabId = (id: StudioTool) => `${tabIds}-tab-${id}`;
+  const panelId = (id: StudioTool) => `${tabIds}-panel-${id}`;
+
+  const heading = <div className="section-page-heading pdfs-heading">
     <div>
       <div className="section-page-eyebrow"><span className="section-mini-icon tag-rose"><FileStack size={13}/></span>Documents &amp; forms</div>
       <h2>PDF Studio</h2>
-      <p>Create, merge, split, annotate and sign PDFs right in your browser. Files stay on this device while you work — nothing is uploaded until you choose Save to Persora.</p>
-      <div className="pdfs-heading-actions">
-        <button type="button" className="section-add-button" onClick={() => createInputRef.current?.click()}><FilePlus2 size={15}/> Create PDF</button>
-        <button type="button" className="quiet-button pdfs-open-button" onClick={() => openInputRef.current?.click()}><FolderInput size={15}/> Open PDF</button>
-      </div>
+      <p>Create, edit, annotate and password-protect PDFs right in your browser. Files stay on this device while you work — nothing is uploaded until you choose Save to Persora.</p>
     </div>
-    <div className="section-heading-aside"><div className="section-aside-art pdfs-aside-art"><div className="aside-orbit"/><FileStack size={44} strokeWidth={1.1}/><div className="aside-art-bottom"><span>PDFS</span><span>{String(documents.length).padStart(2, "0")}</span></div></div><div className="aside-note"><ShieldCheck size={13}/><span>Processed on this device · private library</span></div></div>
+    <div className="pdfs-heading-note"><ShieldCheck size={13}/><span>Processed on this device</span></div>
   </div>;
 
   return <div className="section-view pdfs-library-page">
@@ -199,24 +231,42 @@ export default function PdfStudioView({ user, canUpload, maxUploadMb, onUpgrade,
     <input ref={openInputRef} className="hidden-file-input" type="file" accept={PDF_ACCEPT} multiple onChange={onOpenSelected} aria-label="Choose PDF files to open"/>
     <input ref={createInputRef} className="hidden-file-input" type="file" accept={CREATE_ACCEPT} multiple onChange={onCreateSelected} aria-label="Choose files to turn into a PDF"/>
 
-    <div className="pdfs-workareas">
-      <DropCard
-        icon={<FilePlus2 size={18}/>} tone="tag-blue" title="Create PDF"
+    <section className="pdfs-tools" aria-label="PDF tools">
+      <div className="pdfs-modes" role="tablist" aria-label="PDF Studio tools">
+        {STUDIO_TOOLS.map((entry) => <button
+          key={entry.id} ref={(element) => { if (element) tabRefs.current.set(entry.id, element); else tabRefs.current.delete(entry.id); }}
+          type="button" role="tab" id={tabId(entry.id)} aria-controls={panelId(entry.id)} aria-selected={tool === entry.id} tabIndex={tool === entry.id ? 0 : -1}
+          className={`pdfs-mode ${tool === entry.id ? "is-active" : ""}`} onClick={() => selectTool(entry.id)} onKeyDown={onTabKey}
+        ><entry.icon size={15}/><span>{entry.label}</span></button>)}
+      </div>
+      {tool === "create" && <ToolPanel
+        id={panelId("create")} labelledBy={tabId("create")} icon={<FilePlus2 size={18}/>} tone="tag-blue" title="Create PDF"
         copy="Combine photos, scans, text and other PDFs into one document. Reorder, choose a page size, then edit or download."
-        chips={["Images", "Text", "PDF"]} dropLabel="Drop images, text files or PDFs here" onFiles={startCreate}
+        chips={["Images", "Text", "PDF"]} dropLabel="or drop images, text files or PDFs here" onFiles={startCreate}
       >
-        <button type="button" className="section-add-button" onClick={() => createInputRef.current?.click()}><Upload size={14}/> Choose files</button>
-        <button type="button" className="quiet-button" onClick={() => startCreate([])}><FileText size={14}/> Start with text</button>
-      </DropCard>
-      <DropCard
-        icon={<WandSparkles size={18}/>} tone="tag-rose" title="Edit PDF"
-        copy="Reorder, rotate, delete, merge and split pages. Add text, highlights, shapes and signatures on top of any page."
-        chips={["Pages", "Annotations", "Signatures"]} dropLabel="Drop PDFs here — several files are merged" onFiles={openFiles}
+        <div className="pdfs-tool-panel-actions">
+          <button type="button" className="section-add-button" onClick={() => createInputRef.current?.click()}><Upload size={14}/> Choose files</button>
+          <button type="button" className="quiet-button" onClick={() => startCreate([])}><FileText size={14}/> Start with text</button>
+        </div>
+      </ToolPanel>}
+      {tool === "edit" && <ToolPanel
+        id={panelId("edit")} labelledBy={tabId("edit")} icon={<WandSparkles size={18}/>} tone="tag-rose" title="Edit PDF"
+        copy="Reorder, rotate, merge and split pages. Annotate with text, freehand, highlights, underline, signatures and watermarks."
+        chips={["Pages", "Annotate", "Watermark", "Signatures"]} dropLabel="or drop PDFs here — several files are merged" onFiles={openFiles}
       >
-        <button type="button" className="section-add-button" onClick={() => openInputRef.current?.click()}><FolderInput size={14}/> Open PDF</button>
-        <span className="pdfs-workarea-hint"><Info size={12}/> Or open a saved PDF below</span>
-      </DropCard>
-    </div>
+        <div className="pdfs-tool-panel-actions">
+          <button type="button" className="section-add-button" onClick={() => openInputRef.current?.click()}><FolderInput size={14}/> Open PDF</button>
+          <span className="pdfs-tool-panel-hint"><Info size={12}/> Or open a saved PDF below</span>
+        </div>
+      </ToolPanel>}
+      {tool === "security" && <ToolPanel
+        id={panelId("security")} labelledBy={tabId("security")} icon={<Lock size={18}/>} tone="tag-violet" title="PDF Security"
+        copy="Add a password with real AES-256 encryption, or remove one you know. Done on this device — nothing is uploaded."
+        dropLabel="or drop a PDF here" onFiles={setSecurityDrop}
+      >
+        <PdfSecurityPanel mode={securityMode} onModeChange={setSecurityMode} droppedFiles={securityDrop} onDroppedHandled={() => setSecurityDrop(null)} download={downloadBlob} notify={notify}/>
+      </ToolPanel>}
+    </section>
     <p className="pdfs-supported"><ImageIcon size={12}/> Supported: {SUPPORTED_INPUTS_LABEL}. Word and other office files need to be exported to PDF first.</p>
 
     <div className="pdfs-library-head"><h3>Saved PDFs</h3><span>Private to your account</span></div>

@@ -1,12 +1,15 @@
-import { memo, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { Check, Loader2 } from "lucide-react";
-import { TEXT_ASCENT, TEXT_LINE_HEIGHT, arrowHead, makeId, viewSize, type BoxOverlay, type ImageOverlay, type LineOverlay, type Overlay, type TextOverlay, type WorkingPage } from "../lib/pdf-studio";
-import { isRenderCancelled, renderPage } from "../lib/pdf-render";
-import { OVERLAY_FONT_FAMILY, measureTextOverlay } from "../lib/pdf-canvas";
+import {
+  TEXT_ASCENT, TEXT_LINE_HEIGHT, WATERMARK_FONTS, arrowHead, makeId, markupSegments, viewSize, watermarkOnPage,
+  type BoxOverlay, type ImageOverlay, type LineOverlay, type MarkupOverlay, type Overlay, type TextOverlay, type TextRun, type Watermark, type WorkingPage,
+} from "../lib/pdf-studio";
+import { isRenderCancelled, readTextRuns, renderPage } from "../lib/pdf-render";
+import { OVERLAY_FONT_FAMILY, layoutWatermark, measureTextOverlay } from "../lib/pdf-canvas";
 
-export type Tool = "select" | "text" | "highlight" | "rect" | "ellipse" | "line" | "arrow" | "ink" | "place";
-export interface ToolStyle { color: string; highlightColor: string; strokeWidth: number; fontSize: number; bold: boolean; fill: boolean }
+export type Tool = "select" | "text" | "highlight" | "underline" | "strike" | "rect" | "ellipse" | "line" | "arrow" | "ink" | "place" | "watermark";
+export interface ToolStyle { color: string; highlightColor: string; markupColor: string; strokeWidth: number; fontSize: number; bold: boolean; fill: boolean }
 export interface EditingText { pageId: string; overlay: TextOverlay; isNew: boolean }
 export interface SourceRef { id: string; name: string; bytes: Uint8Array; pdf: PDFDocumentProxy }
 
@@ -15,13 +18,15 @@ type Drag =
   | { mode: "create"; overlay: Overlay; start: Point }
   | { mode: "move"; original: Overlay; current: Overlay; start: Point; moved: boolean }
   | { mode: "resize"; original: BoxOverlay | ImageOverlay; current: BoxOverlay | ImageOverlay; corner: "nw" | "ne" | "sw" | "se" }
-  | { mode: "endpoint"; original: LineOverlay; current: LineOverlay; which: 1 | 2 };
+  | { mode: "endpoint"; original: LineOverlay; current: LineOverlay; which: 1 | 2 }
+  | { mode: "markup"; kind: "underline" | "strike"; start: Point; end: Point }
+  | { mode: "watermark" };
 
 const MIN_SIZE = 3;
 
 export function translateOverlay(overlay: Overlay, dx: number, dy: number): Overlay {
   switch (overlay.type) {
-    case "line": case "arrow": return { ...overlay, x1: overlay.x1 + dx, y1: overlay.y1 + dy, x2: overlay.x2 + dx, y2: overlay.y2 + dy };
+    case "line": case "arrow": case "underline": case "strike": return { ...overlay, x1: overlay.x1 + dx, y1: overlay.y1 + dy, x2: overlay.x2 + dx, y2: overlay.y2 + dy };
     case "ink": return { ...overlay, points: overlay.points.map((value, index) => value + (index % 2 ? dy : dx)) };
     default: return { ...overlay, x: overlay.x + dx, y: overlay.y + dy };
   }
@@ -36,6 +41,10 @@ export function selectionBounds(overlay: Overlay) {
   switch (overlay.type) {
     case "text": { const size = measureTextOverlay(overlay); return { x: overlay.x, y: overlay.y, w: size.width, h: size.height }; }
     case "line": case "arrow": return { x: Math.min(overlay.x1, overlay.x2), y: Math.min(overlay.y1, overlay.y2), w: Math.abs(overlay.x2 - overlay.x1), h: Math.abs(overlay.y2 - overlay.y1) };
+    case "underline": case "strike": {
+      const half = overlay.strokeWidth / 2;
+      return { x: Math.min(overlay.x1, overlay.x2), y: Math.min(overlay.y1, overlay.y2) - half, w: Math.abs(overlay.x2 - overlay.x1), h: Math.abs(overlay.y2 - overlay.y1) + half * 2 };
+    }
     case "ink": {
       const xs = overlay.points.filter((_, i) => i % 2 === 0); const ys = overlay.points.filter((_, i) => i % 2 === 1);
       return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
@@ -69,6 +78,11 @@ export const OverlayShapes = memo(function OverlayShapes({ overlays, imageUrl, i
           {head && <polygon points={`${overlay.x2},${overlay.y2} ${head.left.join(",")} ${head.right.join(",")}`} fill={overlay.color}/>}
         </g>;
       }
+      case "underline": case "strike":
+        return <g key={overlay.id} {...hit}>
+          {interactive && <line x1={overlay.x1} y1={overlay.y1} x2={overlay.x2} y2={overlay.y2} stroke="transparent" strokeWidth={Math.max(10, overlay.strokeWidth + 8)}/>}
+          <line x1={overlay.x1} y1={overlay.y1} x2={overlay.x2} y2={overlay.y2} stroke={overlay.color} strokeWidth={overlay.strokeWidth} strokeLinecap="butt"/>
+        </g>;
       case "ink": {
         const points = [];
         for (let i = 0; i < overlay.points.length; i += 2) points.push(`${overlay.points[i]},${overlay.points[i + 1]}`);
@@ -85,6 +99,29 @@ export const OverlayShapes = memo(function OverlayShapes({ overlays, imageUrl, i
   })}</>;
 });
 
+/**
+ * Renders a watermark as SVG (view space). Uses the same layout as the PDF
+ * export; PDF-font text is stretched to the exact PDF text width.
+ */
+export const WatermarkShapes = memo(function WatermarkShapes({ spec, width, height, imageUrl }: { spec: Watermark; width: number; height: number; imageUrl: (id: string) => string | undefined }) {
+  const layout = useMemo(() => layoutWatermark(spec, { width, height }), [spec, width, height]);
+  if (!layout || !layout.placements.length) return null;
+  const url = spec.kind === "image" ? imageUrl(spec.imageId) : undefined;
+  if (spec.kind === "image" && !url) return null;
+  const font = spec.kind === "text" ? WATERMARK_FONTS[spec.font] : null;
+  const fontFamily = font ? `${font.css}, ${OVERLAY_FONT_FAMILY}` : undefined;
+  const fill = spec.kind === "text" ? spec.color : undefined;
+  return <g className="pdfs-watermark" pointerEvents="none" aria-hidden="true">
+    {layout.placements.map((placement, index) => <g key={index} opacity={spec.opacity} transform={`translate(${placement.cx} ${placement.cy}) rotate(${-placement.angle})`}>
+      {layout.mode === "image"
+        ? <image href={url} x={-layout.width / 2} y={-layout.height / 2} width={layout.width} height={layout.height} preserveAspectRatio="none"/>
+        : layout.mode === "pdf"
+          ? <text x={-layout.width / 2} y={layout.height / 2} fontSize={layout.fontSize} fontFamily={fontFamily} fontWeight={font?.weight} fill={fill} textLength={layout.width} lengthAdjust="spacingAndGlyphs" style={{ whiteSpace: "pre" }}>{layout.text}</text>
+          : <text x={0} y={0} fontSize={layout.fontSize} fontFamily={fontFamily} fontWeight={font?.weight} fill={fill} textAnchor="middle" dominantBaseline="central" style={{ whiteSpace: "pre" }}>{layout.text}</text>}
+    </g>)}
+  </g>;
+});
+
 interface PageProps {
   page: WorkingPage;
   index: number;
@@ -97,16 +134,22 @@ interface PageProps {
   selectedId: string | null;
   editing: EditingText | null;
   imageUrl: (id: string) => string | undefined;
+  /** The document watermark (draft while the panel is open); drawn only on the pages it applies to. */
+  watermark: Watermark | null;
   onSelect: (pageId: string, overlayId: string | null) => void;
   onCommit: (pageId: string, overlays: Overlay[], selectId?: string | null) => void;
   onEditText: (editing: EditingText | null) => void;
   onFinishText: (editing: EditingText, text: string) => void;
   onPlace: (pageId: string, point: Point) => void;
+  /** Adds overlays to a page using the latest document state (for results computed asynchronously). */
+  onAppend: (pageId: string, overlays: Overlay[]) => void;
+  /** Watermark tool: the clicked/dragged point as a fraction of the page (0–1). */
+  onWatermarkPoint: (pageId: string, point: Point) => void;
   register: (pageId: string, element: HTMLElement | null) => void;
 }
 
 /** One page of the editor: a lazily rendered PDF.js canvas plus the interactive overlay layer. */
-export const PdfPageView = memo(function PdfPageView({ page, index, total, zoom, source, scrollRoot, tool, style, selectedId, editing, imageUrl, onSelect, onCommit, onEditText, onFinishText, onPlace, register }: PageProps) {
+export const PdfPageView = memo(function PdfPageView({ page, index, total, zoom, source, scrollRoot, tool, style, selectedId, editing, imageUrl, watermark, onSelect, onCommit, onEditText, onFinishText, onPlace, onAppend, onWatermarkPoint, register }: PageProps) {
   const view = viewSize(page);
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -117,6 +160,16 @@ export const PdfPageView = memo(function PdfPageView({ page, index, total, zoom,
   const [drag, setDrag] = useState<Drag | null>(null);
   const dragRef = useRef<Drag | null>(null);
   dragRef.current = drag;
+  // The page's own text, read once per rotation, for snapping underline / strike-through.
+  const runsRef = useRef<{ key: string; runs: Promise<TextRun[]> } | null>(null);
+  const textRuns = (): Promise<TextRun[]> => {
+    const key = `${page.sourceId}:${page.sourceIndex}:${page.rotation}`;
+    if (!source) return Promise.resolve([]);
+    if (runsRef.current?.key !== key) {
+      runsRef.current = { key, runs: source.pdf.getPage(page.sourceIndex + 1).then((pdfPage) => readTextRuns(pdfPage, page.rotation)).catch(() => []) };
+    }
+    return runsRef.current.runs;
+  };
 
   useEffect(() => { register(page.id, wrapRef.current); return () => register(page.id, null); }, [page.id, register]);
 
@@ -195,6 +248,18 @@ export const PdfPageView = memo(function PdfPageView({ page, index, total, zoom,
       return;
     }
     if (tool === "place") { event.preventDefault(); onPlace(page.id, point); return; }
+    if (tool === "watermark") {
+      event.preventDefault(); capture();
+      onWatermarkPoint(page.id, [point[0] / view.width, point[1] / view.height]);
+      setDrag({ mode: "watermark" });
+      return;
+    }
+    if (tool === "underline" || tool === "strike") {
+      event.preventDefault(); capture();
+      void textRuns(); // start reading the text layer while the user drags
+      setDrag({ mode: "markup", kind: tool, start: point, end: point });
+      return;
+    }
     if (tool === "text") {
       event.preventDefault();
       onEditText({ pageId: page.id, isNew: true, overlay: { id: makeId("ov"), type: "text", x: point[0], y: Math.max(0, point[1] - style.fontSize * 0.6), text: "", fontSize: style.fontSize, color: style.color, bold: style.bold } });
@@ -215,6 +280,8 @@ export const PdfPageView = memo(function PdfPageView({ page, index, total, zoom,
     const current = dragRef.current;
     if (!current) return;
     const [x, y] = toPoint(event);
+    if (current.mode === "watermark") { onWatermarkPoint(page.id, [x / view.width, y / view.height]); return; }
+    if (current.mode === "markup") { setDrag({ ...current, end: [x, y] }); return; }
     if (current.mode === "create") {
       const [sx, sy] = current.start;
       const overlay = current.overlay;
@@ -261,7 +328,8 @@ export const PdfPageView = memo(function PdfPageView({ page, index, total, zoom,
   const onPointerUp = () => {
     const current = dragRef.current;
     setDrag(null);
-    if (!current) return;
+    if (!current || current.mode === "watermark") return;
+    if (current.mode === "markup") { void commitMarkup(current); return; }
     if (current.mode === "create") {
       const overlay = current.overlay;
       let big = true;
@@ -276,6 +344,21 @@ export const PdfPageView = memo(function PdfPageView({ page, index, total, zoom,
     onCommit(page.id, page.overlays.map((overlay) => overlay.id === updated.id ? updated : overlay), updated.id);
   };
 
+  const commitMarkup = async (markup: Extract<Drag, { mode: "markup" }>) => {
+    const runs = await textRuns();
+    const [sx, sy] = markup.start; const [ex, ey] = markup.end;
+    let rect = { x: Math.min(sx, ex), y: Math.min(sy, ey), w: Math.abs(ex - sx), h: Math.abs(ey - sy) };
+    if (rect.w < MIN_SIZE) {
+      // A click marks the whole text run under the pointer.
+      const run = runs.find((entry) => sx >= entry.x && sx <= entry.x + entry.width && sy >= entry.baseline - entry.size * 0.78 && sy <= entry.baseline + entry.size * 0.22);
+      if (!run) return;
+      rect = { x: run.x, y: run.baseline - run.size * 0.5, w: run.width, h: 1 };
+    }
+    const segments = markupSegments(runs, rect, markup.kind);
+    if (!segments.length) return;
+    onAppend(page.id, segments.map((segment): MarkupOverlay => ({ id: makeId("ov"), type: markup.kind, ...segment, color: style.markupColor })));
+  };
+
   const onDoubleClick = (event: React.MouseEvent<SVGSVGElement>) => {
     if (tool !== "select") return;
     const overlayId = (event.target as Element).closest("[data-overlay-id]")?.getAttribute("data-overlay-id");
@@ -286,8 +369,10 @@ export const PdfPageView = memo(function PdfPageView({ page, index, total, zoom,
   // Overlays as drawn right now (including an in-progress drag).
   let shown = page.overlays;
   if (drag?.mode === "create") shown = [...page.overlays, drag.overlay];
-  else if (drag) shown = page.overlays.map((overlay) => overlay.id === drag.current.id ? drag.current : overlay);
+  else if (drag && "current" in drag) shown = page.overlays.map((overlay) => overlay.id === drag.current.id ? drag.current : overlay);
   const selected = selectedId ? shown.find((overlay) => overlay.id === selectedId) : undefined;
+  const markupBox = drag?.mode === "markup" ? { x: Math.min(drag.start[0], drag.end[0]), y: Math.min(drag.start[1], drag.end[1]), w: Math.abs(drag.end[0] - drag.start[0]), h: Math.abs(drag.end[1] - drag.start[1]) } : null;
+  const pageWatermark = watermark && watermarkOnPage(watermark, page.id) ? watermark : null;
   const editingHere = editing && editing.pageId === page.id ? editing : null;
   const handleSize = 9 / zoom;
 
@@ -308,7 +393,9 @@ export const PdfPageView = memo(function PdfPageView({ page, index, total, zoom,
         onPointerCancel={() => setDrag(null)}
         onDoubleClick={onDoubleClick}
       >
+        {pageWatermark && <WatermarkShapes spec={pageWatermark} width={view.width} height={view.height} imageUrl={imageUrl}/>}
         <OverlayShapes overlays={shown} imageUrl={imageUrl} interactive={tool === "select"} hiddenId={editingHere && !editingHere.isNew ? editingHere.overlay.id : null}/>
+        {markupBox && markupBox.w > 0 && <rect className="pdfs-markup-drag" x={markupBox.x} y={markupBox.y} width={markupBox.w} height={Math.max(markupBox.h, 1 / zoom)} vectorEffect="non-scaling-stroke" pointerEvents="none"/>}
         {selected && tool === "select" && !editingHere && (() => {
           const box = selectionBounds(selected);
           const pad = 3 / zoom;
@@ -371,6 +458,7 @@ interface ThumbProps {
   dragging: boolean;
   dropTarget: boolean;
   imageUrl: (id: string) => string | undefined;
+  watermark: Watermark | null;
   thumbnail: (page: WorkingPage, source: SourceRef) => Promise<string>;
   onOpen: (pageId: string) => void;
   onToggle: (pageId: string, range: boolean) => void;
@@ -381,11 +469,12 @@ interface ThumbProps {
 }
 
 /** A page thumbnail in the rail: lazily rendered, selectable and draggable. */
-export const PdfThumbnail = memo(function PdfThumbnail({ page, index, source, current, selected, root, dragging, dropTarget, imageUrl, thumbnail, onOpen, onToggle, onDragStart, onDragOverPage, onDropPage, onDragEnd }: ThumbProps) {
+export const PdfThumbnail = memo(function PdfThumbnail({ page, index, source, current, selected, root, dragging, dropTarget, imageUrl, watermark, thumbnail, onOpen, onToggle, onDragStart, onDragOverPage, onDropPage, onDragEnd }: ThumbProps) {
   const ref = useRef<HTMLLIElement>(null);
   const [visible, setVisible] = useState(index < 12);
   const [url, setUrl] = useState("");
   const view = viewSize(page);
+  const thumbWatermark = watermark && watermarkOnPage(watermark, page.id) ? watermark : null;
   useEffect(() => {
     const element = ref.current;
     if (!element || typeof IntersectionObserver === "undefined") { setVisible(true); return; }
@@ -413,7 +502,10 @@ export const PdfThumbnail = memo(function PdfThumbnail({ page, index, source, cu
     <button type="button" className="pdfs-thumb-button" onClick={(event) => { if (event.shiftKey || event.metaKey || event.ctrlKey) onToggle(page.id, event.shiftKey); else onOpen(page.id); }} aria-label={`Go to page ${index + 1}`} aria-current={current ? "page" : undefined}>
       <span className="pdfs-thumb-frame" style={{ aspectRatio: `${view.width} / ${view.height}` }}>
         {url ? <img src={url} alt="" draggable={false}/> : <span className="pdfs-thumb-loading"/>}
-        {page.overlays.length > 0 && <svg className="pdfs-thumb-overlays" viewBox={`0 0 ${view.width} ${view.height}`} preserveAspectRatio="none" aria-hidden="true"><OverlayShapes overlays={page.overlays} imageUrl={imageUrl}/></svg>}
+        {(page.overlays.length > 0 || thumbWatermark) && <svg className="pdfs-thumb-overlays" viewBox={`0 0 ${view.width} ${view.height}`} preserveAspectRatio="none" aria-hidden="true">
+          {thumbWatermark && <WatermarkShapes spec={thumbWatermark} width={view.width} height={view.height} imageUrl={imageUrl}/>}
+          <OverlayShapes overlays={page.overlays} imageUrl={imageUrl}/>
+        </svg>}
       </span>
       <span className="pdfs-thumb-label">{index + 1}</span>
     </button>

@@ -1,21 +1,22 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from "react";
 import type { PDFDocument } from "pdf-lib";
 import {
-  AlertTriangle, ArrowDown, ArrowUp, ArrowUpRight, ChevronLeft, ChevronRight, Circle, CloudUpload, Copy, Download, FileImage, FilePlus2, FileStack, Highlighter,
-  Image as ImageIcon, Info, Loader2, Minus, MousePointer2, Pencil, Plus, Redo2, RotateCcw, RotateCw, Scissors, Signature, Square, Trash2, Type, Undo2, X, ZoomIn, ZoomOut,
+  AlertTriangle, ArrowDown, ArrowUp, ArrowUpRight, ChevronLeft, ChevronRight, Circle, CloudUpload, Copy, Download, FileImage, FilePlus2, FileStack, Files, Highlighter,
+  Image as ImageIcon, Info, Loader2, Minus, MousePointer2, PenLine, Pencil, Plus, Redo2, RotateCcw, RotateCw, Scissors, Signature, Square, Stamp, Strikethrough, Trash2, Type, Underline, Undo2, X, ZoomIn, ZoomOut,
 } from "lucide-react";
 import type { PdfStudioDocument, PdfStudioFileMeta, PdfStudioSaveInput, TransferProgress, VaultFolder } from "../types";
 import {
   HIGHLIGHT_COLORS, IMAGE_ACCEPT, OVERLAY_COLORS, PDF_MAX_TOTAL_PAGES, PDF_OPEN_MAX_BYTES, CREATE_ACCEPT, buildZip, decodeText, describePages, errorMessage, formatBytes, makeId,
-  pageCountLabel, pdfDownloadName, pushHistory, redoHistory, rotatePage, sniffFileKind, titleFromFileName, totalRotation, undoHistory, unsupportedReason, viewSize,
-  type DocState, type History, type Overlay, type WorkingPage,
+  defaultTextWatermark, normalizeWatermark, pageCountLabel, pdfDownloadName, pushHistory, redoHistory, rotatePage, sniffFileKind, titleFromFileName, totalRotation, undoHistory, unsupportedReason, viewSize,
+  watermarkOnPage, type DocState, type History, type Overlay, type Watermark, type WorkingPage,
 } from "../lib/pdf-studio";
 import { buildPdf, createBlankPdf, exportDocument, loadPdfForEditing } from "../lib/pdf-engine";
 import { createRenderQueue, openPdf, readPageInfo, renderPageToCanvas, renderThumbnailDataUrl } from "../lib/pdf-render";
-import { canvasToBytes, downloadBytes, drawOverlaysOnCanvas, measureTextOverlay, prepareImage, rasterizeTextOverlay, rasterizeTextPages, releaseCanvas } from "../lib/pdf-canvas";
+import { canvasToBytes, downloadBytes, drawOverlaysOnCanvas, drawWatermarkOnCanvas, measureTextOverlay, prepareImage, rasterizeTextOverlay, rasterizeTextPages, rasterizeWatermarkText, releaseCanvas } from "../lib/pdf-canvas";
 import { PdfPageView, PdfThumbnail, cloneOverlay, translateOverlay, type EditingText, type SourceRef, type Tool, type ToolStyle } from "./PdfEditorPages";
 import { ExportImagesDialog, SignatureDialog, SplitDialog, type ExportImagesRequest, type SignatureResult, type SplitRequest } from "./PdfEditorDialogs";
 import PdfSaveModal, { type SaveChoice, type SaveProgress } from "./PdfSaveModal";
+import PdfWatermarkPanel from "./PdfWatermarkPanel";
 import ModalPortal from "./ModalPortal";
 import { ConfirmDialog } from "./VaultDialogs";
 import "./pdf-studio.css";
@@ -50,18 +51,22 @@ type Dialog = null | "split" | "export" | "signature" | "save" | "close" | "dele
 const ZOOM_STEPS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4];
 const STROKES = [1, 2, 3, 5, 8];
 const FONT_SIZES = [8, 10, 12, 14, 16, 18, 24, 32, 48, 72];
-const STICKY_TOOLS: Tool[] = ["highlight", "ink"];
+const STICKY_TOOLS: Tool[] = ["highlight", "underline", "strike", "ink"];
 
+/** Annotate tools in toolbar order (signature, image and watermark follow them). */
 const TOOLS: { id: Tool; label: string; key: string; icon: typeof Type }[] = [
   { id: "select", label: "Select & move", key: "V", icon: MousePointer2 },
   { id: "text", label: "Add text", key: "T", icon: Type },
   { id: "highlight", label: "Highlight", key: "H", icon: Highlighter },
+  { id: "underline", label: "Underline", key: "U", icon: Underline },
+  { id: "strike", label: "Strike-through", key: "X", icon: Strikethrough },
+  { id: "ink", label: "Freehand pen", key: "P", icon: Pencil },
   { id: "rect", label: "Rectangle", key: "R", icon: Square },
   { id: "ellipse", label: "Ellipse", key: "O", icon: Circle },
   { id: "line", label: "Line", key: "L", icon: Minus },
   { id: "arrow", label: "Arrow", key: "A", icon: ArrowUpRight },
-  { id: "ink", label: "Pen", key: "P", icon: Pencil },
 ];
+type EditMode = "annotate" | "pages";
 
 function isTyping(target: EventTarget | null) {
   const element = target as HTMLElement | null;
@@ -102,7 +107,7 @@ export default function PdfEditorModal({ request, folders, defaultFolderId, canS
   const revCounter = useRef(1);
   const [sourceVersion, setSourceVersion] = useState(0);
   const [imageVersion, setImageVersion] = useState(0);
-  const [history, setHistory] = useState<History<DocState>>({ past: [], present: { pages: [], rev: 0 }, future: [] });
+  const [history, setHistory] = useState<History<DocState>>({ past: [], present: { pages: [], rev: 0, watermark: null }, future: [] });
   const [savedRev, setSavedRev] = useState(0);
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [loadMessage, setLoadMessage] = useState("Loading the PDF tools…");
@@ -110,7 +115,10 @@ export default function PdfEditorModal({ request, folders, defaultFolderId, canS
   const [title, setTitle] = useState(request.kind === "saved" ? request.document.title : request.kind === "created" ? request.title : request.files.length === 1 ? titleFromFileName(request.files[0].name) : "Merged PDF");
   const [linked, setLinked] = useState<PdfStudioDocument | null>(request.kind === "saved" ? request.document : null);
   const [tool, setTool] = useState<Tool>("select");
-  const [style, setStyle] = useState<ToolStyle>({ color: "#111827", highlightColor: HIGHLIGHT_COLORS[0], strokeWidth: 2, fontSize: 14, bold: false, fill: false });
+  const [style, setStyle] = useState<ToolStyle>({ color: "#111827", highlightColor: HIGHLIGHT_COLORS[0], markupColor: "#dc2626", strokeWidth: 2, fontSize: 14, bold: false, fill: false });
+  const [editMode, setEditMode] = useState<EditMode>("annotate");
+  /** Watermark being edited in the panel (previewed live); null when the panel is closed. */
+  const [wmDraft, setWmDraft] = useState<Watermark | null>(null);
   const [selection, setSelection] = useState<{ pageId: string; overlayId: string } | null>(null);
   const [editing, setEditing] = useState<EditingText | null>(null);
   const [placing, setPlacing] = useState<{ imageId: string; signature: boolean } | null>(null);
@@ -138,6 +146,9 @@ export default function PdfEditorModal({ request, folders, defaultFolderId, canS
   const pendingScroll = useRef<string | null>(null);
 
   const pages = history.present.pages;
+  const watermark = history.present.watermark;
+  const wmOpen = tool === "watermark" && wmDraft !== null;
+  const shownWatermark = wmOpen ? wmDraft : watermark;
   const dirty = history.present.rev !== savedRev;
   const currentIndex = Math.max(0, pages.findIndex((page) => page.id === currentId));
   const currentPage = pages[currentIndex];
@@ -146,14 +157,18 @@ export default function PdfEditorModal({ request, folders, defaultFolderId, canS
   const overlayCount = useMemo(() => pages.reduce((sum, page) => sum + page.overlays.length, 0), [pages]);
 
   // ----- History -----------------------------------------------------------
-  const commit = useCallback((update: (pages: WorkingPage[]) => WorkingPage[]) => {
+  /** Applies a change to the whole document (pages and watermark) as one undo step. */
+  const commitDoc = useCallback((update: (doc: Omit<DocState, "rev">) => Omit<DocState, "rev">) => {
     setHistory((current) => {
-      const next = update(current.present.pages);
-      if (next === current.present.pages) return current;
+      const next = update({ pages: current.present.pages, watermark: current.present.watermark });
+      if (next.pages === current.present.pages && next.watermark === current.present.watermark) return current;
       revCounter.current += 1;
-      return pushHistory(current, { pages: next, rev: revCounter.current });
+      return pushHistory(current, { pages: next.pages, watermark: next.watermark, rev: revCounter.current });
     });
   }, []);
+  const commit = useCallback((update: (pages: WorkingPage[]) => WorkingPage[]) => {
+    commitDoc((doc) => ({ ...doc, pages: update(doc.pages) }));
+  }, [commitDoc]);
   const undo = useCallback(() => { setEditing(null); setSelection(null); setHistory(undoHistory); }, []);
   const redo = useCallback(() => { setEditing(null); setSelection(null); setHistory(redoHistory); }, []);
 
@@ -215,7 +230,7 @@ export default function PdfEditorModal({ request, folders, defaultFolderId, canS
       if (!result.newPages.length) { setLoadError(result.errors.join(" ") || "Nothing could be opened."); setPhase("error"); return; }
       adopt(result);
       revCounter.current = 1;
-      setHistory({ past: [], present: { pages: result.newPages, rev: 1 }, future: [] });
+      setHistory({ past: [], present: { pages: result.newPages, rev: 1, watermark: null }, future: [] });
       // A single PDF opened as-is (or a saved PDF) starts clean; merged/converted/created documents are new work.
       const clean = request.kind === "saved" || (request.kind === "files" && request.files.length === 1 && result.added.length === 1 && /\.pdf$/i.test(request.files[0].name));
       setSavedRev(clean ? 1 : 0);
@@ -345,12 +360,22 @@ export default function PdfEditorModal({ request, folders, defaultFolderId, canS
   const duplicatePages = () => {
     const ids = new Set(targetIds());
     let firstCopy = "";
-    commit((current) => current.flatMap((page) => {
-      if (!ids.has(page.id)) return [page];
-      const copy = { ...page, id: makeId("pg"), overlays: page.overlays.map((overlay) => cloneOverlay(overlay)) };
-      firstCopy ||= copy.id;
-      return [page, copy];
-    }));
+    const copies = new Map<string, string>();
+    commitDoc((doc) => {
+      const nextPages = doc.pages.flatMap((page) => {
+        if (!ids.has(page.id)) return [page];
+        const copy = { ...page, id: copies.get(page.id) || makeId("pg"), overlays: page.overlays.map((overlay) => cloneOverlay(overlay)) };
+        copies.set(page.id, copy.id);
+        firstCopy ||= copy.id;
+        return [page, copy];
+      });
+      // A copy of a watermarked page keeps the watermark.
+      const mark = doc.watermark;
+      const nextWatermark = mark && mark.pages.mode === "pages"
+        ? { ...mark, pages: { ...mark.pages, pageIds: mark.pages.pageIds.flatMap((id) => copies.has(id) ? [id, copies.get(id) as string] : [id]) } }
+        : mark;
+      return { pages: nextPages, watermark: nextWatermark };
+    });
     if (firstCopy) { setCurrentId(firstCopy); pendingScroll.current = firstCopy; }
   };
   const movePage = (delta: number) => {
@@ -434,6 +459,10 @@ export default function PdfEditorModal({ request, folders, defaultFolderId, canS
     setCurrentId(pageId);
     setTool((current) => STICKY_TOOLS.includes(current) || current === "select" ? current : "select");
   }, [commit]);
+  const appendOverlays = useCallback((pageId: string, overlays: Overlay[]) => {
+    commit((current) => current.map((page) => page.id === pageId ? { ...page, overlays: [...page.overlays, ...overlays] } : page));
+    setCurrentId(pageId);
+  }, [commit]);
   const onSelectOverlay = useCallback((pageId: string, overlayId: string | null) => {
     setSelection(overlayId ? { pageId, overlayId } : null);
     setCurrentId(pageId);
@@ -511,12 +540,47 @@ export default function PdfEditorModal({ request, folders, defaultFolderId, canS
   };
   const recentSignatures = useMemo(() => [...images.current.values()].filter((image) => image.signature).slice(-4).map((image) => ({ id: image.id, url: image.url })), [imageVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ----- Watermark ------------------------------------------------------------
+  const chooseTool = (next: Tool) => {
+    setEditMode("annotate");
+    setTool(next); setPlacing(null);
+    if (next !== "select") setSelection(null);
+  };
+  const openWatermark = () => {
+    setEditMode("annotate");
+    setWmDraft(watermark || defaultTextWatermark());
+    setTool("watermark"); setPlacing(null); setSelection(null); setEditing(null);
+  };
+  const closeWatermark = () => { setWmDraft(null); setTool("select"); };
+  // Choosing another tool closes the panel (unapplied changes are discarded).
+  useEffect(() => { if (tool !== "watermark" && wmDraft) setWmDraft(null); }, [tool, wmDraft]);
+  const applyWatermark = (spec: Watermark) => {
+    const wasApplied = Boolean(watermark);
+    commitDoc((doc) => ({ ...doc, watermark: spec }));
+    setWmDraft(spec);
+    const where = spec.pages.mode === "all" ? "every page" : spec.pages.label;
+    notify(`${wasApplied ? "Watermark updated" : "Watermark applied"} on ${where}. It's built into the PDF when you download or save.`);
+  };
+  const removeWatermark = () => {
+    commitDoc((doc) => ({ ...doc, watermark: null }));
+    closeWatermark();
+    notify("Watermark removed. Use Undo to bring it back.");
+  };
+  const onWatermarkPoint = useCallback((_pageId: string, [fx, fy]: [number, number]) => {
+    setWmDraft((current) => current ? normalizeWatermark({ ...current, position: "custom", customX: fx, customY: fy }) : current);
+  }, []);
+  const chooseWatermarkImage = async (file: File) => {
+    const prepared = await prepareImage(new Uint8Array(await file.arrayBuffer()), file.name);
+    return { imageId: registerImage(prepared.bytes, prepared.mime, prepared.width, prepared.height, false), width: prepared.width, height: prepared.height };
+  };
+  const watermarkedPages = useMemo(() => watermark ? pages.filter((page) => watermarkOnPage(watermark, page.id)).length : 0, [watermark, pages]);
+
   // ----- Export, download & save -------------------------------------------
   const exportPages = useCallback(async (subset: WorkingPage[], onProgress?: (done: number, total: number) => void) => {
     const exportSources = new Map([...sources.current.values()].map((entry) => [entry.id, { id: entry.id, name: entry.name, bytes: entry.bytes }]));
     const exportImages = new Map([...images.current.values()].map((image) => [image.id, { bytes: image.bytes, mime: image.mime }]));
-    return exportDocument({ sources: exportSources, pages: subset, images: exportImages, title: title.trim() || "PDF", cache: libCache.current }, { rasterizeText: rasterizeTextOverlay, onProgress });
-  }, [title]);
+    return exportDocument({ sources: exportSources, pages: subset, images: exportImages, title: title.trim() || "PDF", watermark, cache: libCache.current }, { rasterizeText: rasterizeTextOverlay, rasterizeWatermarkText, onProgress });
+  }, [title, watermark]);
 
   const download = async () => {
     if (busy) return;
@@ -549,7 +613,7 @@ export default function PdfEditorModal({ request, folders, defaultFolderId, canS
         pageCount: pages.length,
         thumbnail,
         fileName: pdfDownloadName(fileTitle),
-        metadata: { madeWith: request.kind === "created" ? "create" : "edit", annotations: overlayCount, firstPageSize: first ? `${Math.round(first.width)}x${Math.round(first.height)}pt` : null },
+        metadata: { madeWith: request.kind === "created" ? "create" : "edit", annotations: overlayCount, watermark: watermark && watermarkedPages ? watermark.kind : null, firstPageSize: first ? `${Math.round(first.width)}x${Math.round(first.height)}pt` : null },
       };
       const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });
       const onProgress = (progress: TransferProgress) => setSaveProgress({ label: progress.percent >= 100 ? "Finishing up…" : `Uploading to your private storage… ${progress.percent}%`, percent: 40 + Math.round(progress.percent * 0.6) });
@@ -612,9 +676,16 @@ export default function PdfEditorModal({ request, folders, defaultFolderId, canS
         const scale = Math.min(dpi / 72, maxScale);
         if (scale < dpi / 72) clamped = true;
         const canvas = await renderPageToCanvas(await pageSource.pdf.getPage(page.sourceIndex + 1), scale, page.rotation);
-        if (overlays && page.overlays.length) {
+        // The watermark is part of the document, so it's always included; annotations are optional.
+        const pageWatermark = watermark && watermarkOnPage(watermark, page.id) ? watermark : null;
+        if (pageWatermark || (overlays && page.overlays.length)) {
           const context = canvas.getContext("2d");
-          if (context) { context.save(); context.scale(canvas.width / view.width, canvas.height / view.height); await drawOverlaysOnCanvas(context, page.overlays, loadHtmlImage); context.restore(); }
+          if (context) {
+            context.save(); context.scale(canvas.width / view.width, canvas.height / view.height);
+            if (pageWatermark) await drawWatermarkOnCanvas(context, pageWatermark, view, loadHtmlImage);
+            if (overlays) await drawOverlaysOnCanvas(context, page.overlays, loadHtmlImage);
+            context.restore();
+          }
         }
         files.push({ name: `${base} - page ${index + 1}.${extension}`, bytes: await canvasToBytes(canvas, format, 0.9) });
         releaseCanvas(canvas);
@@ -649,6 +720,7 @@ export default function PdfEditorModal({ request, folders, defaultFolderId, canS
       if (event.key === "Escape") {
         event.preventDefault();
         if (placing) { setPlacing(null); setTool("select"); }
+        else if (wmOpen) closeWatermark();
         else if (selection) setSelection(null);
         else if (tool !== "select") setTool("select");
         else requestClose();
@@ -662,8 +734,9 @@ export default function PdfEditorModal({ request, folders, defaultFolderId, canS
       }
       if (event.key === "PageDown") { event.preventDefault(); goToIndex(currentIndex + 1); return; }
       if (event.key === "PageUp") { event.preventDefault(); goToIndex(currentIndex - 1); return; }
+      if (key === "w") { if (wmOpen) closeWatermark(); else openWatermark(); return; }
       const shortcut = TOOLS.find((entry) => entry.key.toLowerCase() === key);
-      if (shortcut) { setTool(shortcut.id); setPlacing(null); if (shortcut.id !== "select") setSelection(null); }
+      if (shortcut) chooseTool(shortcut.id);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -698,18 +771,24 @@ export default function PdfEditorModal({ request, folders, defaultFolderId, canS
   }, [thumbQueue]);
 
   // ----- Contextual properties ------------------------------------------------------
-  const activeType = selectedOverlay?.type || (tool === "place" || tool === "select" ? null : tool);
+  const activeType = selectedOverlay?.type || (tool === "place" || tool === "select" || tool === "watermark" ? null : tool);
+  const isMarkup = activeType === "underline" || activeType === "strike";
   const propColor = selectedOverlay
     ? selectedOverlay.type === "image" ? null : selectedOverlay.color
-    : activeType === "highlight" ? style.highlightColor : activeType ? style.color : null;
+    : activeType === "highlight" ? style.highlightColor : isMarkup ? style.markupColor : activeType ? style.color : null;
   const setColor = (color: string) => {
     if (selectedOverlay && selectedOverlay.type !== "image") {
       updateOverlay(selectedOverlay.type === "rect" || selectedOverlay.type === "ellipse" ? { color, fill: selectedOverlay.fill ? color : null } as Partial<Overlay> : { color } as Partial<Overlay>);
     }
-    setStyle((current) => activeType === "highlight" ? { ...current, highlightColor: color } : { ...current, color });
+    setStyle((current) => activeType === "highlight" ? { ...current, highlightColor: color } : isMarkup ? { ...current, markupColor: color } : { ...current, color });
   };
+  // Underline / strike-through take their thickness from the text when drawn; it can be changed once selected.
   const propStroke = selectedOverlay && "strokeWidth" in selectedOverlay && selectedOverlay.type !== "highlight" ? selectedOverlay.strokeWidth : ["rect", "ellipse", "line", "arrow", "ink"].includes(activeType || "") ? style.strokeWidth : null;
-  const setStroke = (strokeWidth: number) => { if (selectedOverlay && "strokeWidth" in selectedOverlay) updateOverlay({ strokeWidth } as Partial<Overlay>); setStyle((current) => ({ ...current, strokeWidth })); };
+  const strokeOptions = propStroke !== null && !STROKES.includes(propStroke) ? [...STROKES, propStroke].sort((a, b) => a - b) : STROKES;
+  const setStroke = (strokeWidth: number) => {
+    if (selectedOverlay && "strokeWidth" in selectedOverlay) updateOverlay({ strokeWidth } as Partial<Overlay>);
+    if (!(selectedOverlay?.type === "underline" || selectedOverlay?.type === "strike")) setStyle((current) => ({ ...current, strokeWidth }));
+  };
   const textProps = selectedOverlay?.type === "text" ? { fontSize: selectedOverlay.fontSize, bold: selectedOverlay.bold } : activeType === "text" ? { fontSize: style.fontSize, bold: style.bold } : null;
   const setFont = (patch: { fontSize?: number; bold?: boolean }) => { if (selectedOverlay?.type === "text") updateOverlay(patch as Partial<Overlay>); setStyle((current) => ({ ...current, ...patch })); };
   const fillProp = selectedOverlay && (selectedOverlay.type === "rect" || selectedOverlay.type === "ellipse") ? Boolean(selectedOverlay.fill) : activeType === "rect" || activeType === "ellipse" ? style.fill : null;
@@ -718,10 +797,14 @@ export default function PdfEditorModal({ request, folders, defaultFolderId, canS
   const hint = placing ? (placing.signature ? "Click on a page to place your signature. Press Esc to cancel." : "Click on a page to place the image. Press Esc to cancel.")
     : tool === "text" ? "Click on a page to add text. Ctrl+Enter or clicking elsewhere finishes."
     : tool === "highlight" ? "Drag over the area to highlight."
+    : tool === "underline" ? "Drag across text to underline it, or click a line of text. Lines snap to the PDF's text where it has a text layer."
+    : tool === "strike" ? "Drag across text to strike it through, or click a line of text. Lines snap to the PDF's text where it has a text layer."
+    : tool === "watermark" ? "Adjust the watermark in the panel. With Custom position, click or drag on a page to place it."
     : tool === "ink" ? "Draw freely with your mouse, pen or finger."
     : tool === "rect" || tool === "ellipse" ? "Drag to draw. Hold Shift for a square or circle."
     : tool === "line" || tool === "arrow" ? "Drag to draw. Hold Shift to snap to 45°."
     : selectedOverlay ? "Drag to move, use the corner handles to resize, arrow keys to nudge, Delete to remove. Double-click text to edit it."
+    : editMode === "pages" ? "Rotate, reorder, duplicate, insert, split or delete pages. Select several thumbnails to act on them together."
     : "Annotations sit on top of the page. The PDF's existing text and images can't be edited.";
 
   const targetCount = selectedPages.size || (currentPage ? 1 : 0);
@@ -753,14 +836,18 @@ export default function PdfEditorModal({ request, folders, defaultFolderId, canS
         : phase === "error" ? <div className="pdfs-editor-state is-error" role="alert"><AlertTriangle size={24}/><b>This file couldn't be opened</b><span>{loadError}</span><button type="button" className="quiet-button" onClick={onClose}>Close</button></div>
         : <>
           <div className="pdfs-toolbar-row" role="toolbar" aria-label="PDF editor tools">
-            <div className="pdfs-tool-group" role="group" aria-label="Annotate">
-              <span className="pdfs-group-label">Annotate</span>
-              {TOOLS.map((entry) => <ToolButton key={entry.id} label={entry.label} tip={`${entry.label} (${entry.key})`} icon={<entry.icon size={16}/>} pressed={tool === entry.id} onClick={() => { setTool(entry.id); setPlacing(null); if (entry.id !== "select") setSelection(null); }}/>)}
+            <div className="pdfs-edit-modes" role="tablist" aria-label="Editing mode">
+              {([["annotate", "Annotate", PenLine], ["pages", "Pages", Files]] as const).map(([mode, label, Icon]) => <button key={mode} type="button" role="tab" id={`${titleId}-${mode}`} aria-selected={editMode === mode} aria-controls={`${titleId}-${mode}-tools`} className={`pdfs-edit-mode ${editMode === mode ? "is-active" : ""}`}
+                onClick={() => { setEditMode(mode); if (mode === "pages") { setTool("select"); setPlacing(null); } }}><Icon size={14}/>{label}</button>)}
+            </div>
+            {editMode === "annotate" ? <div className="pdfs-tool-group" role="tabpanel" id={`${titleId}-annotate-tools`} aria-labelledby={`${titleId}-annotate`}>
+              {TOOLS.map((entry) => <ToolButton key={entry.id} label={entry.label} tip={`${entry.label} (${entry.key})`} icon={<entry.icon size={16}/>} pressed={tool === entry.id} onClick={() => chooseTool(entry.id)}/>)}
+              <span className="pdfs-divider" aria-hidden="true"/>
               <ToolButton label="Signature" tip="Add a signature" icon={<Signature size={16}/>} pressed={tool === "place" && placing?.signature} onClick={() => setDialog("signature")}/>
               <ToolButton label="Image" tip="Add an image" icon={<ImageIcon size={16}/>} pressed={tool === "place" && placing?.signature === false} onClick={() => imageInput.current?.click()}/>
+              <ToolButton label="Watermark" tip={watermark ? "Edit the watermark (W)" : "Add a watermark (W)"} icon={<Stamp size={16}/>} pressed={wmOpen} onClick={() => wmOpen ? closeWatermark() : openWatermark()} showLabel/>
             </div>
-            <div className="pdfs-tool-group" role="group" aria-label="Pages">
-              <span className="pdfs-group-label">Pages</span>
+            : <div className="pdfs-tool-group" role="tabpanel" id={`${titleId}-pages-tools`} aria-labelledby={`${titleId}-pages`}>
               <ToolButton label="Rotate left" tip={`Rotate ${targetLabel} left`} icon={<RotateCcw size={16}/>} onClick={() => rotate(-90)}/>
               <ToolButton label="Rotate right" tip={`Rotate ${targetLabel} right`} icon={<RotateCw size={16}/>} onClick={() => rotate(90)}/>
               <ToolButton label="Move page up" tip="Move current page earlier" icon={<ArrowUp size={16}/>} onClick={() => movePage(-1)} disabled={currentIndex === 0}/>
@@ -777,7 +864,7 @@ export default function PdfEditorModal({ request, folders, defaultFolderId, canS
               <ToolButton label="Extract or split" tip="Extract or split pages into new PDFs" icon={<Scissors size={16}/>} onClick={() => setDialog("split")}/>
               <ToolButton label="Export images" tip="Export pages as PNG or JPG" icon={<FileImage size={16}/>} onClick={() => setDialog("export")}/>
               <ToolButton label="Delete pages" tip={`Delete ${targetLabel}`} icon={<Trash2 size={16}/>} danger onClick={() => setDialog("delete")}/>
-            </div>
+            </div>}
             <div className="pdfs-tool-group pdfs-view-group" role="group" aria-label="View">
               <span className="pdfs-group-label">View</span>
               <ToolButton label="Zoom out" icon={<ZoomOut size={16}/>} onClick={() => zoomStep(-1)} disabled={zoom <= ZOOM_STEPS[0]}/>
@@ -800,7 +887,7 @@ export default function PdfEditorModal({ request, folders, defaultFolderId, canS
             {propColor !== null && <div className="pdfs-swatches" role="radiogroup" aria-label="Colour">
               {(activeType === "highlight" ? HIGHLIGHT_COLORS : OVERLAY_COLORS).map((color) => <button key={color} type="button" role="radio" aria-checked={propColor === color} aria-label={`Colour ${color}`} className={`pdfs-swatch ${propColor === color ? "is-selected" : ""}`} style={{ background: color }} onClick={() => setColor(color)}/>)}
             </div>}
-            {propStroke !== null && <label className="pdfs-prop">Line<select value={propStroke} onChange={(event) => setStroke(Number(event.target.value))} aria-label="Line width">{STROKES.map((value) => <option key={value} value={value}>{value} pt</option>)}</select></label>}
+            {propStroke !== null && <label className="pdfs-prop">Line<select value={propStroke} onChange={(event) => setStroke(Number(event.target.value))} aria-label="Line width">{strokeOptions.map((value) => <option key={value} value={value}>{Math.round(value * 100) / 100} pt</option>)}</select></label>}
             {fillProp !== null && <label className="pdfs-prop pdfs-prop-check"><input type="checkbox" checked={fillProp} onChange={(event) => setFill(event.target.checked)}/> Fill</label>}
             {textProps && <>
               <label className="pdfs-prop">Size<select value={textProps.fontSize} onChange={(event) => setFont({ fontSize: Number(event.target.value) })} aria-label="Text size">{FONT_SIZES.map((value) => <option key={value} value={value}>{value} pt</option>)}</select></label>
@@ -814,7 +901,7 @@ export default function PdfEditorModal({ request, folders, defaultFolderId, canS
             <span className="pdfs-hint"><Info size={13}/>{hint}</span>
           </div>
 
-          <div className="pdfs-editor-body">
+          <div className={`pdfs-editor-body ${wmOpen ? "has-panel" : ""}`}>
             <aside className="pdfs-rail" aria-label="Pages">
               <div className="pdfs-rail-head">
                 <b>{pageCountLabel(pages.length)}</b>
@@ -824,7 +911,7 @@ export default function PdfEditorModal({ request, folders, defaultFolderId, canS
               <ol ref={setRail} className="pdfs-thumbs" aria-label="Page thumbnails. Drag to reorder.">
                 {pages.map((page, index) => <PdfThumbnail
                   key={page.id} page={page} index={index} source={source(page.sourceId)} current={page.id === currentPage?.id} selected={selectedPages.has(page.id)} root={rail}
-                  dragging={dragPage === page.id} dropTarget={dropPage === page.id && dragPage !== page.id} imageUrl={imageUrl} thumbnail={thumbnail}
+                  dragging={dragPage === page.id} dropTarget={dropPage === page.id && dragPage !== page.id} imageUrl={imageUrl} watermark={shownWatermark} thumbnail={thumbnail}
                   onOpen={(id) => { setCurrentId(id); scrollToPage(id); }} onToggle={togglePage}
                   onDragStart={setDragPage} onDragOverPage={setDropPage} onDropPage={dropOnPage} onDragEnd={() => { setDragPage(null); setDropPage(null); }}
                 />)}
@@ -836,19 +923,24 @@ export default function PdfEditorModal({ request, folders, defaultFolderId, canS
                 <div className="pdfs-pages">
                   {pages.map((page, index) => <PdfPageView
                     key={page.id} page={page} index={index} total={pages.length} zoom={zoom} source={source(page.sourceId)} scrollRoot={scroller}
-                    tool={tool} style={style} selectedId={selection?.pageId === page.id ? selection.overlayId : null} editing={editing} imageUrl={imageUrl}
-                    onSelect={onSelectOverlay} onCommit={setOverlays} onEditText={setEditing} onFinishText={finishText} onPlace={onPlace} register={register}
+                    tool={tool} style={style} selectedId={selection?.pageId === page.id ? selection.overlayId : null} editing={editing} imageUrl={imageUrl} watermark={shownWatermark}
+                    onSelect={onSelectOverlay} onCommit={setOverlays} onEditText={setEditing} onFinishText={finishText} onPlace={onPlace} onAppend={appendOverlays} onWatermarkPoint={onWatermarkPoint} register={register}
                   />)}
                 </div>
               </div>
               {fileDrag && <div className="pdfs-file-drop" aria-hidden="true"><FilePlus2 size={26}/><b>Drop to insert after page {currentIndex + 1}</b><span>PDFs, images or text files</span></div>}
               {busy && <div className="pdfs-busy-overlay" role="status" aria-live="polite"><Loader2 className="pdfs-spin" size={20}/><b>{busy.label}</b>{busy.percent !== null && <span className="pdfs-progress"><i style={{ width: `${busy.percent}%` }}/></span>}</div>}
             </div>
+            {wmOpen && wmDraft && <PdfWatermarkPanel
+              draft={wmDraft} applied={watermark} pages={pages} currentIndex={currentIndex} imageUrl={imageUrl}
+              onChange={setWmDraft} onChooseImage={chooseWatermarkImage} onApply={applyWatermark} onRemove={removeWatermark} onClose={closeWatermark}
+            />}
           </div>
           <footer className="pdfs-editor-status">
             <span>Page {currentIndex + 1} of {pages.length}</span>
             <span>{Math.round(zoom * 100)}%</span>
             {overlayCount > 0 && <span>{overlayCount} annotation{overlayCount === 1 ? "" : "s"}</span>}
+            {watermark && <span>Watermark on {watermarkedPages === pages.length ? "all pages" : pageCountLabel(watermarkedPages)}</span>}
             <span className="pdfs-status-private">Processed on this device{linked ? "" : " · not uploaded"}</span>
           </footer>
         </>}
