@@ -134,7 +134,7 @@ const viewInfo: Record<string, { title: string; eyebrow: string; icon: LucideIco
   "medical-records": { title: "Medical Records", eyebrow: "Your private health archive", icon: HeartPulse },
   contacts: { title: "Contacts", eyebrow: "Your people, organized", icon: UsersRound },
   "business-card": { title: "Digital business cards", eyebrow: "Your digital identity", icon: BriefcaseBusiness },
-  "password-manager": { title: "Password Manager", eyebrow: "Your encrypted credentials", icon: KeyRound },
+  "password-manager": { title: "Password Manager", eyebrow: "Your private credentials", icon: KeyRound },
   projects: { title: "Projects", eyebrow: "Personal + shared team projects", icon: FolderKanban },
   "photo-studio": { title: "Photo Studio", eyebrow: "Official photos, sized and organized", icon: Camera },
   "pdf-studio": { title: "PDF Studio", eyebrow: "Create, edit and sign PDFs privately", icon: FileStack },

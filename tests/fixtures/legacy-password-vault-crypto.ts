@@ -1,3 +1,6 @@
+// FROZEN COPY of the retired src/lib/password-vault-crypto.ts (commit 242752c), used
+// only by tests/password-vault-migration.test.mjs to produce records exactly as the
+// encrypted release stored them. Not shipped; delete together with the migration.
 // Persora Password Manager cryptography (vault format v3). Runs in the browser.
 //
 //   master password ──Argon2id(salt, m=64 MiB, t=3, p=1)──▶ KEK (AES-256-GCM)

@@ -1,11 +1,11 @@
-import type { VaultEntry } from "./password-vault-crypto";
+import type { VaultEntry } from "./password-vault-client";
 
 /** Password Manager Trash lifecycle (7 days, matching the global Trash).
- * Lives inside the encrypted vault envelope: password entries are client-side
- * encrypted before storage, so they can never flow through the server-side
- * trash_items table (the server must never see vault contents). Expired
- * entries are purged deterministically at the same choke points every vault
- * mutation passes through (unlock + save), which keeps behaviour consistent. */
+ * The Trash state is stored on each vault record (its `trash` field), not in
+ * the global trash_items table: vault records may only be read or written with
+ * an unlocked master-password session, which the global Trash doesn't have.
+ * Expired entries are purged deterministically at the same choke points every
+ * vault mutation passes through (unlock + save), which keeps behaviour consistent. */
 export const PASSWORD_TRASH_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 export function markEntryTrashed(entry: VaultEntry, now = Date.now()): VaultEntry {

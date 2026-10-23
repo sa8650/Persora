@@ -16,7 +16,7 @@ import {
   type RhythmOptions,
 } from "../lib/password-generator";
 import { generateAiPasswordSuggestions, isPagesApiConfigured } from "../lib/cloud";
-import type { VaultEntry } from "../lib/password-vault-crypto";
+import type { VaultEntry } from "../lib/password-vault-client";
 
 const MODE_META: Record<GeneratorMode, { icon: typeof Dices; label: string }> = {
   random: { icon: Dices, label: "Random" },
@@ -362,7 +362,7 @@ export default function PasswordGeneratorPanel({
           )}
 
           <div className="pm-gen-section pm-save-box">
-            <div className="pm-gen-section-head"><span>Save it</span><small>Stored encrypted in your private vault</small></div>
+            <div className="pm-gen-section-head"><span>Save it</span><small>Saved to your private, master-password-protected vault</small></div>
             <div className="pm-save-row">
               <label className="field-label pm-save-select" htmlFor="pm-gen-save-target">Save destination
                 <select id="pm-gen-save-target" value={saveTarget} onChange={(event) => setSaveTarget(event.target.value)}>

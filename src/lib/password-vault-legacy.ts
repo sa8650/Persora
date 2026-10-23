@@ -1,11 +1,14 @@
-// Read-only support for the two on-device vault formats Persora used before
-// encrypted sync (localStorage key `persora-password-vault-v1:${userId}`):
+// Read-only import of the two on-device vault formats Persora used before
+// synced vaults (localStorage key `persora-password-vault-v1:${userId}`):
 //   v1  {salt, iv, cipher}: PBKDF2-SHA-256 (310k) key directly on the entries.
-//   v2  VaultEnvelopeV2: random DEK wrapped by PBKDF2 (master password) and by
-//       an HKDF key from an offline recovery key the member saved.
-// They are only ever *decrypted* here, to migrate the entries into the synced
-// Argon2id vault (see password-vault-client.ts). Nothing writes these formats.
-import type { VaultEntry } from "./password-vault-crypto";
+//   v2  random data key wrapped by PBKDF2 (master password) and by an HKDF key
+//       from an offline recovery key the member saved.
+// These copies exist only in a browser, so the server can't migrate them. When
+// the member opens the Password Manager on that browser, the entries are
+// decrypted here with WebCrypto, saved to the synced vault through the normal
+// API and the local copy is removed (password-vault-client.ts). Nothing writes
+// these formats. Delete this file once no pre-sync local vaults remain.
+import type { VaultEntry } from "./password-vault-client";
 
 export type VaultEnvelopeV2 = { version: 2; kdf: "PBKDF2-SHA-256"; iterations: number; masterSalt: string; recoverySalt: string; dataIv: string; dataCiphertext: string; masterIv: string; masterWrap: string; recoveryIv: string; recoveryWrap: string };
 type VaultEnvelopeV1 = { salt: string; iv: string; cipher: string };
