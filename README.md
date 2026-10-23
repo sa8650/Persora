@@ -17,6 +17,7 @@ Persora is a personal portal for the records and everyday details you want to ke
   - display filters by type and colour that sync across devices.
 
   See [`CALENDAR.md`](./CALENDAR.md).
+- **App launcher.** A 3 × 3 grid button beside your avatar opens every workspace module with original Persora icons. Favorites (up to 12, reorderable) appear first and sync to your account; the other modules scroll in a separate area. Modules open in the same tab, through the same navigation as the sidebar.
 - **Password Manager.** Logins sync through Persora's Supabase database to every signed-in device. Opening the vault on any device needs a separate master password, checked on the server against a salted bcrypt hash; the API returns no records without it. Records are stored as JSON and protected by Supabase's encryption at rest, TLS, row-level security and the master-password gate. They are not separately encrypted by Persora, and the master password is not an encryption key. A forgotten master password can be reset with a one-time code sent to the registered email; saved passwords are kept. See [PASSWORD_VAULT.md](PASSWORD_VAULT.md).
 - **More than files.** Folders, private record sharing, business-card public links, medical-record links, a life timeline, wallet cards, personal finance, tasks, reminders and alarms, storage plans and complete account export.
 - **Smart Scan administration.** Admins can control scan availability and inspect aggregate usage counts without seeing document contents. Admin tools also manage accounts, document types, plans, manual payment reviews and public site content.
@@ -28,6 +29,7 @@ The website is a React + Vite app hosted on Cloudflare Pages. Pages Functions pr
 
 - `src/` — web app, responsive portal, forms, workspace and admin UI.
 - `functions/api/[[path]].js` — Pages API route adapter.
+- `src/components/launcher/`, `src/lib/app-launcher.ts`, `cloudflare/workspace-modules.js`, `cloudflare/workspace-preferences.js` — app launcher UI and icons, the module list and favorites rules shared with the API, and `GET/PUT /api/workspace/preferences`.
 - `cloudflare/api.js`, `cloudflare/smart-scan.js`, `cloudflare/timeline.js` — server-side API, scanning and timeline logic.
 - `cloudflare/calendar.js`, `cloudflare/calendar-rules.js` — Calendar API and reminder dispatcher; recurrence, time-zone, validation, conflict, filter and move rules shared with the browser. `src/lib/calendar-nlp.js` is the quick-add parser.
 - `supabase/schema.sql` — complete, rerunnable current schema for a fresh database.

@@ -169,6 +169,14 @@ No new binding or npm dependency is needed. Email reminders reuse `BREVO_API_KEY
 
 **Verify.** Create an event about 20 minutes ahead with a 15-minute reminder and **Also email me**, then close the browser. Within about a minute of the reminder time, the email arrives. The bell shows the reminder at the next sign-in, and it is never repeated. `calendar_reminders.status` becomes `sent`, with `email_status = 'sent'`. Desktop notifications appear only while a Persora tab is open, if the member allowed them.
 
+### App launcher favorites
+
+**Migration.** Apply `supabase/migrations/202610270001_workspace_preferences.sql` after the earlier migrations. It needs only `profiles`.
+- It creates the private `workspace_preferences` table, keyed by member, with RLS on and no browser privileges. It stores each member's launcher favorites so every device shows the same set.
+- It alters no existing table, drops no data and can be rerun.
+- The launcher works before the migration is applied. Favorites are then kept on each device, the drawer reports that it isn't synced, and `/api/workspace/preferences` answers 503 with the migration name.
+- There are no new secrets, bindings or environment variables.
+
 ### Preview deployments
 
 For the simplest launch, configure Production first and leave Preview variables/bindings unset. If you later need working branch previews, use a separate Supabase staging project and test R2 bucket. Add staging versions of `SUPABASE_URL` and encrypted `SUPABASE_SECRET_KEY`, set `VITE_USE_PAGES_FUNCTIONS=true`, bind `VAULT_FILES` to the test bucket, and leave the bootstrap secret unset unless you intentionally need a separate one-time staging admin. Never expose production data or secrets to untrusted preview builds.

@@ -7,6 +7,7 @@ import { handlePhotoStudio, handleSharedPhotoFile, backgroundProviders, PHOTO_ST
 import { handlePdfStudio, PDF_STUDIO_ROUTE_PREFIX } from "./pdf-studio.js";
 import { handlePasswordVault, PASSWORD_VAULT_ROUTE_PREFIX } from "./password-vault.js";
 import { handleCalendar, dispatchCalendarReminders, scheduleCalendarDispatch, exportCalendarData, CALENDAR_ROUTE_PREFIX } from "./calendar.js";
+import { handleWorkspacePreferences, exportWorkspacePreferences, WORKSPACE_PREFERENCES_PATH } from "./workspace-preferences.js";
 
 const DEFAULT_SETTINGS = {
   billing: { currency: "BDT", manualInstructions: "Follow the account details shown for your selected payment method.", billingEnabled: false, minTermMonths: 1, maxTermMonths: 12 },
@@ -629,6 +630,11 @@ export default {
         const identity = await authorize(request, env);
         if (!identity) return json({ error: "Sign in to open your calendar." }, 401, origin);
         return await handleCalendar(request, identity, env, origin, calendarServices(env));
+      }
+      if (url.pathname === WORKSPACE_PREFERENCES_PATH) {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in to save your preferences." }, 401, origin);
+        return await handleWorkspacePreferences(request, identity, env, origin);
       }
       if (url.pathname === "/internal/trash-purge" && request.method === "POST") {
         // For external schedulers (e.g. Android cron jobs): enabled only when the
@@ -3059,7 +3065,7 @@ async function reviewPayment(body, identity, env) {
 async function createAccountExport(identity, env) {
   if (!env.VAULT_FILES) throw new Error("Private file storage is unavailable for this export.");
   const owner = encodeURIComponent(identity.id);
-  const [profileRows, items, contacts, cards, medicalRecords, medicalRecordLinks, documentShares, recordShares, notifications, authoredComments, subscriptions, payments, files, timelineExport, calendarExport] = await Promise.all([
+  const [profileRows, items, contacts, cards, medicalRecords, medicalRecordLinks, documentShares, recordShares, notifications, authoredComments, subscriptions, payments, files, timelineExport, calendarExport, workspacePreferences] = await Promise.all([
     restRows(`profiles?id=eq.${owner}&select=id,login_id,email,full_name,timezone,avatar_url,created_at,updated_at`, env),
     restRowsPaged(`vault_items?user_id=eq.${owner}&select=*&order=id.asc`, env),
     restRowsPaged(`contacts?user_id=eq.${owner}&select=*&order=id.asc`, env),
@@ -3075,6 +3081,7 @@ async function createAccountExport(identity, env) {
     listAccountFiles(env.VAULT_FILES, identity.id),
     loadTimelineExport(identity, env),
     exportCalendarData(identity.id, env),
+    exportWorkspacePreferences(identity.id, env),
   ]);
   const ordinaryFiles = files.filter((file) => !file.key.startsWith(`${identity.id}/timeline/`));
   const indexedFiles = [
@@ -3088,7 +3095,7 @@ async function createAccountExport(identity, env) {
   const manifest = {
     format: "persora-complete-export-v1", exportedAt: new Date().toISOString(),
     account: profileRows[0] || { login_id: identity.login_id || "", email: identity.email || "", full_name: identity.full_name || "" },
-    data: { vaultItems: items, contacts, businessCards: cards, medicalRecords, medicalRecordLinks, documentShares, recordShares, notifications, authoredShareComments: authoredComments, subscriptions, paymentHistory: payments, timelineEvents: timelineExport.events, calendarEvents: calendarExport.events, calendarReminders: calendarExport.reminders, calendarPreferences: calendarExport.preferences },
+    data: { vaultItems: items, contacts, businessCards: cards, medicalRecords, medicalRecordLinks, documentShares, recordShares, notifications, authoredShareComments: authoredComments, subscriptions, paymentHistory: payments, timelineEvents: timelineExport.events, calendarEvents: calendarExport.events, calendarReminders: calendarExport.reminders, calendarPreferences: calendarExport.preferences, workspacePreferences },
     attachments: attachmentManifest,
     note: "Private attachment bytes, including medical-record files, are included under files/. Timeline text is decrypted only for this authenticated account export; timeline attachment files are decrypted into the archive. Session tokens, password hashes, and other accounts' private records are excluded.",
   };
