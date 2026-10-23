@@ -5,6 +5,7 @@ import { DEFAULT_AI_CONTROLS, resolveAiControls } from "./ai-controls.js";
 import { handleProjects, PROJECTS_ROUTE_PREFIX } from "./projects.js";
 import { handlePhotoStudio, handleSharedPhotoFile, backgroundProviders, PHOTO_STUDIO_ROUTE_PREFIX } from "./photo-studio.js";
 import { handlePdfStudio, PDF_STUDIO_ROUTE_PREFIX } from "./pdf-studio.js";
+import { handlePasswordVault, PASSWORD_VAULT_ROUTE_PREFIX } from "./password-vault.js";
 
 const DEFAULT_SETTINGS = {
   billing: { currency: "BDT", manualInstructions: "Follow the account details shown for your selected payment method.", billingEnabled: false, minTermMonths: 1, maxTermMonths: 12 },
@@ -92,16 +93,16 @@ export default {
         const body = await readBody(request);
         return json(await changePassword(identity, body, env), 200, origin);
       }
-      if (url.pathname === "/password-vault/recovery/send" && request.method === "POST") {
+      if (url.pathname === PASSWORD_VAULT_ROUTE_PREFIX || url.pathname.startsWith(PASSWORD_VAULT_ROUTE_PREFIX + "/")) {
         const identity = await authorize(request, env);
-        if (!identity) return json({ error: "Sign in to recover your password vault." }, 401, origin);
-        return json(await sendVaultRecoveryCode(identity, env), 200, origin);
-      }
-      if (url.pathname === "/password-vault/recovery/verify" && request.method === "POST") {
-        const identity = await authorize(request, env);
-        if (!identity) return json({ error: "Sign in to recover your password vault." }, 401, origin);
-        const body = await readBody(request);
-        return json(await verifyVaultRecoveryCode(identity, body, env), 200, origin);
+        if (!identity) return json({ error: "Sign in to open your password vault." }, 401, origin);
+        return await handlePasswordVault(request, identity, env, origin, {
+          prepareRecoveryEmail: async () => {
+            const settings = await loadSettings(env);
+            brevoEmailConfiguration(env, settings.email);
+            return (message) => sendBrevoEmail(env, settings.email, message);
+          },
+        });
       }
       if (url.pathname === "/email-verification/send" && request.method === "POST") {
         const identity = await authorize(request, env);
@@ -1262,56 +1263,6 @@ async function verifyEmailVerificationCode(identity, body, env) {
       console.error("Persora email verification returned an unknown result", result.outcome);
       throw new HttpError("Email verification is temporarily unavailable. Please try again later.", 503);
   }
-}
-
-async function sendVaultRecoveryCode(identity, env) {
-  if (!identity.email || identity.account_status !== "active") throw new HttpError("An active account email is required to recover the vault.", 403);
-  const settings = await loadSettings(env);
-  brevoEmailConfiguration(env, settings.email);
-  const now = new Date();
-  const code = secureSixDigitCode();
-  const codeHash = await vaultRecoveryCodeHash(identity, code, env);
-  const reservation = await callEmailVerificationRpc("reserve_vault_recovery_send", {
-    p_user_id: identity.id, p_email: String(identity.email).trim().toLowerCase(), p_code_hash: codeHash,
-    p_now: now.toISOString(), p_expires_at: new Date(now.getTime() + EMAIL_VERIFICATION_TTL_MS).toISOString(),
-    p_resend_seconds: EMAIL_VERIFICATION_RESEND_MS / 1000, p_window_seconds: EMAIL_VERIFICATION_WINDOW_MS / 1000, p_max_sends: EMAIL_VERIFICATION_MAX_SENDS,
-  }, env);
-  if (reservation.allowed !== true) {
-    if (reservation.reason === "resend") throw new HttpError(`Please wait ${Math.max(1, Number(reservation.retry_after_seconds) || 60)} seconds before requesting another code.`, 429);
-    if (reservation.reason === "hourly_limit") throw new HttpError("Too many recovery emails. Try again in an hour.", 429);
-    throw new HttpError("Vault recovery email is temporarily unavailable.", 503);
-  }
-  try {
-    await sendBrevoEmail(env, settings.email, {
-      to: identity.email, subject: "Your Persora vault recovery code",
-      textContent: `Your vault recovery code is ${code}. It expires in 10 minutes. If you did not request this, ignore this email. This code verifies email ownership only; you also need your vault recovery key.`,
-      htmlContent: `<div style="font-family:Arial,sans-serif;color:#182230;max-width:520px;margin:24px auto;padding:28px;border:1px solid #e5e7eb;border-radius:16px"><h2>Verify your email for vault recovery</h2><p>Your one-time code:</p><p style="font-size:34px;font-weight:700;letter-spacing:8px;color:#1a73e8">${code}</p><p>Expires in 10 minutes. Email verification does not replace your vault recovery key.</p></div>`,
-    });
-  } catch (error) {
-    await callEmailVerificationRpc("invalidate_vault_recovery_code", { p_user_id: identity.id, p_code_hash: codeHash, p_now: new Date().toISOString() }, env).catch(() => {});
-    throw error;
-  }
-  return { ok: true, expiresInSeconds: EMAIL_VERIFICATION_TTL_MS / 1000, resendAfterSeconds: EMAIL_VERIFICATION_RESEND_MS / 1000 };
-}
-async function verifyVaultRecoveryCode(identity, body, env) {
-  const code = typeof body.code === "string" ? body.code.trim() : "";
-  if (!/^\d{6}$/.test(code)) throw new HttpError("Enter the six-digit code from your recovery email.", 400);
-  const result = await callEmailVerificationRpc("complete_vault_recovery_code", {
-    p_user_id: identity.id, p_email: String(identity.email || "").trim().toLowerCase(),
-    p_candidate_hash: await vaultRecoveryCodeHash(identity, code, env), p_now: new Date().toISOString(), p_max_attempts: EMAIL_VERIFICATION_MAX_ATTEMPTS,
-  }, env);
-  if (result.outcome === "success") return { ok: true, verified: true };
-  if (result.outcome === "expired") throw new HttpError("That code has expired. Request a new code.", 400);
-  if (result.outcome === "mismatch") throw new HttpError("That code doesn't match. Check your email and try again.", 400);
-  if (result.outcome === "too_many_attempts") throw new HttpError("Too many incorrect attempts. Request a new code.", 429);
-  throw new HttpError("Request a new recovery code before trying again.", 400);
-}
-async function vaultRecoveryCodeHash(identity, code, env) {
-  const secret = String(env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY || "");
-  if (!secret) throw new HttpError("Vault recovery is not configured.", 503);
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const payload = `persora-vault-recovery-v1|${identity.id}|${String(identity.email || "").trim().toLowerCase()}|${code}`;
-  return bytesToHex(new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload))));
 }
 
 async function sendPasswordRecoveryCode(body, env) {
