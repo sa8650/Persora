@@ -65,6 +65,9 @@ import {
   emptyTrashEntries,
 } from "./lib/backend";
 import { buildTrashEntry, clearLocalTrash, loadLocalTrash, pushLocalTrash, removeLocalTrash } from "./lib/local-trash";
+import { CALENDAR_CHANGED_EVENT, loadCalendarReminders, markCalendarReminderRead } from "./lib/calendar-api";
+import type { CalendarReminder } from "./lib/calendar-api";
+import { localDateOf, safeTimeZone } from "../cloudflare/calendar-rules.js";
 import { loadAdminBootstrapStatus, loadDocumentTypes, loadProjectNotifications, loadPublicPlans, loadPublicSiteContent, markProjectNotificationRead, markProjectNotificationsRead, sendEmailVerificationCode, verifyEmailVerificationCode } from "./lib/cloud";
 import { signIn, signOut, signUp, getCurrentUser } from "./lib/auth";
 import { getLocalAvatar, getLocalBusinessCards, getLocalContacts, getLocalItems, getLocalProfile, putLocalAvatar, putLocalBusinessCards, putLocalContacts, putLocalItems, putLocalProfile } from "./lib/local-store";
@@ -118,12 +121,13 @@ export default function App() {
   const [recordSharesWithMe, setRecordSharesWithMe] = useState<RecordShareEntry[]>([]);
   const [shareNotifications, setShareNotifications] = useState<ShareNotification[]>([]);
   const [projectNotifications, setProjectNotifications] = useState<ShareNotification[]>([]);
+  const [calendarNotifications, setCalendarNotifications] = useState<ShareNotification[]>([]);
   const [localScheduleNotifications, setLocalScheduleNotifications] = useState<ShareNotification[]>([]);
   const [ringingSchedules, setRingingSchedules] = useState<ActiveScheduleAlert[]>([]);
   const [scheduleNotificationOwner, setScheduleNotificationOwner] = useState("");
   const [shareComments, setShareComments] = useState<ShareComment[]>([]);
   const [shareTarget, setShareTarget] = useState<VaultItem | null>(null);
-  const [view, setView] = useState<ViewId>(() => new URLSearchParams(window.location.search).has("project") ? "projects" : "dashboard");
+  const [view, setView] = useState<ViewId>(initialWorkspaceView);
   const [search, setSearch] = useState("");
   const [authOpen, setAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<AuthMode>("signup");
@@ -340,7 +344,7 @@ export default function App() {
     commitBusinessCards(loadedBusinessCards.status === "fulfilled" ? loadedBusinessCards.value : []);
     commitMedicalRecords(loadedMedicalRecords.status === "fulfilled" ? loadedMedicalRecords.value : []);
     demoMedicalFiles.current.clear();
-    setView(pendingPlanId ? "billing" : new URLSearchParams(window.location.search).has("project") ? "projects" : "dashboard");
+    setView(pendingPlanId ? "billing" : initialWorkspaceView());
     setAuthOpen(false);
     setSearch("");
   }, [pendingPlanId, commitContacts, commitBusinessCards, commitMedicalRecords]);
@@ -409,6 +413,59 @@ export default function App() {
     window.addEventListener("focus", refresh);
     return () => { active = false; window.clearInterval(timer); window.removeEventListener("focus", refresh); };
   }, [user?.id, user?.demo]);
+
+  // Calendar reminders: scheduled and delivered by the server (email + in-app
+  // rows); this poll shows due ones in the bell and raises a desktop
+  // notification once per reminder while Persora is open (even in a background tab).
+  useEffect(() => {
+    setCalendarNotifications([]);
+    if (!user || user.demo || !isPagesApiConfigured) return;
+    let active = true;
+    const zone = safeTimeZone(user.timezone, "UTC");
+    const timers = new Map<string, number>();
+    const seenKey = `persora-calendar-notified:${user.id}`;
+    const toNotification = (reminder: CalendarReminder): ShareNotification => ({
+      id: `calendar:${reminder.id}`, kind: "calendar", itemTitle: reminder.title, actorName: reminder.title,
+      message: calendarReminderMessage(reminder, zone), createdAt: reminder.remindAt, readAt: reminder.readAt || undefined,
+      calendarDate: reminder.allDay ? reminder.occurrenceDate || undefined : reminder.occurrenceStart ? localDateOf(Date.parse(reminder.occurrenceStart), zone) : undefined,
+    });
+    const fire = (reminder: CalendarReminder) => {
+      let seen: string[] = [];
+      try { seen = JSON.parse(localStorage.getItem(seenKey) || "[]") as string[]; } catch { seen = []; }
+      if (seen.includes(reminder.id)) return;
+      try { localStorage.setItem(seenKey, JSON.stringify([...seen, reminder.id].slice(-300))); } catch { /* best-effort dedupe */ }
+      if (!active) return;
+      notify(`Reminder: ${reminder.title}`);
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        try { new Notification(reminder.title, { body: calendarReminderMessage(reminder, zone), tag: `persora-calendar-${reminder.id}` }); } catch { /* the bell entry remains */ }
+      }
+    };
+    const refresh = () => {
+      void loadCalendarReminders().then((rows) => {
+        if (!active) return;
+        const now = Date.now();
+        setCalendarNotifications(rows.filter((row) => row.due).map(toNotification));
+        timers.forEach((timer) => window.clearTimeout(timer)); timers.clear();
+        for (const row of rows) {
+          if (row.readAt) continue;
+          const at = Date.parse(row.remindAt);
+          if (at <= now) { if (now - at < 10 * 60_000) fire(row); continue; }
+          timers.set(row.id, window.setTimeout(() => {
+            fire(row);
+            setCalendarNotifications((current) => [toNotification({ ...row, due: true }), ...current.filter((entry) => entry.id !== `calendar:${row.id}`)]);
+          }, at - now));
+        }
+      }).catch(() => { /* retried on the next poll */ });
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 30_000);
+    window.addEventListener(CALENDAR_CHANGED_EVENT, refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      active = false; window.clearInterval(timer); timers.forEach((entry) => window.clearTimeout(entry));
+      window.removeEventListener(CALENDAR_CHANGED_EVENT, refresh); window.removeEventListener("focus", refresh);
+    };
+  }, [user?.id, user?.demo, user?.timezone]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!user || user.demo || !isPagesApiConfigured) return;
@@ -1117,7 +1174,9 @@ commitContacts(getLocalContacts(DEMO_USER.id));
     setLocalScheduleNotifications((current) => current.map((entry) => ({ ...entry, readAt: entry.readAt || now })));
     setShareNotifications((current) => current.map((entry) => ({ ...entry, readAt: entry.readAt || now })));
     setProjectNotifications((current) => current.map((entry) => ({ ...entry, readAt: entry.readAt || now })));
+    setCalendarNotifications((current) => current.map((entry) => ({ ...entry, readAt: entry.readAt || now })));
     if (!user || user.demo || !isPagesApiConfigured) return;
+    if (calendarNotifications.some((entry) => !entry.readAt)) void markCalendarReminderRead().catch(() => { /* re-synced on the next poll */ });
     try { await Promise.all([markShareNotificationsRead(), markProjectNotificationsRead()]); await refreshSharing(); }
     catch (error) {
       notify(error instanceof Error ? error.message : "Couldn't update notifications.", "error");
@@ -1128,6 +1187,12 @@ commitContacts(getLocalContacts(DEMO_USER.id));
     }
   };
   const handleMarkNotificationRead = async (notificationId: string) => {
+    if (notificationId.startsWith("calendar:")) {
+      const now = new Date().toISOString();
+      setCalendarNotifications((current) => current.map((entry) => entry.id === notificationId ? { ...entry, readAt: entry.readAt || now } : entry));
+      if (user && !user.demo && isPagesApiConfigured) void markCalendarReminderRead(notificationId.slice("calendar:".length)).catch(() => { /* re-synced on the next poll */ });
+      return;
+    }
     if (!notificationId.startsWith("project:")) return;
     const now = new Date().toISOString();
     setProjectNotifications((current) => current.map((entry) => entry.id === notificationId ? { ...entry, readAt: entry.readAt || now } : entry));
@@ -1281,6 +1346,11 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       url.searchParams.delete("project");
       window.history.replaceState(window.history.state, "", url);
     }
+    if (new URLSearchParams(window.location.search).has("view")) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("view");
+      window.history.replaceState(window.history.state, "", url);
+    }
     if (next !== "documents") {
       setEditor((current) => current?.section === "documents" ? null : current);
       setFocusedItem((current) => current?.section === "documents" ? null : current);
@@ -1332,7 +1402,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       recordSharesWithMe={recordSharesWithMe}
       contacts={contacts}
       businessCards={businessCards}
-      notifications={[...localScheduleNotifications, ...shareNotifications, ...projectNotifications].sort((a, b) => b.createdAt.localeCompare(a.createdAt))}
+      notifications={[...localScheduleNotifications, ...shareNotifications, ...projectNotifications, ...calendarNotifications].sort((a, b) => b.createdAt.localeCompare(a.createdAt))}
       ringingSchedules={ringingSchedules}
       sharingAvailable={!user.demo && isPagesApiConfigured}
       timelineEvents={displayTimelineEvents}
@@ -1442,4 +1512,26 @@ commitContacts(getLocalContacts(DEMO_USER.id));
     </ConfirmDialog>}
     {toast && <ToastNotice key={toast.id} message={toast.message} kind={toast.kind} onClose={() => setToast(null)} />}
   </>;
+}
+
+/** Deep links: ?project=… opens Projects; ?view=calendar (reminder emails) opens the Calendar. */
+function initialWorkspaceView(): ViewId {
+  const params = new URLSearchParams(window.location.search);
+  if (params.has("project")) return "projects";
+  if (params.get("view") === "calendar") return "calendar";
+  return "dashboard";
+}
+
+function calendarReminderMessage(reminder: CalendarReminder, zone: string): string {
+  if (reminder.allDay || !reminder.occurrenceStart) {
+    const date = reminder.occurrenceDate || "";
+    const label = date ? new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${date}T12:00:00Z`)) : "";
+    return `All day${label ? ` · ${label}` : ""}`;
+  }
+  const start = Date.parse(reminder.occurrenceStart);
+  const sameDay = localDateOf(start, zone) === localDateOf(Date.now(), zone);
+  const time = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit", timeZone: zone }).format(new Date(start));
+  const day = sameDay ? "" : `${new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", timeZone: zone }).format(new Date(start))}, `;
+  const verb = start > Date.now() ? "Starts" : "Started";
+  return `${verb} ${day}${time}${reminder.location ? ` · ${reminder.location}` : ""}`;
 }

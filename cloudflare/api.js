@@ -6,6 +6,7 @@ import { handleProjects, PROJECTS_ROUTE_PREFIX } from "./projects.js";
 import { handlePhotoStudio, handleSharedPhotoFile, backgroundProviders, PHOTO_STUDIO_ROUTE_PREFIX } from "./photo-studio.js";
 import { handlePdfStudio, PDF_STUDIO_ROUTE_PREFIX } from "./pdf-studio.js";
 import { handlePasswordVault, PASSWORD_VAULT_ROUTE_PREFIX } from "./password-vault.js";
+import { handleCalendar, dispatchCalendarReminders, scheduleCalendarDispatch, exportCalendarData, CALENDAR_ROUTE_PREFIX } from "./calendar.js";
 
 const DEFAULT_SETTINGS = {
   billing: { currency: "BDT", manualInstructions: "Follow the account details shown for your selected payment method.", billingEnabled: false, minTermMonths: 1, maxTermMonths: 12 },
@@ -73,6 +74,7 @@ export default {
         const identity = await authorize(request, env);
         if (!identity) return json({ error: "Your session expired. Sign in again." }, 401, origin);
         scheduleTrashSweep(env, ctx);
+        scheduleCalendarDispatch(env, ctx, calendarServices(env), `${url.origin}/?view=calendar`);
         return json({ user: await publicUser(identity, env) }, 200, origin);
       }
       if (url.pathname === "/auth/logout" && request.method === "POST") {
@@ -608,6 +610,25 @@ export default {
         const ids = rows.map((row) => row.id).filter((value) => typeof value === "string");
         if (!ids.length) return json({ ok: true, deleted: 0 }, 200, origin);
         return json(await deleteTrashEntriesForever(identity, ids, env), 200, origin);
+      }
+      if (url.pathname === "/internal/calendar-reminders" && request.method === "POST") {
+        // For pg_cron/pg_net or external schedulers: enabled only when the
+        // CALENDAR_REMINDER_TOKEN secret is configured; otherwise behaves as 404.
+        const token = String(env.CALENDAR_REMINDER_TOKEN || "").trim();
+        const supplied = String(request.headers.get("x-persora-cron-token") || "");
+        if (!token || !constantTimeEqual(supplied, token)) return json({ error: "Not found." }, 404, origin);
+        const totals = { claimed: 0, emailed: 0, emailFailed: 0, emailSkipped: 0 };
+        for (let batch = 0; batch < 4; batch += 1) {
+          const result = await dispatchCalendarReminders(env, calendarServices(env), { limit: 50, appUrl: `${url.origin}/?view=calendar` });
+          for (const key of Object.keys(totals)) totals[key] += result[key];
+          if (result.claimed < 50) break;
+        }
+        return json({ ok: true, ...totals }, 200, origin);
+      }
+      if (url.pathname === CALENDAR_ROUTE_PREFIX || url.pathname.startsWith(CALENDAR_ROUTE_PREFIX + "/")) {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in to open your calendar." }, 401, origin);
+        return await handleCalendar(request, identity, env, origin, calendarServices(env));
       }
       if (url.pathname === "/internal/trash-purge" && request.method === "POST") {
         // For external schedulers (e.g. Android cron jobs): enabled only when the
@@ -1738,6 +1759,17 @@ async function readPlatformSetting(env, key) {
 // Best-effort expiry sweep on app activity. Claiming the throttle slot before the
 // work burst runs means concurrent sessions cannot stampede the pipeline. With an
 // execution context the work continues after the response via waitUntil.
+/** Email delivery for calendar reminders, through the existing Brevo setup. */
+function calendarServices(env) {
+  return {
+    emailConfigured: () => Boolean(String(env.BREVO_API_KEY || "").trim()),
+    sendEmail: async (message) => {
+      const settings = await loadSettings(env);
+      return sendBrevoEmail(env, settings.email, message);
+    },
+  };
+}
+
 function scheduleTrashSweep(env, ctx) {
   const work = (async () => {
     try {
@@ -3027,7 +3059,7 @@ async function reviewPayment(body, identity, env) {
 async function createAccountExport(identity, env) {
   if (!env.VAULT_FILES) throw new Error("Private file storage is unavailable for this export.");
   const owner = encodeURIComponent(identity.id);
-  const [profileRows, items, contacts, cards, medicalRecords, medicalRecordLinks, documentShares, recordShares, notifications, authoredComments, subscriptions, payments, files, timelineExport] = await Promise.all([
+  const [profileRows, items, contacts, cards, medicalRecords, medicalRecordLinks, documentShares, recordShares, notifications, authoredComments, subscriptions, payments, files, timelineExport, calendarExport] = await Promise.all([
     restRows(`profiles?id=eq.${owner}&select=id,login_id,email,full_name,timezone,avatar_url,created_at,updated_at`, env),
     restRowsPaged(`vault_items?user_id=eq.${owner}&select=*&order=id.asc`, env),
     restRowsPaged(`contacts?user_id=eq.${owner}&select=*&order=id.asc`, env),
@@ -3042,6 +3074,7 @@ async function createAccountExport(identity, env) {
     restRowsPaged(`payment_records?user_id=eq.${owner}&select=*&order=submitted_at.asc`, env),
     listAccountFiles(env.VAULT_FILES, identity.id),
     loadTimelineExport(identity, env),
+    exportCalendarData(identity.id, env),
   ]);
   const ordinaryFiles = files.filter((file) => !file.key.startsWith(`${identity.id}/timeline/`));
   const indexedFiles = [
@@ -3055,7 +3088,7 @@ async function createAccountExport(identity, env) {
   const manifest = {
     format: "persora-complete-export-v1", exportedAt: new Date().toISOString(),
     account: profileRows[0] || { login_id: identity.login_id || "", email: identity.email || "", full_name: identity.full_name || "" },
-    data: { vaultItems: items, contacts, businessCards: cards, medicalRecords, medicalRecordLinks, documentShares, recordShares, notifications, authoredShareComments: authoredComments, subscriptions, paymentHistory: payments, timelineEvents: timelineExport.events },
+    data: { vaultItems: items, contacts, businessCards: cards, medicalRecords, medicalRecordLinks, documentShares, recordShares, notifications, authoredShareComments: authoredComments, subscriptions, paymentHistory: payments, timelineEvents: timelineExport.events, calendarEvents: calendarExport.events, calendarReminders: calendarExport.reminders },
     attachments: attachmentManifest,
     note: "Private attachment bytes, including medical-record files, are included under files/. Timeline text is decrypted only for this authenticated account export; timeline attachment files are decrypted into the archive. Session tokens, password hashes, and other accounts' private records are excluded.",
   };
