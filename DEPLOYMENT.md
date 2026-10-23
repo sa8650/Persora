@@ -1,4 +1,4 @@
-# Persora — Cloudflare Pages deployment
+# Persora — Cloudflare Pages deployment.
 
 Persora runs as one Cloudflare Pages project: the React/Vite site is static output, and Pages Functions serve the private API at same-origin `/api/*`. Supabase is the Postgres database only—**Persora custom authentication does not use Supabase Auth**. Cloudflare R2 stores private file attachments.
 
