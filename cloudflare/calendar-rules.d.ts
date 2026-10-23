@@ -3,6 +3,7 @@
 export type CalendarCategory = "personal" | "work" | "family" | "health" | "travel" | "social" | "other";
 export type RecurrenceFrequency = "daily" | "weekly" | "monthly";
 export type ReminderMinutes = 5 | 15 | 30 | 60 | 1440;
+export type CalendarItemType = "event" | "task" | "appointment";
 
 export interface Recurrence {
   freq: RecurrenceFrequency;
@@ -29,6 +30,8 @@ export interface CalendarEventLike {
   endDate: string | null;
   recurrence: Recurrence | null;
   reminderMinutes?: number | null;
+  itemType?: CalendarItemType;
+  completedAt?: string | null;
 }
 
 export interface OccurrenceTiming {
@@ -50,6 +53,8 @@ export interface CalendarOccurrence<E extends CalendarEventLike = CalendarEventL
 }
 
 export interface EventInput {
+  /** Defaults to "event". Ignored on updates (an item's type is fixed). */
+  itemType?: CalendarItemType;
   title: string;
   description?: string;
   location?: string;
@@ -65,6 +70,7 @@ export interface EventInput {
 }
 
 export interface NormalizedEvent {
+  itemType: CalendarItemType;
   title: string;
   description: string;
   location: string;
@@ -91,6 +97,7 @@ export interface NextReminder {
 export const CALENDAR_CATEGORIES: readonly CalendarCategory[];
 export const REMINDER_PRESETS: readonly ReminderMinutes[];
 export const RECURRENCE_FREQUENCIES: readonly RecurrenceFrequency[];
+export const ITEM_TYPES: readonly CalendarItemType[];
 export const CALENDAR_LIMITS: Readonly<{
   titleMax: number; descriptionMax: number; locationMax: number; intervalMax: number; countMax: number;
   timedMaxDays: number; allDayMaxDays: number; searchMax: number; rangeMaxDays: number;
@@ -128,7 +135,7 @@ export function startOfDayInstant(date: string, timeZone: string): number;
 export function isoInstant(value: string | number): string;
 
 export function normalizeRecurrence(input: unknown, startDate: string): Recurrence | null;
-export function normalizeEventInput(input: unknown, options?: { defaultTimeZone?: string; allowRecurrence?: boolean }): NormalizedEvent;
+export function normalizeEventInput(input: unknown, options?: { defaultTimeZone?: string; allowRecurrence?: boolean; itemType?: CalendarItemType | null }): NormalizedEvent;
 
 export function eventAnchor(event: CalendarEventLike): { date: string; time: string | null; durationDays: number; durationMs: number };
 export function recurrenceDates(anchorDate: string, recurrence: Recurrence | null, fromDate?: string): Generator<string, void, unknown>;
@@ -146,3 +153,42 @@ export function reminderDedupeKey(rootId: string, occurrenceKey: string, remindA
 
 export function toRRule(event: CalendarEventLike): string | null;
 export function describeRecurrence(event: CalendarEventLike, locale?: string): string;
+
+export interface TimeInterval { startMs: number; endMs: number }
+export function blocksTime(occurrence: CalendarOccurrence | null | undefined): boolean;
+export function overlaps(aStart: number, aEnd: number, bStart: number, bEnd: number): boolean;
+export function findConflicts<O extends CalendarOccurrence>(candidates: TimeInterval[], busy: O[], options?: { limit?: number }): { occurrence: O; candidateIndex: number; candidate: TimeInterval }[];
+export function suggestFreeSlots(options: {
+  startMs: number; endMs: number; busy: CalendarOccurrence[]; zone: string; nowMs?: number;
+  dayStart?: string; dayEnd?: string; stepMinutes?: number; limit?: number; maxDays?: number;
+}): TimeInterval[];
+
+export type FilterCategory = "default" | CalendarCategory;
+export interface CalendarFilters {
+  types: Record<CalendarItemType, boolean>;
+  categories: Record<FilterCategory, boolean>;
+  /** Show completed tasks. */
+  completed: boolean;
+}
+export const FILTER_CATEGORIES: readonly FilterCategory[];
+export function defaultCalendarFilters(): CalendarFilters;
+export function normalizeCalendarFilters(input: unknown): CalendarFilters;
+export function hiddenFilterCount(filters: unknown): number;
+export function matchesCalendarFilters(event: Pick<CalendarEventLike, "itemType" | "completedAt"> & { category?: CalendarCategory | null }, filters: CalendarFilters | unknown): boolean;
+
+export type MoveTarget =
+  | { allDay: false; startMs: number; endMs: number }
+  | { allDay: true; startDate: string; /** Exclusive. */ endDate: string };
+export interface MovedTiming {
+  allDay: boolean;
+  start: { date: string; time?: string };
+  /** All-day: the last day (inclusive). */
+  end: { date: string; time?: string };
+}
+export function shiftLocalDays(ms: number, days: number, zone: string): number;
+export function movedTiming(
+  event: CalendarEventLike,
+  occurrence: { allDay: boolean; startMs?: number | null; endMs?: number | null; startDate?: string | null; endDate?: string | null },
+  target: MoveTarget,
+  mode?: "replace" | "shift",
+): MovedTiming;

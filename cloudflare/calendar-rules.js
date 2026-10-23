@@ -27,6 +27,8 @@
 export const CALENDAR_CATEGORIES = Object.freeze(["personal", "work", "family", "health", "travel", "social", "other"]);
 export const REMINDER_PRESETS = Object.freeze([5, 15, 30, 60, 1440]);
 export const RECURRENCE_FREQUENCIES = Object.freeze(["daily", "weekly", "monthly"]);
+/** Calendar item types. Tasks and appointments never repeat; appointments are always timed. */
+export const ITEM_TYPES = Object.freeze(["event", "task", "appointment"]);
 export const CALENDAR_LIMITS = Object.freeze({
   titleMax: 200,
   descriptionMax: 2000,
@@ -236,9 +238,13 @@ export function normalizeRecurrence(input, startDate) {
  * `endDate` is exclusive. For timed events the dates/times are wall-clock
  * values in `timeZone`.
  */
-export function normalizeEventInput(input, { defaultTimeZone = "UTC", allowRecurrence = true } = {}) {
+export function normalizeEventInput(input, { defaultTimeZone = "UTC", allowRecurrence = true, itemType: forcedType = null } = {}) {
   const value = plainObject(input);
   if (!value) throw new CalendarValidationError("Send the event details.");
+  const requestedType = value.itemType === undefined || value.itemType === null || value.itemType === "" ? "event" : String(value.itemType);
+  if (!ITEM_TYPES.includes(requestedType)) throw new CalendarValidationError("Choose event, task or appointment.", "itemType");
+  // An item's type is fixed when it's created; updates pass the stored type.
+  const itemType = forcedType || requestedType;
   const title = cleanText(value.title, CALENDAR_LIMITS.titleMax + 1);
   if (!title) throw new CalendarValidationError("Add a title.", "title");
   if (title.length > CALENDAR_LIMITS.titleMax) throw new CalendarValidationError(`Keep the title under ${CALENDAR_LIMITS.titleMax} characters.`, "title");
@@ -253,6 +259,7 @@ export function normalizeEventInput(input, { defaultTimeZone = "UTC", allowRecur
   if (!isValidTimeZone(timeZone)) throw new CalendarValidationError("Choose a valid time zone.", "timeZone");
 
   const allDay = value.allDay === true;
+  if (itemType === "appointment" && allDay) throw new CalendarValidationError("Appointments need a start time.", "start");
   const start = plainObject(value.start) || {};
   const end = plainObject(value.end) || {};
   if (!isDateString(start.date)) throw new CalendarValidationError("Enter a valid start date.", "start");
@@ -278,10 +285,11 @@ export function normalizeEventInput(input, { defaultTimeZone = "UTC", allowRecur
   }
 
   const recurrence = allowRecurrence ? normalizeRecurrence(value.recurrence, anchorDate) : null;
+  if (recurrence && itemType !== "event") throw new CalendarValidationError(itemType === "task" ? "Tasks can't repeat. Create an event to repeat it." : "Appointments can't repeat. Create an event to repeat it.", "recurrence");
   const reminderMinutes = value.reminderMinutes === undefined || value.reminderMinutes === null || value.reminderMinutes === "" ? null : Number(value.reminderMinutes);
   if (reminderMinutes !== null && !REMINDER_PRESETS.includes(reminderMinutes)) throw new CalendarValidationError("Choose one of the reminder options.", "reminder");
   const reminderEmail = reminderMinutes !== null && value.reminderEmail === true;
-  return { title, description, location, category, allDay, timeZone, startAt, endAt, startDate, endDate, recurrence, reminderMinutes, reminderEmail };
+  return { itemType, title, description, location, category, allDay, timeZone, startAt, endAt, startDate, endDate, recurrence, reminderMinutes, reminderEmail };
 }
 
 // ---------------------------------------------------------------------------
@@ -525,6 +533,128 @@ export function reminderDedupeKey(rootId, occurrenceKey, remindAt) {
 }
 
 // ---------------------------------------------------------------------------
+// Display filters (saved per member; they never change or exclude stored data)
+// ---------------------------------------------------------------------------
+
+/** Category keys used by filters: the listed categories plus "default" (no category). */
+export const FILTER_CATEGORIES = Object.freeze(["default", ...CALENDAR_CATEGORIES]);
+
+export function defaultCalendarFilters() {
+  return {
+    types: Object.fromEntries(ITEM_TYPES.map((type) => [type, true])),
+    categories: Object.fromEntries(FILTER_CATEGORIES.map((category) => [category, true])),
+    completed: true,
+  };
+}
+
+/** Keeps known keys with boolean values; anything missing shows (true). */
+export function normalizeCalendarFilters(input) {
+  const value = plainObject(input) || {};
+  const types = plainObject(value.types) || {};
+  const categories = plainObject(value.categories) || {};
+  return {
+    types: Object.fromEntries(ITEM_TYPES.map((type) => [type, types[type] !== false])),
+    categories: Object.fromEntries(FILTER_CATEGORIES.map((category) => [category, categories[category] !== false])),
+    completed: value.completed !== false,
+  };
+}
+
+/** Number of hidden facets (0 means nothing is filtered). */
+export function hiddenFilterCount(filters) {
+  const value = normalizeCalendarFilters(filters);
+  return Object.values(value.types).filter((shown) => !shown).length
+    + Object.values(value.categories).filter((shown) => !shown).length
+    + (value.completed ? 0 : 1);
+}
+
+/** Is this event (or occurrence's event) shown with these filters? */
+export function matchesCalendarFilters(event, filters) {
+  const value = filters && filters.types && filters.categories ? filters : normalizeCalendarFilters(filters);
+  const type = ITEM_TYPES.includes(event?.itemType) ? event.itemType : "event";
+  if (value.types[type] === false) return false;
+  const category = event?.category && CALENDAR_CATEGORIES.includes(event.category) ? event.category : "default";
+  if (value.categories[category] === false) return false;
+  if (type === "task" && event.completedAt && value.completed === false) return false;
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Conflicts (timed overlaps) and free-slot suggestions
+// ---------------------------------------------------------------------------
+
+/**
+ * Can this occurrence block time? All-day items, cancelled occurrences and
+ * completed tasks never conflict.
+ */
+export function blocksTime(occurrence) {
+  if (!occurrence || occurrence.allDay) return false;
+  const event = occurrence.event || {};
+  if (event.status === "cancelled") return false;
+  if (event.itemType === "task" && event.completedAt) return false;
+  return Number.isFinite(occurrence.startMs) && Number.isFinite(occurrence.endMs) && occurrence.endMs > occurrence.startMs;
+}
+
+/** Half-open overlap: touching edges (10:00–11:00 and 11:00–12:00) don't conflict. */
+export function overlaps(aStart, aEnd, bStart, bEnd) {
+  return aStart < bEnd && bStart < aEnd;
+}
+
+/**
+ * Every busy occurrence that overlaps any candidate interval. Returns one entry
+ * per busy occurrence (the first candidate it overlaps), sorted by start.
+ * @param {{startMs:number,endMs:number}[]} candidates
+ * @param {CalendarOccurrence[]} busy already filtered (see blocksTime) and without the item being changed
+ */
+export function findConflicts(candidates, busy, { limit = 20 } = {}) {
+  const found = [];
+  const seen = new Set();
+  const sorted = [...busy].sort((a, b) => a.startMs - b.startMs);
+  for (const occurrence of sorted) {
+    if (seen.has(occurrence.id) || !blocksTime(occurrence)) continue;
+    const index = candidates.findIndex((candidate) => overlaps(candidate.startMs, candidate.endMs, occurrence.startMs, occurrence.endMs));
+    if (index < 0) continue;
+    seen.add(occurrence.id);
+    found.push({ occurrence, candidateIndex: index, candidate: candidates[index] });
+    if (found.length >= limit) break;
+  }
+  return found;
+}
+
+/**
+ * Nearby free slots with the same duration, on the requested local day first
+ * and then the next days, within working hours and never in the past. Sorted by
+ * distance from the requested start.
+ */
+export function suggestFreeSlots({ startMs, endMs, busy, zone, nowMs = Date.now(), dayStart = "07:00", dayEnd = "22:00", stepMinutes = 15, limit = 3, maxDays = 2 }) {
+  const duration = endMs - startMs;
+  if (!(duration > 0) || duration > DAY_MS) return [];
+  const tz = safeTimeZone(zone);
+  const blocks = busy.filter(blocksTime).map((occurrence) => [occurrence.startMs, occurrence.endMs]);
+  const isFree = (from, to) => !blocks.some(([a, b]) => overlaps(from, to, a, b));
+  const firstDay = localDateOf(startMs, tz);
+  const results = [];
+  for (let offset = 0; offset < maxDays && results.length < limit; offset += 1) {
+    const date = addDays(firstDay, offset);
+    const open = zonedTimeToInstant(date, dayStart, tz);
+    const close = zonedTimeToInstant(date, dayEnd, tz);
+    const options = [];
+    for (let from = open; from + duration <= close; from += stepMinutes * 60_000) {
+      const to = from + duration;
+      if (from === startMs || from < nowMs) continue;
+      if (isFree(from, to)) options.push({ startMs: from, endMs: to });
+    }
+    options.sort((a, b) => Math.abs(a.startMs - startMs) - Math.abs(b.startMs - startMs) || a.startMs - b.startMs);
+    // Prefer distinct choices rather than three adjacent quarter-hours.
+    for (const option of options) {
+      if (results.length >= limit) break;
+      if (results.some((chosen) => Math.abs(chosen.startMs - option.startMs) < Math.min(duration, 60 * 60_000))) continue;
+      results.push(option);
+    }
+  }
+  return results.sort((a, b) => a.startMs - b.startMs);
+}
+
+// ---------------------------------------------------------------------------
 // Interoperability (for future Google / Microsoft sync)
 // ---------------------------------------------------------------------------
 
@@ -564,4 +694,57 @@ export function describeRecurrence(event, locale = "en") {
     text += `, until ${until}`;
   }
   return text;
+}
+
+// ---------------------------------------------------------------------------
+// Moving and resizing (drag and drop, Reschedule)
+// ---------------------------------------------------------------------------
+
+const wallClock = (ms, zone) => ({ date: localDateOf(ms, zone), time: localTimeOf(ms, zone) });
+const minutesOfTime = (time) => { const [h, m] = time.split(":").map(Number); return h * 60 + m; };
+function addWallMinutes(date, time, minutes) {
+  const total = minutesOfTime(time) + minutes;
+  const within = ((total % 1440) + 1440) % 1440;
+  return { date: addDays(date, Math.floor(total / 1440)), time: `${pad(Math.floor(within / 60))}:${pad(within % 60)}` };
+}
+
+/** The same wall-clock time `days` later in `zone` (DST-safe: 9 AM stays 9 AM). */
+export function shiftLocalDays(ms, days, zone) {
+  const safe = safeTimeZone(zone);
+  return zonedTimeToInstant(addDays(localDateOf(ms, safe), days), localTimeOf(ms, safe), safe);
+}
+
+/**
+ * Timing for an item after one of its occurrences is moved or resized, as
+ * EventInput start/end in the event's own time zone (all-day ends inclusive).
+ *
+ * - "replace": the item (or the single occurrence) takes the target timing.
+ * - "shift": a whole series moves by the same wall-clock change as the
+ *   dragged occurrence and takes its new duration, so a weekly 9 AM series
+ *   dragged to Thursday 10 AM becomes Thursdays at 10 AM — across DST too.
+ *
+ * @param {CalendarEventLike} event   the item, or the series master for "shift"
+ * @param {{ allDay: boolean, startMs?: number|null, endMs?: number|null, startDate?: string|null, endDate?: string|null }} occurrence
+ * @param {{ allDay: boolean, startMs?: number, endMs?: number, startDate?: string, endDate?: string }} target  endDate exclusive
+ * @param {"replace"|"shift"} [mode]
+ */
+export function movedTiming(event, occurrence, target, mode = "replace") {
+  const zone = safeTimeZone(event.timeZone);
+  if (Boolean(target.allDay) !== Boolean(occurrence.allDay)) throw new CalendarValidationError("All-day items stay all-day and timed items stay timed when moved.");
+  if (target.allDay) {
+    if (!isDateString(target.startDate) || !isDateString(target.endDate)) throw new CalendarValidationError("Enter a valid date.", "start");
+    const span = Math.max(1, daysBetween(target.startDate, target.endDate));
+    const start = mode === "shift" ? addDays(eventAnchor(event).date, daysBetween(occurrence.startDate, target.startDate)) : target.startDate;
+    return { allDay: true, start: { date: start }, end: { date: addDays(start, span - 1) } };
+  }
+  if (!Number.isFinite(target.startMs) || !Number.isFinite(target.endMs)) throw new CalendarValidationError("Enter a valid time.", "start");
+  if (!(target.endMs > target.startMs)) throw new CalendarValidationError("The end must be after the start.", "end");
+  if (mode !== "shift") return { allDay: false, start: wallClock(target.startMs, zone), end: wallClock(target.endMs, zone) };
+  const anchor = eventAnchor(event);
+  const before = wallClock(occurrence.startMs, zone);
+  const after = wallClock(target.startMs, zone);
+  const delta = daysBetween(before.date, after.date) * 1440 + minutesOfTime(after.time) - minutesOfTime(before.time);
+  const start = addWallMinutes(anchor.date, anchor.time, delta);
+  const startMs = zonedTimeToInstant(start.date, start.time, zone);
+  return { allDay: false, start, end: wallClock(startMs + (target.endMs - target.startMs), zone) };
 }

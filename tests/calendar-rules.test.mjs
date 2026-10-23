@@ -119,3 +119,125 @@ test('nextOccurrence, RRULE and descriptions (sync-ready)', () => {
   const weekly = series({ title: 'X', allDay: false, start: { date: '2026-10-26', time: '09:00' }, end: { date: '2026-10-26', time: '10:00' }, recurrence: { freq: 'weekly', interval: 2, until: '2026-12-31' } });
   assert.match(toRRule(weekly), /^RRULE:FREQ=WEEKLY;INTERVAL=2;UNTIL=2026123\dT\d{6}Z$/);
 });
+
+// ---------------------------------------------------------------------------
+// Smart scheduling: item types, conflicts, free slots, filters, moving
+// ---------------------------------------------------------------------------
+import {
+  ITEM_TYPES, blocksTime, defaultCalendarFilters, findConflicts, hiddenFilterCount, matchesCalendarFilters, movedTiming, normalizeCalendarFilters,
+  overlaps, shiftLocalDays, suggestFreeSlots,
+} from '../cloudflare/calendar-rules.js';
+
+const timed = (date, start, end, extra = {}) => ({ itemType: 'event', title: 'X', allDay: false, timeZone: 'Asia/Dhaka', start: { date, time: start }, end: { date, time: end }, ...extra });
+
+test('item types: tasks and appointments are validated; type can be forced on update', () => {
+  assert.deepEqual([...ITEM_TYPES], ['event', 'task', 'appointment']);
+  assert.equal(normalizeEventInput(timed('2026-10-27', '09:00', '10:00')).itemType, 'event');
+  assert.equal(normalizeEventInput({ ...timed('2026-10-27', '09:00', '10:00'), itemType: undefined }).itemType, 'event', 'old clients without itemType create events');
+  assert.equal(normalizeEventInput(timed('2026-10-27', '09:00', '09:30', { itemType: 'task' })).itemType, 'task');
+  assert.equal(normalizeEventInput({ itemType: 'task', title: 'Due', allDay: true, start: { date: '2026-10-27' }, end: { date: '2026-10-27' } }).allDay, true, 'a task can be a due date');
+  assert.throws(() => normalizeEventInput(timed('2026-10-27', '09:00', '10:00', { itemType: 'meeting' })), (error) => error.field === 'itemType');
+  assert.throws(() => normalizeEventInput({ itemType: 'appointment', title: 'Dentist', allDay: true, start: { date: '2026-10-27' }, end: { date: '2026-10-27' } }), /need a start time/);
+  assert.throws(() => normalizeEventInput(timed('2026-10-27', '09:00', '10:00', { itemType: 'task', recurrence: { freq: 'weekly' } })), (error) => error.field === 'recurrence');
+  assert.throws(() => normalizeEventInput(timed('2026-10-27', '09:00', '10:00', { itemType: 'appointment', recurrence: { freq: 'daily' } })), (error) => error.field === 'recurrence');
+  assert.equal(normalizeEventInput(timed('2026-10-27', '09:00', '10:00', { itemType: 'event' }), { itemType: 'task' }).itemType, 'task', 'updates keep the stored type');
+});
+
+test('conflicts: timed, half-open overlaps; completed tasks, all-day and cancelled items never block', () => {
+  const zone = 'Asia/Dhaka';
+  const at = (time, date = '2026-10-27') => zonedTimeToInstant(date, time, zone);
+  const occ = (id, start, end, event = {}) => ({ id, startMs: at(start), endMs: at(end), allDay: false, event: { id, title: id, itemType: 'event', ...event } });
+  assert.equal(overlaps(at('10:00'), at('11:00'), at('11:00'), at('12:00')), false, 'touching edges are fine');
+  assert.equal(overlaps(at('10:00'), at('11:00'), at('10:59'), at('12:00')), true);
+  assert.equal(blocksTime({ allDay: true, startDate: '2026-10-27', endDate: '2026-10-28', event: {} }), false);
+  assert.equal(blocksTime(occ('done', '10:00', '11:00', { itemType: 'task', completedAt: '2026-10-26T00:00:00Z' })), false);
+  assert.equal(blocksTime(occ('open', '10:00', '11:00', { itemType: 'task', completedAt: null })), true, 'scheduled open tasks count');
+  assert.equal(blocksTime(occ('gone', '10:00', '11:00', { status: 'cancelled' })), false);
+  const busy = [occ('a', '09:00', '10:00'), occ('b', '10:30', '11:30', { itemType: 'appointment' }), occ('c', '10:45', '11:15', { itemType: 'task' }), occ('d', '12:00', '13:00')].filter(blocksTime);
+  const found = findConflicts([{ startMs: at('10:00'), endMs: at('11:00') }], busy);
+  assert.deepEqual(found.map((entry) => entry.occurrence.id), ['b', 'c'], 'lists every overlap, in start order');
+  // A series candidate list: each busy item is reported once.
+  const weekly = findConflicts([{ startMs: at('09:30'), endMs: at('10:15') }, { startMs: at('09:30', '2026-11-03'), endMs: at('10:15', '2026-11-03') }], busy);
+  assert.deepEqual(weekly.map((entry) => entry.occurrence.id), ['a']);
+});
+
+test('free-slot suggestions: nearby, free, inside the day, not in the past, DST-aware', () => {
+  const zone = 'Asia/Dhaka';
+  const at = (time, date = '2026-10-27') => zonedTimeToInstant(date, time, zone);
+  const busy = [
+    { id: 'm', startMs: at('09:00'), endMs: at('11:00'), allDay: false, event: { itemType: 'event' } },
+    { id: 'n', startMs: at('11:30'), endMs: at('12:00'), allDay: false, event: { itemType: 'event' } },
+  ];
+  const slots = suggestFreeSlots({ startMs: at('10:00'), endMs: at('11:00'), busy, zone, nowMs: at('08:00') });
+  assert.ok(slots.length >= 1 && slots.length <= 3);
+  for (const slot of slots) {
+    assert.equal(slot.endMs - slot.startMs, 3_600_000, 'keeps the duration');
+    assert.ok(!busy.some((item) => overlaps(slot.startMs, slot.endMs, item.startMs, item.endMs)), 'is free');
+    assert.ok(slot.startMs >= at('08:00'), 'not in the past');
+    assert.ok(localTimeOf(slot.startMs, zone) >= '07:00' && localTimeOf(slot.endMs, zone) <= '22:00', 'within the day');
+  }
+  assert.equal(localTimeOf(slots[0].startMs, zone), '08:00', 'the nearest free hour before the meeting');
+  assert.deepEqual(suggestFreeSlots({ startMs: at('10:00'), endMs: at('10:00'), busy, zone }), [], 'no suggestions for empty intervals');
+  // New York on the day DST ends: slots stay on the quarter-hour grid in local time.
+  const ny = 'America/New_York';
+  const nyBusy = [{ id: 'x', startMs: zonedTimeToInstant('2026-11-01', '09:00', ny), endMs: zonedTimeToInstant('2026-11-01', '10:00', ny), allDay: false, event: {} }];
+  const nySlots = suggestFreeSlots({ startMs: nyBusy[0].startMs, endMs: nyBusy[0].endMs, busy: nyBusy, zone: ny, nowMs: 0 });
+  assert.ok(nySlots.length > 0 && nySlots.every((slot) => /:(00|15|30|45)$/.test(localTimeOf(slot.startMs, ny))));
+});
+
+test('filters: combinable, normalized, display-only facets', () => {
+  const all = defaultCalendarFilters();
+  assert.equal(hiddenFilterCount(all), 0);
+  const event = { itemType: 'event', category: 'work', completedAt: null };
+  const task = { itemType: 'task', category: null, completedAt: null };
+  const done = { itemType: 'task', category: 'personal', completedAt: '2026-10-20T10:00:00Z' };
+  const appointment = { itemType: 'appointment', category: 'health', completedAt: null };
+  const legacy = { title: 'Old row without type', category: null };
+  for (const item of [event, task, done, appointment, legacy]) assert.equal(matchesCalendarFilters(item, all), true);
+  const noTasks = normalizeCalendarFilters({ types: { task: false } });
+  assert.deepEqual([event, task, done, appointment, legacy].map((item) => matchesCalendarFilters(item, noTasks)), [true, false, false, true, true]);
+  const noDone = normalizeCalendarFilters({ completed: false });
+  assert.deepEqual([task, done].map((item) => matchesCalendarFilters(item, noDone)), [true, false]);
+  const combo = normalizeCalendarFilters({ types: { appointment: false }, categories: { work: false, default: false } });
+  assert.deepEqual([event, task, done, appointment, legacy].map((item) => matchesCalendarFilters(item, combo)), [false, false, true, false, false]);
+  assert.equal(hiddenFilterCount(combo), 3);
+  // Junk from storage or the network can't break anything.
+  assert.deepEqual(normalizeCalendarFilters({ types: { task: 'no', bogus: false }, categories: 'x', completed: 0 }), { ...all, completed: true });
+  assert.deepEqual(normalizeCalendarFilters(null), all);
+});
+
+test('moving: single items take the target; series shift by the same wall-clock change (DST-safe)', () => {
+  const ny = 'America/New_York';
+  // A one-off 9–10 AM item dragged to Thursday 2:15 PM, resized to 90 minutes.
+  const single = { id: 'e', timeZone: ny, allDay: false, startAt: new Date(zonedTimeToInstant('2026-10-27', '09:00', ny)).toISOString(), endAt: new Date(zonedTimeToInstant('2026-10-27', '10:00', ny)).toISOString(), startDate: null, endDate: null, recurrence: null };
+  const occurrence = { allDay: false, startMs: Date.parse(single.startAt), endMs: Date.parse(single.endAt) };
+  const target = { allDay: false, startMs: zonedTimeToInstant('2026-10-29', '14:15', ny), endMs: zonedTimeToInstant('2026-10-29', '15:45', ny) };
+  assert.deepEqual(movedTiming(single, occurrence, target), { allDay: false, start: { date: '2026-10-29', time: '14:15' }, end: { date: '2026-10-29', time: '15:45' } });
+  // The event keeps its own zone even when the grid shows another one.
+  const shownInDhaka = { allDay: false, startMs: zonedTimeToInstant('2026-10-30', '01:00', 'Asia/Dhaka'), endMs: zonedTimeToInstant('2026-10-30', '02:00', 'Asia/Dhaka') };
+  assert.deepEqual(movedTiming(single, occurrence, shownInDhaka).start, { date: '2026-10-29', time: '15:00' });
+
+  // Weekly Tuesdays 9 AM (EDT) series; the 3 Nov occurrence (after DST ends) is dragged to Wednesday 10 AM.
+  const weekly = series({ title: 'Standup', allDay: false, start: { date: '2026-10-20', time: '09:00' }, end: { date: '2026-10-20', time: '09:30' }, recurrence: { freq: 'weekly' } });
+  const nov3 = occurrenceOn({ ...weekly, id: 's1' }, '2026-11-03');
+  const moved = { allDay: false, startMs: zonedTimeToInstant('2026-11-04', '10:00', ny), endMs: zonedTimeToInstant('2026-11-04', '10:45', ny) };
+  const shifted = movedTiming(weekly, nov3, moved, 'shift');
+  assert.deepEqual(shifted, { allDay: false, start: { date: '2026-10-21', time: '10:00' }, end: { date: '2026-10-21', time: '10:45' } }, 'the anchor moves a day and an hour in wall-clock terms, and takes the new length');
+  // That series still lands at 10:00 local on both sides of the DST change.
+  const next = series({ title: 'Standup', allDay: false, ...shifted, recurrence: { freq: 'weekly' } });
+  const dates = expandOccurrences([{ ...next, id: 's2' }], '2026-10-20', '2026-11-12', ny).map((entry) => `${localDateOf(entry.startMs, ny)} ${localTimeOf(entry.startMs, ny)}`);
+  assert.deepEqual(dates, ['2026-10-21 10:00', '2026-10-28 10:00', '2026-11-04 10:00', '2026-11-11 10:00']);
+
+  // All-day: by whole days, keeping the span; series shift by the same number of days.
+  const trip = { allDay: true, startDate: '2026-10-27', endDate: '2026-10-30' };
+  assert.deepEqual(movedTiming({ id: 't', timeZone: ny, allDay: true, ...trip }, trip, { allDay: true, startDate: '2026-11-02', endDate: '2026-11-05' }),
+    { allDay: true, start: { date: '2026-11-02' }, end: { date: '2026-11-04' } });
+  const monthly = series({ title: 'Rent', allDay: true, start: { date: '2026-10-01' }, end: { date: '2026-10-01' }, recurrence: { freq: 'monthly' } });
+  assert.deepEqual(movedTiming(monthly, { allDay: true, startDate: '2026-11-01', endDate: '2026-11-02' }, { allDay: true, startDate: '2026-11-03', endDate: '2026-11-04' }, 'shift'),
+    { allDay: true, start: { date: '2026-10-03' }, end: { date: '2026-10-03' } });
+  // Guards.
+  assert.throws(() => movedTiming(single, occurrence, { allDay: true, startDate: '2026-10-29', endDate: '2026-10-30' }), CalendarValidationError);
+  assert.throws(() => movedTiming(single, occurrence, { allDay: false, startMs: target.endMs, endMs: target.startMs }), /end must be after/);
+  // Day shifts keep the wall-clock time across DST.
+  assert.equal(localTimeOf(shiftLocalDays(zonedTimeToInstant('2026-10-31', '09:00', ny), 2, ny), ny), '09:00');
+});

@@ -1,9 +1,9 @@
 // Persora Calendar — pure view helpers (ranges, headings, layout, form drafts).
 import {
-  addDays, addMonths, daysBetween, localDateOf, localTimeOf, parseDate, startOfDayInstant, startOfMonth, startOfWeek,
+  addDays, addMonths, daysBetween, localDateOf, localTimeOf, parseDate, shiftLocalDays, startOfDayInstant, startOfMonth, startOfWeek,
   weekdayOf, zonedTimeToInstant,
 } from "../../cloudflare/calendar-rules.js";
-import type { CalendarCategory, CalendarOccurrence, EventInput, RecurrenceFrequency } from "../../cloudflare/calendar-rules.js";
+import type { CalendarCategory, CalendarItemType, CalendarOccurrence, EventInput, MoveTarget, MovedTiming, RecurrenceFrequency } from "../../cloudflare/calendar-rules.js";
 import type { CalendarEvent } from "./calendar-api";
 
 export type CalendarViewMode = "week" | "day" | "month" | "agenda";
@@ -26,6 +26,20 @@ export const REMINDER_OPTIONS: { minutes: number; label: string }[] = [
   { minutes: 5, label: "5 minutes before" }, { minutes: 15, label: "15 minutes before" }, { minutes: 30, label: "30 minutes before" },
   { minutes: 60, label: "1 hour before" }, { minutes: 1440, label: "1 day before" },
 ];
+export const ITEM_TYPE_OPTIONS: { id: CalendarItemType; label: string; create: string }[] = [
+  { id: "event", label: "Event", create: "Create event" },
+  { id: "task", label: "Task", create: "Create task" },
+  { id: "appointment", label: "Appointment", create: "Schedule appointment" },
+];
+/** Lower-case noun for messages ("event", "task", "appointment"). */
+export const itemNoun = (type: CalendarItemType | undefined | null) => (type === "task" ? "task" : type === "appointment" ? "appointment" : "event");
+export const DEFAULT_DURATION: Record<CalendarItemType, number> = { event: 60, task: 30, appointment: 30 };
+export const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120, 180, 240];
+export function durationLabel(minutes: number): string {
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60); const rest = minutes % 60;
+  return rest ? `${hours} h ${rest} min` : `${hours} hour${hours === 1 ? "" : "s"}`;
+}
 export const reminderLabel = (minutes: number | null | undefined) => REMINDER_OPTIONS.find((option) => option.minutes === minutes)?.label || null;
 
 export function todayIn(zone: string, now = Date.now()): string {
@@ -191,6 +205,7 @@ export function groupByDay(occurrences: Occurrence[], from: string, to: string, 
 // ---------------------------------------------------------------------------
 
 export interface EventDraft {
+  itemType: CalendarItemType;
   title: string;
   description: string;
   location: string;
@@ -219,12 +234,13 @@ export function addMinutesToTime(date: string, time: string, minutes: number): {
   return { date: addDays(date, dayShift), time: `${pad(Math.floor(within / 60))}:${pad(within % 60)}` };
 }
 
-/** Blank draft for a new event at a date (and optionally a time) in the member's zone. */
-export function newDraft(zone: string, date: string, time: string | null, allDay = false): EventDraft {
+/** Blank draft for a new item at a date (and optionally a time) in the member's zone. */
+export function newDraft(zone: string, date: string, time: string | null, allDay = false, itemType: CalendarItemType = "event"): EventDraft {
   const startTime = time || "09:00";
-  const end = addMinutesToTime(date, startTime, 60);
+  const end = addMinutesToTime(date, startTime, DEFAULT_DURATION[itemType]);
+  if (itemType === "appointment") allDay = false;
   return {
-    title: "", description: "", location: "", category: "", allDay, timeZone: zone,
+    itemType, title: "", description: "", location: "", category: "", allDay, timeZone: zone,
     startDate: date, startTime, endDate: allDay ? date : end.date, endTime: end.time,
     repeat: "none", interval: 1, ends: "never", until: "", count: 10, reminderMinutes: "", reminderEmail: false,
   };
@@ -233,6 +249,7 @@ export function newDraft(zone: string, date: string, time: string | null, allDay
 function draftBase(event: CalendarEvent): Omit<EventDraft, "startDate" | "startTime" | "endDate" | "endTime"> {
   const recurrence = event.seriesId ? null : event.recurrence;
   return {
+    itemType: event.itemType || "event",
     title: event.title, description: event.description || "", location: event.location || "", category: event.category || "",
     allDay: event.allDay, timeZone: event.timeZone,
     repeat: recurrence?.freq || "none", interval: recurrence?.interval || 1,
@@ -273,7 +290,9 @@ export function draftFromOccurrence(occurrence: Occurrence): EventDraft {
 }
 
 export function draftToInput(draft: EventDraft, allowRecurrence: boolean): EventInput {
+  allowRecurrence = allowRecurrence && draft.itemType === "event";
   return {
+    itemType: draft.itemType,
     title: draft.title, description: draft.description, location: draft.location,
     category: draft.category || null, allDay: draft.allDay, timeZone: draft.timeZone,
     start: draft.allDay ? { date: draft.startDate } : { date: draft.startDate, time: draft.startTime },
@@ -290,16 +309,18 @@ export function draftToInput(draft: EventDraft, allowRecurrence: boolean): Event
 
 /** Client-side check mirroring the server rules, for instant feedback. */
 export function draftError(draft: EventDraft): { field: string; message: string } | null {
+  const noun = itemNoun(draft.itemType);
   if (!draft.title.trim()) return { field: "title", message: "Add a title." };
+  if (draft.itemType === "appointment" && draft.allDay) return { field: "start", message: "Appointments need a start time." };
   if (!draft.startDate) return { field: "start", message: "Choose a start date." };
   if (!draft.endDate) return { field: "end", message: "Choose an end date." };
   if (draft.allDay) {
-    if (draft.endDate < draft.startDate) return { field: "end", message: "The event must end on or after the day it starts." };
+    if (draft.endDate < draft.startDate) return { field: "end", message: `The ${noun} must end on or after the day it starts.` };
   } else {
     if (!draft.startTime || !draft.endTime) return { field: "start", message: "Choose start and end times." };
     const start = zonedTimeToInstant(draft.startDate, draft.startTime, draft.timeZone);
     const end = zonedTimeToInstant(draft.endDate, draft.endTime, draft.timeZone);
-    if (!(end > start)) return { field: "end", message: "The event must end after it starts." };
+    if (!(end > start)) return { field: "end", message: `The ${noun} must end after it starts.` };
   }
   if (draft.repeat !== "none" && draft.ends === "until" && draft.until && draft.until < draft.startDate) return { field: "recurrence", message: "The repeat end date must be on or after the start date." };
   return null;
@@ -314,4 +335,90 @@ export function nextHalfHour(zone: string, now = Date.now()): { date: string; ti
   const [h, m] = localTimeOf(now, zone).split(":").map(Number);
   const total = Math.ceil((h * 60 + m + 1) / 30) * 30;
   return total >= 1440 ? { date: addDays(date, 1), time: "00:00" } : { date, time: `${pad(Math.floor(total / 60))}:${pad(total % 60)}` };
+}
+
+/** Minutes between a timed draft's start and end (wall clock in the draft's zone). */
+export function draftDuration(draft: EventDraft): number {
+  if (draft.allDay || !draft.startTime || !draft.endTime || !draft.startDate || !draft.endDate) return 0;
+  return Math.round((zonedTimeToInstant(draft.endDate, draft.endTime, draft.timeZone) - zonedTimeToInstant(draft.startDate, draft.startTime, draft.timeZone)) / 60000);
+}
+
+/** Applies a new timing (from a drag, resize or Reschedule) to a draft. */
+export function applyTiming(draft: EventDraft, timing: MovedTiming): EventDraft {
+  if (timing.allDay) return { ...draft, allDay: true, startDate: timing.start.date, endDate: timing.end.date };
+  return { ...draft, allDay: false, startDate: timing.start.date, startTime: timing.start.time as string, endDate: timing.end.date, endTime: timing.end.time as string };
+}
+
+/** Editable draft for a quick-add preview (input from quickAddToInput). */
+export function draftFromInput(input: EventInput, zone: string): EventDraft {
+  const itemType = input.itemType || "event";
+  const base = newDraft(input.timeZone || zone, input.start.date, input.start.time || null, input.allDay, itemType);
+  return {
+    ...base, title: input.title, description: input.description || "", location: input.location || "", category: input.category || "",
+    allDay: input.allDay, endDate: input.end.date, endTime: input.end.time || base.endTime,
+    repeat: input.recurrence && input.recurrence.freq !== "none" ? input.recurrence.freq : "none",
+    interval: input.recurrence?.interval || 1,
+    ends: input.recurrence?.until ? "until" : input.recurrence?.count ? "count" : "never",
+    until: input.recurrence?.until || "", count: input.recurrence?.count || 10,
+    reminderMinutes: typeof input.reminderMinutes === "number" ? input.reminderMinutes : "",
+  };
+}
+
+/** What a conflict check should skip so an item doesn't overlap itself. */
+export function conflictIgnore(occurrence: Occurrence | null, scope: "occurrence" | "series" | null) {
+  if (!occurrence) return null;
+  const seriesId = occurrence.seriesId || (occurrence.recurring ? occurrence.event.id : null);
+  if (!occurrence.recurring || !seriesId) return { eventId: occurrence.event.id };
+  if (scope === "series") return { seriesId, scope: "series" as const };
+  return { seriesId, occurrenceKey: occurrence.occurrenceKey, scope: "occurrence" as const, eventId: occurrence.exception ? occurrence.event.id : null };
+}
+
+/** Target for dragging an occurrence by whole days (Month view, all-day row). Timed items keep their wall-clock time. */
+export function dayDragTarget(occurrence: Occurrence, days: number, zone: string): MoveTarget {
+  if (occurrence.allDay) return { allDay: true, startDate: addDays(occurrence.startDate as string, days), endDate: addDays(occurrence.endDate as string, days) };
+  const startMs = shiftLocalDays(occurrence.startMs as number, days, zone);
+  return { allDay: false, startMs, endMs: startMs + ((occurrence.endMs as number) - (occurrence.startMs as number)) };
+}
+
+/** The occurrence shown at a new timing (optimistic display while a move saves). */
+export function withTiming(occurrence: Occurrence, target: MoveTarget): Occurrence {
+  return target.allDay
+    ? { ...occurrence, allDay: true, startDate: target.startDate, endDate: target.endDate, startMs: null, endMs: null }
+    : { ...occurrence, allDay: false, startMs: target.startMs, endMs: target.endMs, startDate: null, endDate: null };
+}
+
+/** "Tue, Oct 27, 3:00 – 4:00 PM" (or "All day") for an interval in the display zone. */
+export function intervalLabel(startMs: number, endMs: number, zone: string): string {
+  const first = localDateOf(startMs, zone); const last = localDateOf(Math.max(startMs, endMs - 1), zone);
+  const day = (date: string) => formatDay(date, { weekday: "short", month: "short", day: "numeric" });
+  if (first === last) return `${day(first)}, ${formatTime(startMs, zone)} – ${formatTime(endMs, zone)}`;
+  return `${day(first)}, ${formatTime(startMs, zone)} – ${day(last)}, ${formatTime(endMs, zone)}`;
+}
+
+export function targetLabel(target: MoveTarget, zone: string): string {
+  if (!target.allDay) return intervalLabel(target.startMs, target.endMs, zone);
+  const last = addDays(target.endDate, -1);
+  const day = (date: string) => formatDay(date, { weekday: "short", month: "short", day: "numeric" });
+  return last === target.startDate ? `${day(target.startDate)} · All day` : `${day(target.startDate)} – ${day(last)} · All day`;
+}
+
+/** Moving the start keeps the duration (all-day: the number of days), like the editor. */
+export function moveDraftStart(current: EventDraft, patch: { startDate?: string; startTime?: string }): EventDraft {
+  const next = { ...current, ...patch };
+  if (!next.startDate || !current.startDate) return next;
+  if (current.allDay) {
+    const days = current.endDate && current.endDate >= current.startDate ? daysBetween(current.startDate, current.endDate) : 0;
+    return { ...next, endDate: addDays(next.startDate, days) };
+  }
+  const duration = draftDuration(current);
+  if (!(duration > 0) || !next.startTime) return next;
+  const end = addMinutesToTime(next.startDate, next.startTime, duration);
+  return { ...next, endDate: end.date, endTime: end.time };
+}
+
+/** Sets a timed draft's length in minutes. */
+export function setDraftDuration(current: EventDraft, minutes: number): EventDraft {
+  if (!current.startDate || !current.startTime) return current;
+  const end = addMinutesToTime(current.startDate, current.startTime, minutes);
+  return { ...current, endDate: end.date, endTime: end.time };
 }

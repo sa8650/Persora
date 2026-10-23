@@ -1,16 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, PanelLeft, Plus, Repeat, Search, X } from "lucide-react";
+import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, ListFilter, PanelLeft, Plus, Repeat, Search, X } from "lucide-react";
 import "./calendar.css";
 import type { AppUser } from "../../types";
 import { PagesApiError, isPagesApiConfigured } from "../../lib/cloud";
 import {
-  CALENDAR_CHANGED_EVENT, createCalendarEvent, deleteCalendarEvent, loadCalendarEvent, loadCalendarEvents, loadCalendarMeta, searchCalendarEvents, updateCalendarEvent,
+  CALENDAR_CHANGED_EVENT, checkCalendarConflicts, createCalendarEvent, deleteCalendarEvent, loadCalendarEvent, loadCalendarEvents, loadCalendarMeta,
+  loadCalendarPreferences, saveCalendarPreferences, searchCalendarEvents, setCalendarTaskCompletion, updateCalendarEvent,
 } from "../../lib/calendar-api";
-import type { CalendarEvent, CalendarMeta } from "../../lib/calendar-api";
-import { eventAnchor, expandOccurrences, nextOccurrence, occurrenceOn, safeTimeZone } from "../../../cloudflare/calendar-rules.js";
+import type { CalendarEvent, CalendarInterval, CalendarMeta, ConflictReport, EditScope } from "../../lib/calendar-api";
 import {
-  VIEW_MODES, datesBetween, draftFromEvent, formatDay, draftFromOccurrence, draftToInput, newDraft, nextHalfHour, occurrenceDateLabel, occurrenceDays,
-  occurrenceTimeLabel, rangeHeading, shiftAnchor, todayIn, visibleRange,
+  eventAnchor, expandOccurrences, hiddenFilterCount, matchesCalendarFilters, movedTiming, nextOccurrence, normalizeCalendarFilters, occurrenceOn, safeTimeZone,
+} from "../../../cloudflare/calendar-rules.js";
+import type { CalendarFilters, CalendarItemType, MoveTarget } from "../../../cloudflare/calendar-rules.js";
+import {
+  VIEW_MODES, applyTiming, conflictIgnore, datesBetween, draftFromEvent, formatDay, draftFromOccurrence, draftToInput, itemNoun, newDraft, nextHalfHour,
+  occurrenceDateLabel, occurrenceDays, occurrenceTimeLabel, rangeHeading, shiftAnchor, targetLabel, todayIn, visibleRange, withTiming,
 } from "../../lib/calendar-view";
 import type { CalendarViewMode, EventDraft, Occurrence } from "../../lib/calendar-view";
 import { CalPopover, CategoryDot, MiniCalendar, ScopeDialog, rectOf, useMediaQuery } from "./CalendarParts";
@@ -18,7 +22,10 @@ import type { AnchorRect } from "./CalendarParts";
 import TimeGrid from "./TimeGrid";
 import MonthGrid from "./MonthGrid";
 import AgendaList from "./AgendaList";
-import { EventDetails, EventEditor, QuickCreate } from "./EventDialogs";
+import { EventDetails, EventEditor, SmartCreate } from "./EventDialogs";
+import type { SmartCreateContext } from "./EventDialogs";
+import { ConflictDialog, CreateMenu, FilterMenu, ItemTypeIcon, RescheduleDialog, filterSummary } from "./SmartParts";
+import type { FilterSync } from "./SmartParts";
 
 interface EditorState {
   mode: "create" | "edit";
@@ -38,11 +45,25 @@ interface Props {
   focusRequest?: { date: string; nonce: number } | null;
 }
 
+interface MoveRequest { occurrence: Occurrence; target: MoveTarget; scope: EditScope | null }
+
 const VIEW_KEY = (userId: string) => `persora-calendar-view:${userId}`;
+const FILTER_KEY = (userId: string) => `persora-calendar-filters:${userId}`;
 const SIDEBAR_KEY = (userId: string) => `persora-calendar-sidebar:${userId}`;
 const readStored = (key: string) => { try { return localStorage.getItem(key); } catch { return null; } };
 const writeStored = (key: string, value: string) => { try { localStorage.setItem(key, value); } catch { /* preference only */ } };
 const errorMessage = (error: unknown, fallback: string) => (error instanceof Error && error.message ? error.message : fallback);
+
+/** Filters saved on this device: { filters, updatedAt } (display only, never affects data). */
+function readStoredFilters(userId: string): { filters: CalendarFilters; updatedAt: string | null } {
+  try {
+    const raw = JSON.parse(readStored(FILTER_KEY(userId)) || "null");
+    return { filters: normalizeCalendarFilters(raw?.filters), updatedAt: typeof raw?.updatedAt === "string" ? raw.updatedAt : null };
+  } catch { return { filters: normalizeCalendarFilters({}), updatedAt: null }; }
+}
+const writeStoredFilters = (userId: string, filters: CalendarFilters, updatedAt: string | null) => writeStored(FILTER_KEY(userId), JSON.stringify({ filters, updatedAt }));
+const newer = (a: string | null, b: string | null) => Boolean(a) && (!b || Date.parse(a as string) > Date.parse(b));
+const capitalize = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
 
 function initialMode(userId: string): CalendarViewMode {
   const stored = readStored(VIEW_KEY(userId));
@@ -88,12 +109,20 @@ export default function CalendarView({ user, notify, focusRequest }: Props) {
   const [highlightId, setHighlightId] = useState<string | null>(null);
 
   const [selected, setSelected] = useState<{ occurrence: Occurrence; anchor: AnchorRect | null } | null>(null);
-  const [quick, setQuick] = useState<{ draft: EventDraft; anchor: AnchorRect | null } | null>(null);
+  const [quick, setQuick] = useState<{ context: SmartCreateContext | null; text: string; type: CalendarItemType; anchor: AnchorRect | null; key: number } | null>(null);
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [scopePrompt, setScopePrompt] = useState<{ action: "edit" | "delete"; occurrence: Occurrence } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Occurrence | null>(null);
   const [datePicker, setDatePicker] = useState<AnchorRect | null>(null);
   const [busy, setBusy] = useState(false);
+  const [filters, setFilters] = useState<CalendarFilters>(() => readStoredFilters(user.id).filters);
+  const [filterSync, setFilterSync] = useState<FilterSync>("local");
+  const filterTimer = useRef(0);
+  const [pending, setPending] = useState<Record<string, { target: MoveTarget; status: "saving" | "saved" }>>({});
+  const [movePrompt, setMovePrompt] = useState<{ occurrence: Occurrence; target: MoveTarget } | null>(null);
+  const [moveConflict, setMoveConflict] = useState<{ request: MoveRequest; report: ConflictReport } | null>(null);
+  const [reschedule, setReschedule] = useState<Occurrence | null>(null);
+  const [moving, setMoving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const headingRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -117,12 +146,44 @@ export default function CalendarView({ user, notify, focusRequest }: Props) {
     setLoadState("loading");
     loadCalendarEvents(range.from, range.to, controller.signal).then((rows) => {
       setEvents(rows); setLoadedRange(`${range.from}/${range.to}`); setLoadState("ready"); setLoadError("");
+      setPending((current) => Object.fromEntries(Object.entries(current).filter(([, entry]) => entry.status === "saving")));
     }).catch((error) => {
       if (controller.signal.aborted) return;
       setLoadState("error"); setLoadError(errorMessage(error, "Your calendar couldn't be loaded."));
     });
     return () => controller.abort();
   }, [range.from, range.to, reloadKey, disabled]);
+
+  // Filter preferences: this device first, then the account copy (newest wins).
+  useEffect(() => {
+    if (disabled) return;
+    let active = true;
+    loadCalendarPreferences().then((saved) => {
+      if (!active) return;
+      const local = readStoredFilters(user.id);
+      if (saved.saved && !newer(local.updatedAt, saved.updatedAt)) {
+        setFilters(saved.filters); writeStoredFilters(user.id, saved.filters, saved.updatedAt); setFilterSync("saved");
+      } else if (local.updatedAt) {
+        saveCalendarPreferences(local.filters).then((result) => { if (active) { writeStoredFilters(user.id, local.filters, result.updatedAt); setFilterSync("saved"); } })
+          .catch(() => { if (active) setFilterSync("offline"); });
+      }
+    }).catch(() => { if (active) setFilterSync("offline"); });
+    return () => { active = false; };
+  }, [disabled, user.id]);
+  useEffect(() => () => window.clearTimeout(filterTimer.current), []);
+
+  const changeFilters = useCallback((next: CalendarFilters) => {
+    const value = normalizeCalendarFilters(next);
+    setFilters(value);
+    writeStoredFilters(user.id, value, new Date().toISOString());
+    if (disabled) return;
+    setFilterSync("saving");
+    window.clearTimeout(filterTimer.current);
+    filterTimer.current = window.setTimeout(() => {
+      saveCalendarPreferences(value).then((result) => { writeStoredFilters(user.id, value, result.updatedAt); setFilterSync("saved"); }).catch(() => setFilterSync("offline"));
+    }, 700);
+  }, [disabled, user.id]);
+  const resetFilters = () => changeFilters(normalizeCalendarFilters({}));
 
   useEffect(() => {
     if (!focusRequest) return;
@@ -152,9 +213,15 @@ export default function CalendarView({ user, notify, focusRequest }: Props) {
   }, [highlightId]);
 
   const occurrences = useMemo(() => expandOccurrences(events, range.from, range.to, zone), [events, range.from, range.to, zone]);
+  const hiddenFilters = hiddenFilterCount(filters);
+  // Filters are display-only: they never change what's loaded, saved or exported.
+  const visibleOccurrences = useMemo(() => occurrences
+    .filter((occurrence) => matchesCalendarFilters(occurrence.event, filters))
+    .map((occurrence) => (pending[occurrence.id] ? withTiming(occurrence, pending[occurrence.id].target) : occurrence)), [occurrences, filters, pending]);
+  const savingIds = useMemo(() => new Set(Object.entries(pending).filter(([, entry]) => entry.status === "saving").map(([id]) => id)), [pending]);
   const eventsById = useMemo(() => new Map(events.map((event) => [event.id, event])), [events]);
   const days = useMemo(() => datesBetween(range.from, range.to), [range.from, range.to]);
-  const anyDialog = Boolean(selected || quick || editor || scopePrompt || confirmDelete || datePicker);
+  const anyDialog = Boolean(selected || quick || editor || scopePrompt || confirmDelete || datePicker || movePrompt || moveConflict || reschedule);
 
   const changeMode = useCallback((next: CalendarViewMode) => { setMode(next); writeStored(VIEW_KEY(user.id), next); }, [user.id]);
   const step = useCallback((direction: 1 | -1) => setAnchor((current) => shiftAnchor(mode, current, direction)), [mode]);
@@ -162,14 +229,19 @@ export default function CalendarView({ user, notify, focusRequest }: Props) {
   const openDay = (date: string) => { setAnchor(date); changeMode("day"); };
   const toggleSidebar = () => setSidebarOpen((open) => { writeStored(SIDEBAR_KEY(user.id), open ? "closed" : "open"); return !open; });
 
-  const closeAll = () => { setSelected(null); setQuick(null); setEditor(null); setScopePrompt(null); setConfirmDelete(null); setFormError(null); };
+  const closeAll = () => { setSelected(null); setQuick(null); setEditor(null); setScopePrompt(null); setConfirmDelete(null); setReschedule(null); setFormError(null); };
   const afterChange = () => { setReloadKey((key) => key + 1); window.dispatchEvent(new CustomEvent(CALENDAR_CHANGED_EVENT)); };
 
-  const openNewEvent = useCallback(() => {
+  const openNewItem = useCallback((type: CalendarItemType) => {
     const start = anchor === today ? nextHalfHour(zone) : { date: anchor, time: "09:00" };
     setSelected(null); setQuick(null); setFormError(null);
-    setEditor({ mode: "create", scope: null, draft: newDraft(zone, start.date, start.time), target: null, occurrence: null, occurrenceKey: null, expectedRevision: null, seriesHasChanges: false });
+    setEditor({ mode: "create", scope: null, draft: newDraft(zone, start.date, start.time, false, type), target: null, occurrence: null, occurrenceKey: null, expectedRevision: null, seriesHasChanges: false });
   }, [anchor, today, zone]);
+  const openNewEvent = useCallback(() => openNewItem("event"), [openNewItem]);
+  const openQuickAdd = (text: string) => {
+    setSelected(null); setFormError(null);
+    setQuick({ context: null, text, type: "event", anchor: null, key: Date.now() });
+  };
 
   // Keyboard shortcuts (outside inputs and dialogs): T today, ←/→ previous/next, D/W/M/A views, C new event, / search.
   useEffect(() => {
@@ -211,8 +283,94 @@ export default function CalendarView({ user, notify, focusRequest }: Props) {
 
   const openCreate = ({ date, time, allDay, anchor: rect }: { date: string; time: string | null; allDay: boolean; anchor: AnchorRect | null }) => {
     setSelected(null); setFormError(null);
-    setQuick({ draft: newDraft(zone, date, time, allDay), anchor: rect });
+    setQuick({ context: { date, time, allDay }, text: "", type: "event", anchor: rect, key: Date.now() });
   };
+
+  // ---- moving (drag, resize, Reschedule) -----------------------------------
+  const masterOf = (occurrence: Occurrence) => (occurrence.recurring ? eventsById.get(occurrence.seriesId || occurrence.event.id) || null : null);
+
+  /** The PATCH for a move: same item fields, new timing, revision-checked so a stale view can't overwrite newer changes. */
+  const buildMove = ({ occurrence, target, scope }: MoveRequest) => {
+    const event = occurrence.event;
+    const completed = event.itemType === "task" && Boolean(event.completedAt);
+    if (scope === "series") {
+      const master = masterOf(occurrence);
+      if (!master) throw new Error("This recurring event changed. Reload the calendar and try again.");
+      const draft = applyTiming(draftFromEvent(master), movedTiming(master, occurrence, target, "shift"));
+      return { id: master.id, body: { event: draftToInput(draft, true), scope: "series" as const, occurrenceKey: null, expectedRevision: master.revision }, ignore: conflictIgnore(occurrence, "series"), completed };
+    }
+    if (scope === "occurrence") {
+      const draft = applyTiming(draftFromOccurrence(occurrence), movedTiming(event, occurrence, target, "replace"));
+      return {
+        id: event.id,
+        body: {
+          event: draftToInput(draft, false), scope: "occurrence" as const,
+          occurrenceKey: occurrence.exception ? null : occurrence.occurrenceKey,
+          expectedRevision: occurrence.exception ? event.revision : null,
+          seriesRevision: masterOf(occurrence)?.revision ?? null,
+        },
+        ignore: conflictIgnore(occurrence, "occurrence"), completed,
+      };
+    }
+    const draft = applyTiming(draftFromEvent(event), movedTiming(event, occurrence, target, "replace"));
+    return { id: event.id, body: { event: draftToInput(draft, true), scope: "series" as const, occurrenceKey: null, expectedRevision: event.revision }, ignore: conflictIgnore(occurrence, null), completed };
+  };
+
+  const revertMove = (occurrence: Occurrence) => setPending((current) => { const next = { ...current }; delete next[occurrence.id]; return next; });
+
+  const commitMove = async (request: MoveRequest) => {
+    const { occurrence, target } = request;
+    setMoving(true);
+    setPending((current) => ({ ...current, [occurrence.id]: { target, status: "saving" } }));
+    try {
+      const built = buildMove(request);
+      const result = await updateCalendarEvent(built.id, built.body);
+      setPending((current) => (current[occurrence.id] ? { ...current, [occurrence.id]: { target, status: "saved" } } : current));
+      setMoveConflict(null);
+      afterChange();
+      const noun = itemNoun(occurrence.event.itemType);
+      notify(result.exceptionsReset
+        ? "All events moved. Changes made to single occurrences were replaced."
+        : request.scope === "series" ? "All events in the series were moved." : `${capitalize(noun)} moved to ${targetLabel(target, zone)}.`);
+    } catch (error) {
+      revertMove(occurrence);
+      setMoveConflict(null);
+      notify(`${errorMessage(error, "That move couldn't be saved.")} The ${itemNoun(occurrence.event.itemType)} is back where it was.`, "error");
+      if (error instanceof PagesApiError && (error.status === 409 || error.status === 404)) afterChange();
+    } finally {
+      setMoving(false);
+    }
+  };
+
+  /** Show the item at its new place, warn about overlaps (never block), then save. */
+  const prepareMove = async (request: MoveRequest) => {
+    let built;
+    try { built = buildMove(request); }
+    catch (error) { notify(errorMessage(error, "That move isn't possible."), "error"); return; }
+    setPending((current) => ({ ...current, [request.occurrence.id]: { target: request.target, status: "saving" } }));
+    let report: ConflictReport | null = null;
+    try { report = await checkCalendarConflicts(built.body.event, { ignore: built.ignore, completed: built.completed }); }
+    catch { report = null; /* the overlap check is advisory; save anyway */ }
+    if (report && report.conflicts.length) {
+      setPending((current) => ({ ...current, [request.occurrence.id]: { target: request.target, status: "saved" } }));
+      setMoveConflict({ request, report });
+      return;
+    }
+    await commitMove(request);
+  };
+
+  const requestMove = (occurrence: Occurrence, target: MoveTarget) => {
+    if (disabled || savingIds.has(occurrence.id)) return;
+    setSelected(null); setQuick(null);
+    if (occurrence.recurring) { setPending((current) => ({ ...current, [occurrence.id]: { target, status: "saved" } })); setMovePrompt({ occurrence, target }); }
+    else void prepareMove({ occurrence, target, scope: null });
+  };
+
+  const toggleComplete = (occurrence: Occurrence) => void run(async () => {
+    const event = occurrence.event;
+    await setCalendarTaskCompletion(event.id, !event.completedAt, event.revision);
+    return event.completedAt ? "Task reopened." : "Task marked complete.";
+  });
 
   const openEditor = async (occurrence: Occurrence, scope: "occurrence" | "series" | null) => {
     setSelected(null); setScopePrompt(null); setFormError(null);
@@ -261,28 +419,35 @@ export default function CalendarView({ user, notify, focusRequest }: Props) {
     return "All events in the series were deleted.";
   });
 
-  const saveEditor = (draft: EventDraft) => {
+  const saveEditor = (draft: EventDraft, extra: { completed: boolean }) => {
     if (!editor) return;
+    const noun = capitalize(itemNoun(draft.itemType));
     void run(async () => {
       if (editor.mode === "create") {
         await createCalendarEvent(draftToInput(draft, true));
-        return "Event created.";
+        return `${noun} created.`;
       }
       const target = editor.target as CalendarEvent;
       const result = await updateCalendarEvent(target.id, {
         event: draftToInput(draft, editor.scope !== "occurrence"),
         scope: editor.scope === "occurrence" ? "occurrence" : "series",
         occurrenceKey: editor.occurrenceKey, expectedRevision: editor.expectedRevision,
+        seriesRevision: editor.scope === "occurrence" && editor.occurrence ? masterOf(editor.occurrence)?.revision ?? null : null,
       });
+      if (target.itemType === "task" && extra.completed !== Boolean(target.completedAt)) {
+        await setCalendarTaskCompletion(result.event.id, extra.completed, result.event.revision);
+        return extra.completed ? "Task updated and marked complete." : "Task updated and reopened.";
+      }
       if (result.exceptionsReset) return "All events updated. Changes made to single occurrences were replaced.";
-      return editor.scope === "occurrence" ? "This occurrence was updated." : editor.scope === "series" ? "All events updated." : "Event updated.";
+      return editor.scope === "occurrence" ? "This occurrence was updated." : editor.scope === "series" ? "All events updated." : `${noun} updated.`;
     });
   };
 
   const seriesFor = (occurrence: Occurrence) => (occurrence.recurring ? eventsById.get(occurrence.seriesId || occurrence.event.id) || null : null);
   const viewLabel = VIEW_MODES.find((entry) => entry.id === mode)?.label.toLowerCase() || "range";
   const rangeReady = loadedRange === `${range.from}/${range.to}`;
-  const emptyRange = loadState === "ready" && rangeReady && occurrences.length === 0 && mode !== "agenda";
+  const emptyRange = loadState === "ready" && rangeReady && visibleOccurrences.length === 0 && mode !== "agenda";
+  const filteredEmpty = emptyRange && occurrences.length > 0;
 
   if (disabled) {
     return <div className="cal-view">
@@ -296,10 +461,13 @@ export default function CalendarView({ user, notify, focusRequest }: Props) {
     </div>;
   }
 
-  const searchResults = results ? results
-    .filter((event) => event.status !== "cancelled")
+  const searchMatches = results ? results.filter((event) => event.status !== "cancelled") : null;
+  const searchHidden = searchMatches ? searchMatches.filter((event) => !matchesCalendarFilters(event, filters)).length : 0;
+  const searchResults = searchMatches ? searchMatches
+    .filter((event) => matchesCalendarFilters(event, filters))
     .map((event) => searchOccurrence(event, nowMs))
     .sort((a, b) => occurrenceDays(a, zone).first.localeCompare(occurrenceDays(b, zone).first)) : null;
+  const moveDisabled = disabled ? undefined : requestMove;
 
   return <div className="cal-view">
     <header className="cal-toolbar">
@@ -331,9 +499,19 @@ export default function CalendarView({ user, notify, focusRequest }: Props) {
         <div className="cal-views" role="group" aria-label="Calendar view">
           {VIEW_MODES.map((entry) => <button type="button" key={entry.id} className={mode === entry.id ? "is-active" : ""} aria-pressed={mode === entry.id} onClick={() => changeMode(entry.id)} title={`${entry.label} (${entry.key.toUpperCase()})`}>{entry.label}</button>)}
         </div>
-        <button type="button" className="cal-primary-button" onClick={openNewEvent} title="New event (C)"><Plus size={16}/><span>New event</span></button>
+        <FilterMenu filters={filters} onChange={changeFilters} sync={filterSync}/>
+        <div className="cal-split">
+          <button type="button" className="cal-primary-button cal-split-main" onClick={openNewEvent} title="New event (C)"><Plus size={16}/><span>New event</span></button>
+          <CreateMenu onQuickAdd={(text) => openQuickAdd(text)} onCreate={openNewItem}/>
+        </div>
       </div>
     </header>
+
+    {hiddenFilters > 0 && <div className="cal-filter-strip" role="status">
+      <ListFilter size={13} aria-hidden="true"/>
+      <span>Filtered: {filterSummary(filters)}</span>
+      <button type="button" className="cal-link-button" onClick={resetFilters}>Reset</button>
+    </div>}
 
     {loadState === "error" && <div className="cal-banner" role="alert">
       <span>{loadError}</span>
@@ -348,25 +526,27 @@ export default function CalendarView({ user, notify, focusRequest }: Props) {
       <section className="cal-main" aria-label={searchResults ? "Search results" : `${VIEW_MODES.find((entry) => entry.id === mode)?.label} view`}>
         {searchResults ? <div className="cal-results">
           <div className="cal-results-head">
-            <b>{searchState === "loading" ? "Searching…" : searchState === "error" ? "Search unavailable" : `${searchResults.length} result${searchResults.length === 1 ? "" : "s"} for “${query.trim()}”`}</b>
+            <b>{searchState === "loading" ? "Searching…" : searchState === "error" ? "Search unavailable" : `${searchResults.length} result${searchResults.length === 1 ? "" : "s"} for “${query.trim()}”`}{searchState === "idle" && searchHidden > 0 && <small className="cal-results-hidden"> · {searchHidden} hidden by filters</small>}</b>
             <button type="button" className="cal-link-button" onClick={() => setQuery("")}>Back to calendar</button>
           </div>
           {searchState === "error" ? <p className="cal-results-empty" role="alert">{searchError}</p>
-            : searchResults.length === 0 && searchState !== "loading" ? <p className="cal-results-empty">No events have a title matching “{query.trim()}”.</p>
+            : searchResults.length === 0 && searchState !== "loading" ? <p className="cal-results-empty">{searchHidden > 0 ? <>Matching items are hidden by filters. <button type="button" className="cal-link-button" onClick={resetFilters}>Reset filters</button></> : <>No events have a title matching “{query.trim()}”.</>}</p>
               : <ul>{searchResults.map((occurrence) => {
                 const first = occurrenceDays(occurrence, zone).first;
                 return <li key={occurrence.event.id}><button type="button" className="cal-result" onClick={() => { setQuery(""); setAnchor(first); setHighlightId(occurrence.event.id); }}>
                   <CategoryDot category={occurrence.event.category}/>
-                  <span className="cal-result-main"><b>{occurrence.event.title}</b><small>{occurrenceDateLabel(occurrence, zone)} · {occurrenceTimeLabel(occurrence, zone)}{occurrence.event.location ? ` · ${occurrence.event.location}` : ""}</small></span>
+                  <span className={`cal-result-main is-${occurrence.event.itemType}${occurrence.event.completedAt ? " is-done" : ""}`}><b><ItemTypeIcon event={occurrence.event}/>{occurrence.event.title}</b><small>{occurrenceDateLabel(occurrence, zone)} · {occurrenceTimeLabel(occurrence, zone)}{occurrence.event.location ? ` · ${occurrence.event.location}` : ""}</small></span>
                   {occurrence.recurring && <span className="cal-result-tag"><Repeat size={11} aria-hidden="true"/> {occurrence.exception ? "Changed occurrence" : "Next occurrence"}</span>}
                 </button></li>;
               })}</ul>}
         </div> : <>
-          {emptyRange && <p className="cal-empty-note" role="status">No events this {viewLabel === "day" ? "day" : viewLabel}. {mode === "month" ? "Click a day to add one." : "Click a time to add one."}</p>}
-          {(mode === "week" || mode === "day") && <TimeGrid days={days} occurrences={occurrences} zone={zone} today={today} nowMs={nowMs} highlightId={highlightId} onCreate={openCreate} onSelect={(occurrence, rect) => { setQuick(null); setSelected({ occurrence, anchor: rect }); }} onOpenDay={openDay}/>}
-          {mode === "month" && <MonthGrid from={range.from} to={range.to} month={anchor} occurrences={occurrences} zone={zone} today={today} highlightId={highlightId} onCreate={openCreate} onSelect={(occurrence, rect) => { setQuick(null); setSelected({ occurrence, anchor: rect }); }} onOpenDay={openDay}/>}
+          {emptyRange && (filteredEmpty
+            ? <p className="cal-empty-note" role="status">Nothing this {viewLabel === "day" ? "day" : viewLabel} matches your filters. <button type="button" className="cal-link-button" onClick={resetFilters}>Reset filters</button></p>
+            : <p className="cal-empty-note" role="status">No events this {viewLabel === "day" ? "day" : viewLabel}. {mode === "month" ? "Click a day to add one." : "Click a time to add one."}</p>)}
+          {(mode === "week" || mode === "day") && <TimeGrid days={days} occurrences={visibleOccurrences} zone={zone} today={today} nowMs={nowMs} highlightId={highlightId} onCreate={openCreate} onSelect={(occurrence, rect) => { setQuick(null); setSelected({ occurrence, anchor: rect }); }} onOpenDay={openDay} onMove={moveDisabled} savingIds={savingIds}/>}
+          {mode === "month" && <MonthGrid from={range.from} to={range.to} month={anchor} occurrences={visibleOccurrences} zone={zone} today={today} highlightId={highlightId} onCreate={openCreate} onSelect={(occurrence, rect) => { setQuick(null); setSelected({ occurrence, anchor: rect }); }} onOpenDay={openDay} onMove={moveDisabled} savingIds={savingIds}/>}
           {mode === "agenda" && (rangeReady || loadState !== "loading"
-            ? <AgendaList from={range.from} to={range.to} occurrences={occurrences} zone={zone} today={today} nowMs={nowMs} highlightId={highlightId} onSelect={(occurrence, rect) => setSelected({ occurrence, anchor: rect })} onCreate={openNewEvent}/>
+            ? <AgendaList from={range.from} to={range.to} occurrences={visibleOccurrences} zone={zone} today={today} nowMs={nowMs} highlightId={highlightId} onSelect={(occurrence, rect) => setSelected({ occurrence, anchor: rect })} onCreate={openNewEvent} filtered={occurrences.length > visibleOccurrences.length} onResetFilters={resetFilters} savingIds={savingIds}/>
             : <div className="cal-agenda-loading" role="status">Loading events…</div>)}
         </>}
       </section>
@@ -380,14 +560,16 @@ export default function CalendarView({ user, notify, focusRequest }: Props) {
     {selected && <EventDetails
       occurrence={selected.occurrence} series={seriesFor(selected.occurrence)} zone={zone} anchor={selected.anchor} busy={busy}
       onEdit={() => startEdit(selected.occurrence)}
+      onToggleComplete={selected.occurrence.event.itemType === "task" ? () => toggleComplete(selected.occurrence) : undefined}
+      onReschedule={() => { setReschedule(selected.occurrence); setSelected(null); }}
       onDelete={() => { if (selected.occurrence.recurring) { setScopePrompt({ action: "delete", occurrence: selected.occurrence }); setSelected(null); } else performDelete(selected.occurrence, null); }}
       onClose={() => setSelected(null)}
     />}
 
-    {quick && <QuickCreate
-      draft={quick.draft} anchor={quick.anchor} busy={busy} error={formError}
-      onSave={(title) => void run(async () => { await createCalendarEvent(draftToInput({ ...quick.draft, title }, true)); return "Event created."; })}
-      onMore={(title) => { setEditor({ mode: "create", scope: null, draft: { ...quick.draft, title }, target: null, occurrence: null, occurrenceKey: null, expectedRevision: null, seriesHasChanges: false }); setQuick(null); setFormError(null); }}
+    {quick && <SmartCreate
+      key={quick.key} zone={zone} context={quick.context} initialText={quick.text} initialType={quick.type} anchor={quick.anchor} busy={busy} error={formError}
+      onSave={(draft) => void run(async () => { await createCalendarEvent(draftToInput(draft, true)); return `${capitalize(itemNoun(draft.itemType))} created.`; })}
+      onMore={(draft) => { setEditor({ mode: "create", scope: null, draft, target: null, occurrence: null, occurrenceKey: null, expectedRevision: null, seriesHasChanges: false }); setQuick(null); setFormError(null); }}
       onClose={() => { setQuick(null); setFormError(null); }}
     />}
 
@@ -395,6 +577,8 @@ export default function CalendarView({ user, notify, focusRequest }: Props) {
       key={`${editor.mode}-${editor.target?.id || "new"}-${editor.scope}`}
       mode={editor.mode} scope={editor.scope} initialDraft={editor.draft} displayZone={zone} meta={meta} busy={busy}
       error={formError} errorField={null} seriesHasChanges={editor.seriesHasChanges}
+      initialCompleted={Boolean(editor.target?.completedAt)}
+      conflictIgnore={editor.mode === "edit" ? conflictIgnore(editor.occurrence, editor.scope) : null}
       onSave={saveEditor}
       onDelete={editor.occurrence ? () => {
         const occurrence = editor.occurrence as Occurrence;
@@ -413,6 +597,24 @@ export default function CalendarView({ user, notify, focusRequest }: Props) {
         if (action === "edit") void openEditor(occurrence, scope);
         else performDelete(occurrence, scope);
       }}
+    />}
+
+    {reschedule && <RescheduleDialog occurrence={reschedule} zone={zone} busy={moving}
+      onClose={() => setReschedule(null)}
+      onSave={(target) => { const occurrence = reschedule; setReschedule(null); requestMove(occurrence, target); }}
+    />}
+
+    {movePrompt && <ScopeDialog action="move" busy={moving}
+      seriesNote={events.some((event) => event.seriesId === (movePrompt.occurrence.seriesId || movePrompt.occurrence.event.id)) ? "Moving all events replaces changes made to single occurrences." : null}
+      onClose={() => { revertMove(movePrompt.occurrence); setMovePrompt(null); }}
+      onChoose={(scope) => { const { occurrence, target } = movePrompt; setMovePrompt(null); void prepareMove({ occurrence, target, scope }); }}
+    />}
+
+    {moveConflict && <ConflictDialog
+      title={moveConflict.request.occurrence.event.title} target={moveConflict.request.target} report={moveConflict.report} zone={zone} busy={moving}
+      onCancel={() => { revertMove(moveConflict.request.occurrence); setMoveConflict(null); }}
+      onKeep={() => void commitMove(moveConflict.request)}
+      onPick={(slot: CalendarInterval) => void commitMove({ ...moveConflict.request, target: { allDay: false, startMs: Date.parse(slot.startAt), endMs: Date.parse(slot.endAt) } })}
     />}
 
     {confirmDelete && <CalPopover anchor={null} onClose={() => setConfirmDelete(null)} labelledBy="cal-confirm-title" className="cal-scope">

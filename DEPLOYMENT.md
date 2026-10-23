@@ -34,7 +34,7 @@ If Git is already set up, keep its existing history and remote. Do not commit `.
 1. Create a Supabase project and wait for it to finish provisioning.
 2. Open that project’s **SQL Editor**.
 3. Open `supabase/schema.sql`, copy the entire file into the SQL Editor, and run it. It creates Persora profiles, seven-digit login IDs, password hashes, server-side sessions, rate-limit state, vault/billing/admin tables, private medical-record tables, RLS policies, and restricted Postgres functions.
-4. For an already-running Persora database, apply the outstanding files under `supabase/migrations/` in date order. At minimum, existing deployments need the Life Timeline, medical records, vault folders/wallet cards, billing-term, personal-finance, Smart Scan cache, `20261006_email_verification_upload_entitlements.sql`, `202610060001_ensure_default_free_plan.sql`, `202610210001_password_vault_recovery.sql`, `202610220001_password_manager_folder_scope.sql`, `202610230009_password_vault_sync.sql` and `202610240001_password_vault_master_password.sql` migrations before deploying the matching features. Calendar needs `202610250001_calendar.sql` (see [Calendar reminders](#calendar-reminders)). `202610240002_password_vault_drop_legacy_encryption.sql` is applied last, only after the Password Manager upgrade steps in [`PASSWORD_VAULT.md`](./PASSWORD_VAULT.md#runbook-production) report nothing pending. On a brand-new database it simply succeeds. The folder-scope migration adds Password Manager as an allowed folder scope for existing databases.
+4. For an already-running Persora database, apply the outstanding files under `supabase/migrations/` in date order. At minimum, existing deployments need the Life Timeline, medical records, vault folders/wallet cards, billing-term, personal-finance, Smart Scan cache, `20261006_email_verification_upload_entitlements.sql`, `202610060001_ensure_default_free_plan.sql`, `202610210001_password_vault_recovery.sql`, `202610220001_password_manager_folder_scope.sql`, `202610230009_password_vault_sync.sql` and `202610240001_password_vault_master_password.sql` migrations before deploying the matching features. Calendar needs `202610250001_calendar.sql`, then `202610260001_calendar_items.sql` for smart scheduling (see [Calendar reminders](#calendar-reminders)). `202610240002_password_vault_drop_legacy_encryption.sql` is applied last, only after the Password Manager upgrade steps in [`PASSWORD_VAULT.md`](./PASSWORD_VAULT.md#runbook-production) report nothing pending. On a brand-new database it simply succeeds. The folder-scope migration adds Password Manager as an allowed folder scope for existing databases.
 5. In **Project Settings → API Keys** (sometimes shown as **Settings → API**), copy and keep ready:
    - The **Project URL**, e.g. `https://abcdefghijkl.supabase.co`.
    - A server-only **Secret key**, usually beginning `sb_secret_...`. If your project still uses the legacy service-role JWT, use that value in the same Pages secret described below.
@@ -140,6 +140,13 @@ The full runbook, rollback and the migrated-member trade-off are in [`PASSWORD_V
 - RLS is on and the browser roles have no privileges.
 - It enables `pg_trgm` for title search when it can; otherwise it falls back to a btree index with a warning.
 - It is rerunnable.
+
+**Smart scheduling migration.** Then apply `supabase/migrations/202610260001_calendar_items.sql`, after `202610250001_calendar.sql`.
+- It adds `calendar_events.item_type` and `completed_at`; existing rows become `event`, otherwise unchanged.
+- It adds constraints that existing rows already satisfy, the private `calendar_preferences` table (RLS on, no browser privileges), an updated `persora_calendar_save_event` and the new `persora_calendar_set_task_completion`.
+- It drops no data and is rerunnable.
+- Deploy the code and the migration together. The new Calendar build needs the new columns, and the previous build keeps working on the upgraded schema (new rows default to `event`).
+- There are no new secrets, bindings or environment variables.
 
 No new binding or npm dependency is needed. Email reminders reuse `BREVO_API_KEY` and the sender configured in Admin → Email settings. They go only to verified addresses.
 

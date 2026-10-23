@@ -14,8 +14,9 @@
 // signed-in requests (throttled) and whenever the app polls reminders.
 
 import {
-  CALENDAR_LIMITS, CalendarValidationError, REMINDER_PRESETS, addDays, daysBetween, eventAnchor, exceptionKey, isDateString,
-  isOccurrenceOf, isoInstant, localDateOf, nextReminder, normalizeEventInput, occurrenceOn, reminderDedupeKey, safeTimeZone,
+  CALENDAR_LIMITS, CalendarValidationError, ITEM_TYPES, REMINDER_PRESETS, addDays, blocksTime, daysBetween, eventAnchor, exceptionKey,
+  expandOccurrences, findConflicts, isDateString, isOccurrenceOf, isoInstant, localDateOf, localTimeOf, nextReminder, normalizeCalendarFilters,
+  normalizeEventInput, occurrenceOn, recurrenceDates, reminderDedupeKey, safeTimeZone, suggestFreeSlots,
 } from "./calendar-rules.js";
 
 export const CALENDAR_ROUTE_PREFIX = "/calendar";
@@ -23,7 +24,7 @@ const DISPATCH_INTERVAL_MS = 60_000;
 const REMINDER_LIST_WINDOW_MS = 7 * 86_400_000;
 const REMINDER_LOOKAHEAD_MS = 10 * 60_000;
 const LATE_EMAIL_MS = 15 * 60_000;
-const EVENT_COLUMNS = "id,user_id,series_id,original_start_at,original_start_date,status,title,description,location,category,all_day,time_zone,start_at,end_at,start_date,end_date,recurrence_freq,recurrence_interval,recurrence_until,recurrence_count,reminder_minutes,reminder_email,source,revision,created_at,updated_at";
+const EVENT_COLUMNS = "id,user_id,series_id,original_start_at,original_start_date,status,title,description,location,category,all_day,time_zone,start_at,end_at,start_date,end_date,recurrence_freq,recurrence_interval,recurrence_until,recurrence_count,reminder_minutes,reminder_email,source,revision,created_at,updated_at,item_type,completed_at";
 const REMINDER_COLUMNS = "id,event_id,root_id,occurrence_key,occurrence_start,occurrence_date,all_day,remind_at,minutes_before,title,location,status,email_requested,email_status,email_note,read_at";
 
 export class CalendarError extends Error {
@@ -111,6 +112,8 @@ const instant = (value) => (value ? isoInstant(value) : null);
 export function eventFromRow(row) {
   return {
     id: row.id,
+    itemType: ITEM_TYPES.includes(row.item_type) ? row.item_type : "event",
+    completedAt: row.completed_at ? isoInstant(row.completed_at) : null,
     seriesId: row.series_id || null,
     originalStartAt: instant(row.original_start_at),
     originalStartDate: dateOnly(row.original_start_date),
@@ -149,12 +152,13 @@ function eventValues(normalized) {
     recurrence_freq: normalized.recurrence?.freq || null, recurrence_interval: normalized.recurrence?.interval || 1,
     recurrence_until: normalized.recurrence?.until || null, recurrence_count: normalized.recurrence?.count || null,
     reminder_minutes: normalized.reminderMinutes, reminder_email: normalized.reminderEmail,
+    item_type: normalized.itemType || "event",
   };
 }
 
 /** API-shaped event built from normalized input (for reminder computations before saving). */
 function draftEvent(id, normalized, extra = {}) {
-  return { id, seriesId: null, originalStartAt: null, originalStartDate: null, status: "confirmed", ...normalized, ...extra };
+  return { id, seriesId: null, originalStartAt: null, originalStartDate: null, status: "confirmed", completedAt: null, ...normalized, ...extra };
 }
 
 /** The payload persora_calendar_set_reminder expects, or null. */
@@ -301,7 +305,13 @@ async function updateEvent(identity, id, body, env) {
       if (!isOccurrenceOf(series, originalKey)) throw new CalendarError("That occurrence isn't part of this recurring event any more. Reload the calendar.", 409);
       if (!series.allDay) originalKey = isoInstant(originalKey);
     }
-    const normalized = normalizeEventInput(body?.event, { defaultTimeZone: series.timeZone || zone, allowRecurrence: false });
+    // Occurrences are edited from a copy of the series the browser loaded; refuse
+    // the change if the series was edited since (another tab or device).
+    const seriesRevision = body?.seriesRevision === undefined || body?.seriesRevision === null ? null : Number(body.seriesRevision);
+    if (seriesRevision !== null && seriesRevision !== series.revision) {
+      throw new CalendarError("This recurring event was changed somewhere else. Reload the calendar and try again.", 409);
+    }
+    const normalized = normalizeEventInput(body?.event, { defaultTimeZone: series.timeZone || zone, allowRecurrence: false, itemType: series.itemType || "event" });
     const exceptions = await loadExceptions(identity.id, series.id, env);
     const current = exceptions.find((entry) => exceptionKey(entry) === originalKey);
     const exceptionId = current?.id || crypto.randomUUID();
@@ -322,16 +332,17 @@ async function updateEvent(identity, id, body, env) {
     return { event: eventFromRow(result.event), series: eventFromRow(result.series) };
   }
 
-  // A single event or a whole series.
-  const normalized = normalizeEventInput(body?.event, { defaultTimeZone: existing.timeZone || zone });
-  const next = draftEvent(existing.id, normalized);
+  // A single item or a whole series. The type is fixed; completion is kept
+  // (only the completion route changes it), so moving a task keeps it done.
+  const normalized = normalizeEventInput(body?.event, { defaultTimeZone: existing.timeZone || zone, itemType: existing.itemType || "event" });
+  const next = draftEvent(existing.id, normalized, { completedAt: existing.completedAt || null });
   const exceptions = existing.recurrence ? await loadExceptions(identity.id, existing.id, env) : [];
   const reset = existing.recurrence ? seriesTimingChanged(existing, next) : false;
   const remaining = reset || !next.recurrence ? [] : exceptions;
   const result = await rpc("persora_calendar_save_event", {
     p_owner: identity.id, p_id: existing.id, p_event: eventValues(normalized), p_expected_revision: expectedRevision,
     p_reset_exceptions: reset || (Boolean(existing.recurrence) && !next.recurrence),
-    p_reminder: reminderPayload(next, existing.id, nextReminder(next, now, overriddenKeys(remaining))),
+    p_reminder: next.completedAt ? null : reminderPayload(next, existing.id, nextReminder(next, now, overriddenKeys(remaining))),
     p_exception_patches: remaining.length ? exceptionPatches(existing, next, remaining, now) : [],
   }, env);
   return { event: eventFromRow(result.event), exceptions: (result.exceptions || []).map(eventFromRow), exceptionsReset: reset && exceptions.length > 0 };
@@ -378,6 +389,137 @@ async function deleteEvent(identity, id, url, env) {
   const target = existing.seriesId ? existing.seriesId : existing.id;
   await rpc("persora_calendar_delete_event", { p_owner: identity.id, p_id: target, p_expected_revision: existing.seriesId ? null : expectedRevision }, env);
   return { ok: true, scope: "series", id: target };
+}
+
+// ---------------------------------------------------------------------------
+// Tasks, conflicts and preferences
+// ---------------------------------------------------------------------------
+
+async function setTaskCompletion(identity, id, body, env) {
+  const existing = await loadEvent(identity, id, env);
+  if (existing.itemType !== "task") throw new CalendarError("Only tasks can be marked complete.", 400);
+  if (typeof body?.completed !== "boolean") throw new CalendarError("Say whether the task is complete.", 400);
+  const expectedRevision = body?.expectedRevision === undefined || body?.expectedRevision === null ? null : Number(body.expectedRevision);
+  const reopened = { ...existing, completedAt: null };
+  const result = await rpc("persora_calendar_set_task_completion", {
+    p_owner: identity.id, p_id: existing.id, p_completed: body.completed, p_expected_revision: expectedRevision,
+    p_reminder: body.completed ? null : reminderPayload(reopened, existing.id, nextReminder(reopened, Date.now())),
+  }, env);
+  return { event: eventFromRow(result.event) };
+}
+
+/** Everything that may appear between two local dates (to exclusive), as API events. */
+async function loadEventsBetween(identity, from, to, env) {
+  const fromMs = Date.parse(`${from}T00:00:00Z`) - 2 * 86_400_000;
+  const toMs = Date.parse(`${to}T00:00:00Z`) + 2 * 86_400_000;
+  const rows = await rpc("persora_calendar_events_in_range", {
+    p_owner: identity.id, p_from: new Date(fromMs).toISOString(), p_to: new Date(toMs).toISOString(),
+    p_from_date: addDays(from, -1), p_to_date: addDays(to, 1),
+  }, env);
+  return (Array.isArray(rows) ? rows : []).map(eventFromRow);
+}
+
+const CONFLICT_SERIES_DAYS = 62;
+const CONFLICT_SERIES_OCCURRENCES = 60;
+
+/** Is this occurrence the item being created/changed (so it can't conflict with itself)? */
+function isIgnored(occurrence, ignore) {
+  if (!ignore) return false;
+  if (ignore.eventId && occurrence.event.id === ignore.eventId) return true;
+  if (ignore.seriesId) {
+    const seriesOf = occurrence.seriesId || (occurrence.event.recurrence ? occurrence.event.id : null);
+    if (seriesOf === ignore.seriesId) {
+      if (ignore.scope === "series") return true;
+      if (ignore.occurrenceKey && occurrence.occurrenceKey === ignore.occurrenceKey) return true;
+    }
+  }
+  return false;
+}
+
+function intervalParts(startMs, endMs, zone) {
+  return {
+    startAt: new Date(startMs).toISOString(), endAt: new Date(endMs).toISOString(),
+    start: { date: localDateOf(startMs, zone), time: localTimeOf(startMs, zone) },
+    end: { date: localDateOf(endMs, zone), time: localTimeOf(endMs, zone) },
+  };
+}
+
+/**
+ * Timed overlaps between a proposed item and the member's saved calendar, read
+ * from the database (so every device sees the same answer). Warnings only: the
+ * save routes never refuse an overlap.
+ */
+async function checkConflicts(identity, body, env) {
+  const zone = safeTimeZone(identity.timezone, "UTC");
+  const normalized = normalizeEventInput(body?.event, { defaultTimeZone: zone });
+  const empty = { conflicts: [], suggestions: [] };
+  if (normalized.allDay) return { ...empty, skipped: "all-day" };
+  if (normalized.itemType === "task" && body?.completed === true) return { ...empty, skipped: "completed" };
+  const ignore = body?.ignore && typeof body.ignore === "object" ? {
+    eventId: isUuid(body.ignore.eventId) ? body.ignore.eventId : null,
+    seriesId: isUuid(body.ignore.seriesId) ? body.ignore.seriesId : null,
+    occurrenceKey: typeof body.ignore.occurrenceKey === "string" ? body.ignore.occurrenceKey.slice(0, 40) : null,
+    scope: body.ignore.scope === "series" ? "series" : "occurrence",
+  } : null;
+  if (ignore?.occurrenceKey && !normalized.allDay && !isDateString(ignore.occurrenceKey)) {
+    try { ignore.occurrenceKey = isoInstant(ignore.occurrenceKey); } catch { ignore.occurrenceKey = null; }
+  }
+
+  // The proposed interval, or the series' upcoming occurrences.
+  const startMs = Date.parse(normalized.startAt); const endMs = Date.parse(normalized.endAt);
+  let candidates = [{ startMs, endMs }];
+  if (normalized.recurrence) {
+    const draft = draftEvent("candidate", normalized);
+    const anchor = eventAnchor(draft);
+    const firstDate = maxDateString(anchor.date, localDateOf(Date.now(), safeTimeZone(normalized.timeZone)));
+    const lastDate = addDays(firstDate, CONFLICT_SERIES_DAYS);
+    candidates = [];
+    for (const date of recurrenceDates(anchor.date, normalized.recurrence, firstDate)) {
+      if (date > lastDate || candidates.length >= CONFLICT_SERIES_OCCURRENCES) break;
+      const occurrence = occurrenceOn(draft, date);
+      candidates.push({ startMs: occurrence.startMs, endMs: occurrence.endMs });
+    }
+    if (!candidates.length) return empty;
+  }
+  const first = Math.min(...candidates.map((entry) => entry.startMs));
+  const last = Math.max(...candidates.map((entry) => entry.endMs));
+  const from = addDays(localDateOf(first, zone), -1);
+  const to = addDays(localDateOf(last, zone), 3);
+  const events = await loadEventsBetween(identity, from, to, env);
+  const busy = expandOccurrences(events, from, to, zone).filter((occurrence) => blocksTime(occurrence) && !isIgnored(occurrence, ignore));
+  const conflicts = findConflicts(candidates, busy).map(({ occurrence, candidate }) => ({
+    eventId: occurrence.event.id,
+    seriesId: occurrence.seriesId || null,
+    occurrenceKey: occurrence.occurrenceKey || null,
+    itemType: occurrence.event.itemType || "event",
+    title: occurrence.event.title,
+    category: occurrence.event.category || null,
+    ...intervalParts(occurrence.startMs, occurrence.endMs, zone),
+    candidate: { startAt: new Date(candidate.startMs).toISOString(), endAt: new Date(candidate.endMs).toISOString() },
+  }));
+  const suggestions = conflicts.length && !normalized.recurrence
+    ? suggestFreeSlots({ startMs, endMs, busy, zone }).map((slot) => intervalParts(slot.startMs, slot.endMs, zone))
+    : [];
+  return { conflicts, suggestions, checked: { from, to, occurrences: candidates.length } };
+}
+const maxDateString = (a, b) => (a >= b ? a : b);
+
+async function loadPreferences(identity, env) {
+  const rows = await listRows(`calendar_preferences?user_id=eq.${enc(identity.id)}&select=filters,updated_at&limit=1`, env);
+  return { filters: normalizeCalendarFilters(rows[0]?.filters), updatedAt: rows[0]?.updated_at || null, saved: Boolean(rows.length) };
+}
+
+async function savePreferences(identity, body, env) {
+  if (!body || typeof body !== "object" || !body.filters || typeof body.filters !== "object") throw new CalendarError("Send the filter settings.", 400);
+  const filters = normalizeCalendarFilters(body.filters);
+  const response = await dbFetch("calendar_preferences?on_conflict=user_id", env, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=representation" },
+    body: JSON.stringify({ user_id: identity.id, filters, updated_at: new Date().toISOString() }),
+  });
+  if (!response.ok) throw await databaseError(response);
+  const rows = await response.json();
+  return { filters, updatedAt: Array.isArray(rows) ? rows[0]?.updated_at || null : null, saved: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -515,9 +657,13 @@ export async function exportCalendarData(userId, env, pageSize = 1000) {
       paged(`calendar_events?user_id=eq.${owner}&select=${EVENT_COLUMNS}&order=created_at.asc,id.asc`),
       paged(`calendar_reminders?user_id=eq.${owner}&select=${REMINDER_COLUMNS},created_at&order=remind_at.asc,id.asc`),
     ]);
-    return { events, reminders };
+    // Preferences arrived with a later migration; a database without it still exports events.
+    let preferences = null;
+    try { preferences = (await paged(`calendar_preferences?user_id=eq.${owner}&select=filters,updated_at`))[0] || null; }
+    catch (error) { if (!(error instanceof CalendarError && error.status === 503)) throw error; }
+    return { events, reminders, preferences };
   } catch (error) {
-    if (error instanceof CalendarError && error.status === 503) return { events: [], reminders: [] };
+    if (error instanceof CalendarError && error.status === 503) return { events: [], reminders: [], preferences: null };
     throw error;
   }
 }
@@ -553,13 +699,7 @@ export async function handleCalendar(request, identity, env, origin, services = 
     }
     if (path === "/calendar/events" && method === "GET") {
       const { from, to } = parseRange(url);
-      const fromMs = Date.parse(`${from}T00:00:00Z`) - 2 * 86_400_000;
-      const toMs = Date.parse(`${to}T00:00:00Z`) + 2 * 86_400_000;
-      const rows = await rpc("persora_calendar_events_in_range", {
-        p_owner: identity.id, p_from: new Date(fromMs).toISOString(), p_to: new Date(toMs).toISOString(),
-        p_from_date: addDays(from, -1), p_to_date: addDays(to, 1),
-      }, env);
-      return json({ events: (Array.isArray(rows) ? rows : []).map(eventFromRow), from, to }, 200, origin);
+      return json({ events: await loadEventsBetween(identity, from, to, env), from, to }, 200, origin);
     }
     if (path === "/calendar/events/search" && method === "GET") {
       const query = String(url.searchParams.get("q") || "").trim();
@@ -570,6 +710,19 @@ export async function handleCalendar(request, identity, env, origin, services = 
     }
     if (path === "/calendar/events" && method === "POST") {
       return json(await createEvent(identity, await readBody(request), env), 201, origin);
+    }
+    if (path === "/calendar/conflicts" && method === "POST") {
+      return json(await checkConflicts(identity, await readBody(request), env), 200, origin);
+    }
+    if (path === "/calendar/preferences" && method === "GET") {
+      return json(await loadPreferences(identity, env), 200, origin);
+    }
+    if (path === "/calendar/preferences" && method === "PUT") {
+      return json(await savePreferences(identity, await readBody(request), env), 200, origin);
+    }
+    const completionMatch = path.match(/^\/calendar\/events\/([^/]+)\/completion$/);
+    if (completionMatch && method === "POST") {
+      return json(await setTaskCompletion(identity, completionMatch[1], await readBody(request), env), 200, origin);
     }
     const eventMatch = path.match(/^\/calendar\/events\/([^/]+)$/);
     if (eventMatch && method === "GET") {

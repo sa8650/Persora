@@ -3,10 +3,11 @@ import { CalendarPlus, MapPin, Repeat } from "lucide-react";
 import type { AnchorRect } from "./CalendarParts";
 import { CategoryDot, rectOf } from "./CalendarParts";
 import { eventAriaLabel } from "./TimeGrid";
+import { ItemTypeIcon, itemClasses } from "./SmartParts";
 import { formatDay, formatTime, groupByDay, occurrenceDays } from "../../lib/calendar-view";
 import type { Occurrence } from "../../lib/calendar-view";
 
-export default function AgendaList({ from, to, occurrences, zone, today, nowMs, highlightId, onSelect, onCreate }: {
+export default function AgendaList({ from, to, occurrences, zone, today, nowMs, highlightId, onSelect, onCreate, filtered = false, onResetFilters, savingIds }: {
   from: string;
   to: string;
   occurrences: Occurrence[];
@@ -16,6 +17,10 @@ export default function AgendaList({ from, to, occurrences, zone, today, nowMs, 
   highlightId: string | null;
   onSelect: (occurrence: Occurrence, anchor: AnchorRect | null) => void;
   onCreate: () => void;
+  /** Some items are hidden by filters. */
+  filtered?: boolean;
+  onResetFilters?: () => void;
+  savingIds?: Set<string>;
 }) {
   const days = useMemo(() => {
     const map = groupByDay(occurrences, from, to, zone);
@@ -25,9 +30,11 @@ export default function AgendaList({ from, to, occurrences, zone, today, nowMs, 
   if (!days.length) {
     return <div className="cal-empty">
       <span className="cal-empty-icon"><CalendarPlus size={22}/></span>
-      <h2>Nothing scheduled</h2>
-      <p>No events from {formatDay(from, { month: "short", day: "numeric" })} to {formatDay(to, { month: "short", day: "numeric" })}.</p>
-      <button type="button" className="cal-primary-button" onClick={onCreate}>New event</button>
+      <h2>{filtered ? "Nothing matches your filters" : "Nothing scheduled"}</h2>
+      <p>{filtered ? "Some items" : "No events"} from {formatDay(from, { month: "short", day: "numeric" })} to {formatDay(to, { month: "short", day: "numeric" })}{filtered ? " are hidden by filters." : "."}</p>
+      {filtered && onResetFilters
+        ? <button type="button" className="cal-button" onClick={onResetFilters}>Reset filters</button>
+        : <button type="button" className="cal-primary-button" onClick={onCreate}>New event</button>}
     </div>;
   }
 
@@ -43,7 +50,7 @@ export default function AgendaList({ from, to, occurrences, zone, today, nowMs, 
           const span = occurrenceDays(occurrence, zone);
           const multi = span.first !== span.last;
           const time = occurrence.allDay
-            ? "All day"
+            ? occurrence.event.itemType === "task" ? "Due" : "All day"
             : multi
               ? date === span.first ? `${formatTime(occurrence.startMs as number, zone)} →` : date === span.last ? `→ ${formatTime(occurrence.endMs as number, zone)}` : "All day"
               : <><span>{formatTime(occurrence.startMs as number, zone)}</span><span> – {formatTime(occurrence.endMs as number, zone)}</span></>;
@@ -51,14 +58,14 @@ export default function AgendaList({ from, to, occurrences, zone, today, nowMs, 
           return <li key={`${occurrence.id}-${date}`}>
             <button
               type="button"
-              className={`cal-agenda-row ${past ? "is-past" : ""} ${highlightId === occurrence.event.id ? "is-highlight" : ""}`}
+              className={`cal-agenda-row ${itemClasses(occurrence.event)} ${past ? "is-past" : ""} ${highlightId === occurrence.event.id ? "is-highlight" : ""} ${savingIds?.has(occurrence.id) ? "is-saving" : ""}`}
               onClick={(event) => onSelect(occurrence, rectOf(event.currentTarget))}
-              aria-label={eventAriaLabel(occurrence, zone)}
+              aria-label={eventAriaLabel(occurrence, zone, savingIds?.has(occurrence.id))}
             >
               <span className="cal-agenda-time">{time}</span>
               <CategoryDot category={occurrence.event.category}/>
               <span className="cal-agenda-main">
-                <b>{occurrence.event.title}{occurrence.recurring && <Repeat size={11} aria-hidden="true"/>}</b>
+                <b><ItemTypeIcon event={occurrence.event} size={12}/><span className="cal-agenda-title">{occurrence.event.title}</span>{occurrence.recurring && <Repeat size={11} aria-hidden="true"/>}</b>
                 {occurrence.event.location && <small><MapPin size={11} aria-hidden="true"/>{occurrence.event.location}</small>}
               </span>
             </button>

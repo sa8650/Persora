@@ -3088,7 +3088,7 @@ async function createAccountExport(identity, env) {
   const manifest = {
     format: "persora-complete-export-v1", exportedAt: new Date().toISOString(),
     account: profileRows[0] || { login_id: identity.login_id || "", email: identity.email || "", full_name: identity.full_name || "" },
-    data: { vaultItems: items, contacts, businessCards: cards, medicalRecords, medicalRecordLinks, documentShares, recordShares, notifications, authoredShareComments: authoredComments, subscriptions, paymentHistory: payments, timelineEvents: timelineExport.events, calendarEvents: calendarExport.events, calendarReminders: calendarExport.reminders },
+    data: { vaultItems: items, contacts, businessCards: cards, medicalRecords, medicalRecordLinks, documentShares, recordShares, notifications, authoredShareComments: authoredComments, subscriptions, paymentHistory: payments, timelineEvents: timelineExport.events, calendarEvents: calendarExport.events, calendarReminders: calendarExport.reminders, calendarPreferences: calendarExport.preferences },
     attachments: attachmentManifest,
     note: "Private attachment bytes, including medical-record files, are included under files/. Timeline text is decrypted only for this authenticated account export; timeline attachment files are decrypted into the archive. Session tokens, password hashes, and other accounts' private records are excluded.",
   };

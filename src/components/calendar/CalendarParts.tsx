@@ -144,21 +144,26 @@ export function MiniCalendar({ selected, today, rangeFrom, rangeTo, onSelect }: 
 }
 
 /** "This event / All events" choice for recurring events. */
-export function ScopeDialog({ action, onChoose, onClose, busy }: {
-  action: "edit" | "delete"; onChoose: (scope: "occurrence" | "series") => void; onClose: () => void; busy: boolean;
+export function ScopeDialog({ action, onChoose, onClose, busy, seriesNote }: {
+  action: "edit" | "delete" | "move"; onChoose: (scope: "occurrence" | "series") => void; onClose: () => void; busy: boolean;
+  /** Shown when "All events" is selected (e.g. single-occurrence changes will be replaced). */
+  seriesNote?: string | null;
 }) {
   const [scope, setScope] = useState<"occurrence" | "series">("occurrence");
+  const heading = action === "edit" ? "Edit recurring event" : action === "move" ? "Move recurring event" : "Delete recurring event";
+  const submitLabel = action === "edit" ? "Continue" : action === "move" ? "Move" : "Delete";
   return <CalPopover anchor={null} onClose={onClose} labelledBy="cal-scope-title" className="cal-scope">
     <form onSubmit={(event) => { event.preventDefault(); onChoose(scope); }}>
-      <h2 id="cal-scope-title">{action === "edit" ? "Edit recurring event" : "Delete recurring event"}</h2>
+      <h2 id="cal-scope-title">{heading}</h2>
       <fieldset>
         <legend className="sr-only">Apply to</legend>
         <label><input type="radio" name="cal-scope" checked={scope === "occurrence"} onChange={() => setScope("occurrence")} data-autofocus/> This event</label>
         <label><input type="radio" name="cal-scope" checked={scope === "series"} onChange={() => setScope("series")}/> All events</label>
       </fieldset>
+      {scope === "series" && seriesNote && <p className="cal-hint cal-hint-warn cal-scope-note">{seriesNote}</p>}
       <div className="cal-popover-actions">
         <button type="button" className="quiet-button" onClick={onClose} disabled={busy}>Cancel</button>
-        <button type="submit" className={action === "delete" ? "cal-danger-button" : "editor-submit"} disabled={busy}>{busy ? <><span className="spinner"/> Working…</> : action === "edit" ? "Continue" : "Delete"}</button>
+        <button type="submit" className={action === "delete" ? "cal-danger-button" : "editor-submit"} disabled={busy}>{busy ? <><span className="spinner"/> Working…</> : submitLabel}</button>
       </div>
     </form>
   </CalPopover>;

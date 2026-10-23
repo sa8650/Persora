@@ -250,20 +250,175 @@ test('account export: owner-scoped event and reminder rows; empty when the migra
     seen.push({ path: url.pathname, owner: url.searchParams.get('user_id'), select: url.searchParams.get('select'), range: new Headers(init.headers).get('Range'), auth: new Headers(init.headers).get('apikey') || new Headers(init.headers).get('Authorization') });
     if (url.pathname.endsWith('/calendar_events')) return new Response(JSON.stringify([{ id: 'e1', user_id: 'u1', title: 'Dentist' }, { id: 'e2', user_id: 'u1', series_id: 'e1', status: 'cancelled' }]), { status: 200 });
     if (url.pathname.endsWith('/calendar_reminders')) return new Response(JSON.stringify([{ id: 'r1', event_id: 'e1', status: 'sent' }]), { status: 200 });
+    if (url.pathname.endsWith('/calendar_preferences')) return new Response(JSON.stringify([{ filters: { types: { task: false } }, updated_at: '2026-10-20T00:00:00Z' }]), { status: 200 });
     return new Response('{}', { status: 500 });
   };
   const data = await exportCalendarData('u1', env);
   assert.deepEqual(data.events.map((row) => row.id), ['e1', 'e2'], 'exceptions and cancelled occurrences are kept');
   assert.deepEqual(data.reminders.map((row) => row.id), ['r1']);
+  assert.deepEqual(data.preferences.filters, { types: { task: false } }, 'filter preferences are exported as saved');
+  assert.ok(seen.find((call) => call.path.endsWith('/calendar_events')).select.includes('item_type,completed_at'), 'item type and completion are exported');
   assert.ok(seen.every((call) => call.owner === 'eq.u1'), 'every query is scoped to the member');
   assert.ok(seen.every((call) => call.range === '0-999'), 'paged');
   assert.ok(seen.every((call) => call.auth), 'server-side key only');
   assert.ok(!seen.find((call) => call.path.endsWith('/calendar_reminders')).select.includes('claim_token'), 'internal claim tokens are not exported');
 
   globalThis.fetch = async () => new Response(JSON.stringify({ code: 'PGRST205', message: 'Could not find the table' }), { status: 404 });
-  assert.deepEqual(await exportCalendarData('u1', env), { events: [], reminders: [] });
+  assert.deepEqual(await exportCalendarData('u1', env), { events: [], reminders: [], preferences: null });
 
   globalThis.fetch = async () => new Response(JSON.stringify({ code: 'XX000', message: 'boom' }), { status: 500 });
   const quiet = console.error; console.error = () => {};
   try { await assert.rejects(exportCalendarData('u1', env)); } finally { console.error = quiet; }
+});
+
+// ---------------------------------------------------------------------------
+// Smart scheduling routes: tasks, appointments, moves, conflicts, preferences
+// ---------------------------------------------------------------------------
+const TASK = '3e4f5a6b-7c8d-4e9f-8a0b-1c2d3e4f5a6b';
+const APPT = '5a6b7c8d-9e0f-4a1b-8c2d-3e4f5a6b7c8d';
+const taskRow = (overrides = {}) => seriesRow({
+  id: TASK, item_type: 'task', title: 'Submit assignment', category: null, recurrence_freq: null, recurrence_count: null,
+  start_at: '2026-11-16T05:00:00+00:00', end_at: '2026-11-16T05:30:00+00:00', completed_at: null, revision: 2, ...overrides,
+});
+const apptRow = (overrides = {}) => seriesRow({
+  id: APPT, item_type: 'appointment', title: 'Doctor', category: 'health', location: 'City Clinic', description: 'Bring reports',
+  recurrence_freq: null, recurrence_count: null, start_at: '2026-11-16T04:00:00+00:00', end_at: '2026-11-16T04:30:00+00:00', reminder_minutes: 30, revision: 5, ...overrides,
+});
+
+test('rows from before the upgrade read as events; tasks and appointments keep their fields', () => {
+  const legacy = { ...seriesRow() }; delete legacy.item_type; delete legacy.completed_at;
+  assert.equal(eventFromRow(legacy).itemType, 'event');
+  assert.equal(eventFromRow(legacy).completedAt, null);
+  assert.equal(eventFromRow(taskRow({ completed_at: '2026-11-15T10:00:00+00:00' })).completedAt, '2026-11-15T10:00:00.000Z');
+  const appointment = eventFromRow(apptRow());
+  assert.deepEqual([appointment.itemType, appointment.location, appointment.description, appointment.reminderMinutes], ['appointment', 'City Clinic', 'Bring reports', 30]);
+});
+
+test('creating tasks and appointments: type is saved; invalid combinations are 400s', async () => {
+  const calls = mockDatabase({ rpc: { persora_calendar_save_event: (body) => Response.json({ event: { ...taskRow(), id: body.p_id, item_type: body.p_event.item_type }, exceptions: [] }) } });
+  const task = await call('POST', '/calendar/events', { event: { itemType: 'task', title: 'Pay rent', allDay: true, start: { date: '2026-11-30' }, end: { date: '2026-11-30' }, reminderMinutes: 1440 } });
+  assert.equal(task.status, 201);
+  assert.equal(rpcCalls(calls, 'persora_calendar_save_event')[0].body.p_event.item_type, 'task');
+  const appointment = await call('POST', '/calendar/events', { event: { ...timed('Dentist', '2026-11-20', '10:00', '10:30'), itemType: 'appointment', location: 'Clinic', reminderMinutes: 30 } });
+  assert.equal(appointment.status, 201);
+  assert.equal(rpcCalls(calls, 'persora_calendar_save_event')[1].body.p_event.item_type, 'appointment');
+  assert.equal(rpcCalls(calls, 'persora_calendar_save_event')[1].body.p_reminder.minutes_before, 30);
+  const repeatingTask = await call('POST', '/calendar/events', { event: { ...timed('Study', '2026-11-20', '19:00', '21:00'), itemType: 'task', recurrence: { freq: 'weekly' } } });
+  assert.deepEqual([repeatingTask.status, repeatingTask.body.field], [400, 'recurrence']);
+  const allDayAppointment = await call('POST', '/calendar/events', { event: { itemType: 'appointment', title: 'Dentist', allDay: true, start: { date: '2026-11-20' }, end: { date: '2026-11-20' } } });
+  assert.equal(allDayAppointment.status, 400);
+  assert.equal(rpcCalls(calls, 'persora_calendar_save_event').length, 2, 'invalid input never reaches the database');
+});
+
+test('task completion: owner-scoped, tasks only, revision passed, reminder cancelled or rescheduled', async () => {
+  const calls = mockDatabase({
+    rows: [taskRow({ reminder_minutes: 15 }), apptRow()],
+    rpc: { persora_calendar_set_task_completion: (body) => Response.json({ event: taskRow({ completed_at: body.p_completed ? '2026-11-15T10:00:00+00:00' : null, revision: 3 }) }) },
+  });
+  const done = await call('POST', `/calendar/events/${TASK}/completion`, { completed: true, expectedRevision: 2 });
+  assert.equal(done.status, 200);
+  assert.equal(done.body.event.completedAt, '2026-11-15T10:00:00.000Z');
+  let [rpc] = rpcCalls(calls, 'persora_calendar_set_task_completion');
+  assert.deepEqual([rpc.body.p_owner, rpc.body.p_id, rpc.body.p_completed, rpc.body.p_expected_revision, rpc.body.p_reminder], [OWNER, TASK, true, 2, null]);
+  const reopened = await call('POST', `/calendar/events/${TASK}/completion`, { completed: false, expectedRevision: 3 });
+  assert.equal(reopened.status, 200);
+  rpc = rpcCalls(calls, 'persora_calendar_set_task_completion')[1];
+  assert.equal(rpc.body.p_reminder.remind_at, '2026-11-16T04:45:00.000Z', 'reopening reschedules the reminder');
+  assert.equal((await call('POST', `/calendar/events/${APPT}/completion`, { completed: true })).status, 400, 'only tasks');
+  assert.equal((await call('POST', `/calendar/events/${TASK}/completion`, { completed: 'yes' })).status, 400);
+  assert.equal((await call('POST', `/calendar/events/${TASK}/completion`, { completed: true }, { ...identity, id: OTHER })).status, 404, 'another member gets 404');
+  assert.equal(rpcCalls(calls, 'persora_calendar_set_task_completion').length, 2);
+});
+
+test('moving a completed task keeps it complete with no reminder; moving an appointment keeps its fields', async () => {
+  const calls = mockDatabase({
+    rows: [taskRow({ completed_at: '2026-11-15T10:00:00+00:00', reminder_minutes: 15 }), apptRow()],
+    rpc: { persora_calendar_save_event: (body) => Response.json({ event: body.p_id === TASK ? taskRow({ completed_at: '2026-11-15T10:00:00+00:00', revision: 3 }) : apptRow({ revision: 6 }), exceptions: [] }) },
+  });
+  // The client sends the same fields with new timing; type can't be changed by a move.
+  const task = await call('PATCH', `/calendar/events/${TASK}`, { scope: 'series', expectedRevision: 2, event: { ...timed('Submit assignment', '2026-11-18', '15:00', '15:30'), itemType: 'event', reminderMinutes: 15 } });
+  assert.equal(task.status, 200);
+  let [save] = rpcCalls(calls, 'persora_calendar_save_event');
+  assert.equal(save.body.p_event.item_type, 'task', 'the stored type wins');
+  assert.equal(save.body.p_reminder, null, 'no reminder for a completed task');
+  assert.equal(save.body.p_expected_revision, 2);
+  assert.equal(task.body.event.completedAt, '2026-11-15T10:00:00.000Z', 'still complete after the move');
+  const appointment = await call('PATCH', `/calendar/events/${APPT}`, { scope: 'series', expectedRevision: 5, event: { ...timed('Doctor', '2026-11-17', '11:00', '11:45'), itemType: 'appointment', category: 'health', location: 'City Clinic', description: 'Bring reports', reminderMinutes: 30 } });
+  assert.equal(appointment.status, 200);
+  save = rpcCalls(calls, 'persora_calendar_save_event')[1];
+  assert.deepEqual([save.body.p_event.location, save.body.p_event.description, save.body.p_event.reminder_minutes, save.body.p_event.start_at], ['City Clinic', 'Bring reports', 30, '2026-11-17T05:00:00.000Z']);
+  assert.equal(save.body.p_reminder.remind_at, '2026-11-17T04:30:00.000Z', 'the reminder follows the move');
+});
+
+test('moving one occurrence is refused (409) when the series changed since it was loaded', async () => {
+  const calls = mockDatabase({ rows: [seriesRow({ revision: 4 }), exceptionRow()], rpc: { persora_calendar_save_occurrence: () => Response.json({ event: exceptionRow(), series: seriesRow() }) } });
+  const moved = { ...timed('Standup', '2026-11-18', '10:00', '10:15'), reminderMinutes: 15 };
+  const stale = await call('PATCH', `/calendar/events/${SERIES}`, { scope: 'occurrence', occurrenceKey: '2026-11-18T03:00:00.000Z', expectedRevision: null, seriesRevision: 3, event: moved });
+  assert.equal(stale.status, 409);
+  const staleException = await call('PATCH', `/calendar/events/${EXC}`, { scope: 'occurrence', occurrenceKey: null, expectedRevision: 1, seriesRevision: 3, event: moved });
+  assert.equal(staleException.status, 409);
+  assert.equal(rpcCalls(calls, 'persora_calendar_save_occurrence').length, 0, 'nothing written');
+  const fresh = await call('PATCH', `/calendar/events/${SERIES}`, { scope: 'occurrence', occurrenceKey: '2026-11-18T03:00:00.000Z', expectedRevision: null, seriesRevision: 4, event: moved });
+  assert.equal(fresh.status, 200);
+  assert.equal(rpcCalls(calls, 'persora_calendar_save_occurrence')[0].body.p_original_start_at, '2026-11-18T03:00:00.000Z');
+});
+
+test('conflicts: all overlaps with titles and times, nearby free slots; completed tasks and all-day items ignored', async () => {
+  const busyRows = [
+    seriesRow({ id: SERIES, title: 'Standup', recurrence_freq: 'daily', recurrence_count: 30, start_at: '2026-11-16T03:00:00+00:00', end_at: '2026-11-16T03:15:00+00:00' }), // 09:00–09:15 daily
+    apptRow(), // 10:00–10:30 on the 16th
+    taskRow({ id: TASK, completed_at: '2026-11-15T10:00:00+00:00', start_at: '2026-11-16T03:30:00+00:00', end_at: '2026-11-16T05:00:00+00:00' }), // done → ignored
+    seriesRow({ id: EXC, title: 'Holiday', all_day: true, start_at: null, end_at: null, start_date: '2026-11-16', end_date: '2026-11-17', recurrence_freq: null, recurrence_count: null }),
+  ];
+  const calls = mockDatabase({ rpc: { persora_calendar_events_in_range: () => Response.json(busyRows) } });
+  const result = await call('POST', '/calendar/conflicts', { event: { ...timed('Review', '2026-11-16', '09:00', '10:15'), itemType: 'event' } });
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body.conflicts.map((entry) => [entry.title, entry.itemType, entry.start.time, entry.end.time]), [['Standup', 'event', '09:00', '09:15'], ['Doctor', 'appointment', '10:00', '10:30']]);
+  assert.ok(result.body.suggestions.length > 0 && result.body.suggestions.length <= 3);
+  for (const slot of result.body.suggestions) {
+    assert.equal(Date.parse(slot.endAt) - Date.parse(slot.startAt), 75 * 60_000);
+    for (const row of [busyRows[0], busyRows[1]]) assert.ok(!(Date.parse(slot.startAt) < Date.parse(row.end_at) && Date.parse(row.start_at) < Date.parse(slot.endAt)));
+  }
+  const [range] = rpcCalls(calls, 'persora_calendar_events_in_range');
+  assert.equal(range.body.p_owner, OWNER, 'only the member\'s own items');
+
+  // The item being moved doesn't conflict with itself; one occurrence of a series ignores only that occurrence.
+  const self = await call('POST', '/calendar/conflicts', { event: { ...timed('Doctor', '2026-11-16', '10:15', '10:45'), itemType: 'appointment' }, ignore: { eventId: APPT } });
+  assert.deepEqual(self.body.conflicts, []);
+  const occurrence = await call('POST', '/calendar/conflicts', { event: timed('Standup', '2026-11-16', '09:05', '09:20'), ignore: { seriesId: SERIES, occurrenceKey: '2026-11-16T03:00:00.000Z', scope: 'occurrence' } });
+  assert.deepEqual(occurrence.body.conflicts, []);
+  // A recurring candidate is checked across its upcoming occurrences, without suggestions.
+  const weekly = await call('POST', '/calendar/conflicts', { event: { ...timed('Gym', '2026-11-16', '09:10', '09:40'), recurrence: { freq: 'daily', count: 3 } } });
+  assert.deepEqual(weekly.body.conflicts.map((entry) => entry.start.date), ['2026-11-16', '2026-11-17', '2026-11-18'], 'every overlapping occurrence is listed');
+  assert.ok(weekly.body.conflicts.every((entry) => entry.seriesId === SERIES || entry.eventId === SERIES));
+  assert.deepEqual(weekly.body.suggestions, []);
+  // Skips.
+  assert.equal((await call('POST', '/calendar/conflicts', { event: { title: 'Trip', allDay: true, start: { date: '2026-11-16' }, end: { date: '2026-11-16' } } })).body.skipped, 'all-day');
+  assert.equal((await call('POST', '/calendar/conflicts', { event: { ...timed('Done task', '2026-11-16', '09:00', '09:30'), itemType: 'task' }, completed: true })).body.skipped, 'completed');
+  assert.equal((await call('POST', '/calendar/conflicts', { event: timed('', '2026-11-16', '09:00', '09:30') })).status, 400);
+});
+
+test('preferences: defaults when unsaved, normalized upsert for the signed-in member only', async () => {
+  const calls = [];
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(String(input));
+    calls.push({ url, method: init.method || 'GET', body: typeof init.body === 'string' ? JSON.parse(init.body) : null, prefer: new Headers(init.headers).get('Prefer') });
+    if (url.pathname.endsWith('/calendar_preferences') && (init.method || 'GET') === 'GET') return Response.json([]);
+    return Response.json([{ user_id: OWNER, filters: {}, updated_at: '2026-10-24T10:00:00+00:00' }]);
+  };
+  const empty = await call('GET', '/calendar/preferences');
+  assert.equal(empty.status, 200);
+  assert.equal(empty.body.saved, false);
+  assert.equal(empty.body.filters.types.task, true);
+  assert.equal(calls[0].url.searchParams.get('user_id'), `eq.${OWNER}`);
+  const saved = await call('PUT', '/calendar/preferences', { filters: { types: { task: false, bogus: false }, categories: { work: false }, completed: false }, user_id: OTHER });
+  assert.equal(saved.status, 200);
+  const upsert = calls.find((entry) => entry.method === 'POST');
+  assert.equal(upsert.body.user_id, OWNER, 'never another member');
+  assert.equal(upsert.body.filters.types.task, false);
+  assert.equal('bogus' in upsert.body.filters.types, false, 'unknown keys dropped');
+  assert.equal(upsert.body.filters.categories.work, false);
+  assert.match(upsert.prefer, /merge-duplicates/);
+  assert.equal(saved.body.updatedAt, '2026-10-24T10:00:00+00:00');
+  assert.equal((await call('PUT', '/calendar/preferences', { filters: 'all' })).status, 400);
 });
