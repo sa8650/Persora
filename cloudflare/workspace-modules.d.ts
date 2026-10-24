@@ -1,7 +1,7 @@
 // Types for cloudflare/workspace-modules.js (shared by the Pages API and the app).
 
 export type LauncherModuleId =
-  | "dashboard" | "calendar" | "habits" | "loans" | "timeline" | "medical-records" | "contacts" | "shared" | "personal-finance"
+  | "dashboard" | "calendar" | "habits" | "loans" | "tables" | "timeline" | "medical-records" | "contacts" | "shared" | "personal-finance"
   | "documents" | "academics" | "family" | "photo-studio" | "subscriptions" | "purchases" | "accounts"
   | "memberships" | "wallet-cards" | "password-manager" | "projects" | "pdf-studio" | "study" | "notes"
   | "business-card" | "urls";

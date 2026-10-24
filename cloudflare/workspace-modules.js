@@ -13,6 +13,7 @@ export const LAUNCHER_MODULE_IDS = Object.freeze([
   "calendar",
   "habits",
   "loans",
+  "tables",
   "timeline",
   "medical-records",
   "contacts",

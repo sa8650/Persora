@@ -92,6 +92,22 @@ const ICONS: Record<LauncherModuleId, Draw> = {
     <ellipse cx="34" cy="27.6" rx="4.6" ry="1.8" fill="none" stroke="#d88407" strokeOpacity=".55" strokeWidth="1.3" />
   </>,
 
+  tables: (id) => <>
+    <defs>
+      <Lg id={id("a")} from="#4fd98f" to="#16a05a" />
+      <Lg id={id("b")} from="#1f9d55" to="#0f7a3f" vertical />
+      <Lg id={id("c")} from="#6aa8ff" to="#2f6fe4" />
+    </defs>
+    {/* Sheet: header band, grid lines and one highlighted cell. */}
+    <rect x="6" y="7" width="32" height="32" rx="6" fill={`url(#${id("a")})`} />
+    <path d="M6 13a6 6 0 0 1 6-6h20a6 6 0 0 1 6 6v3H6z" fill={`url(#${id("b")})`} />
+    <path d="M6 24.5h32M6 31.5h32M17 16v23M27.5 16v23" stroke="#fff" strokeOpacity=".55" strokeWidth="1.5" />
+    <rect x="18.2" y="18" width="8.1" height="5.3" rx="1.2" fill="#fff" />
+    {/* Chart chip. */}
+    <rect x="27" y="27" width="16" height="16" rx="4.5" fill={`url(#${id("c")})`} style={gap} strokeWidth="2" />
+    <path d="M31.5 38.5v-3.2M35 38.5v-6.4M38.5 38.5v-4.6" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
+  </>,
+
   timeline: (id) => <>
     <defs>
       <Lg id={id("a")} from="#b49cff" to="#7c3aed" />

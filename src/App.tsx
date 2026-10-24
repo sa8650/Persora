@@ -1486,10 +1486,11 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       url.searchParams.delete("project");
       window.history.replaceState(window.history.state, "", url);
     }
-    if (new URLSearchParams(window.location.search).has("view") || (next !== "loans" && new URLSearchParams(window.location.search).has("loan"))) {
+    if (new URLSearchParams(window.location.search).has("view") || (next !== "loans" && new URLSearchParams(window.location.search).has("loan")) || (next !== "tables" && new URLSearchParams(window.location.search).has("table"))) {
       const url = new URL(window.location.href);
       url.searchParams.delete("view");
       if (next !== "loans") url.searchParams.delete("loan");
+      if (next !== "tables") url.searchParams.delete("table");
       window.history.replaceState(window.history.state, "", url);
     }
     if (next !== "documents") {
@@ -1655,13 +1656,14 @@ commitContacts(getLocalContacts(DEMO_USER.id));
   </>;
 }
 
-/** Deep links: ?project=… opens Projects; ?view=calendar / ?view=habits / ?view=loans[&loan=…] (reminder emails) open the Calendar / Habit Tracker / Loan Tracker. */
+/** Deep links: ?project=… opens Projects; ?view=calendar / ?view=habits / ?view=loans[&loan=…] (reminder emails) open the Calendar / Habit Tracker / Loan Tracker; ?view=tables[&table=…] opens Persora Table. */
 function initialWorkspaceView(): ViewId {
   const params = new URLSearchParams(window.location.search);
   if (params.has("project")) return "projects";
   if (params.get("view") === "calendar") return "calendar";
   if (params.get("view") === "habits") return "habits";
   if (params.get("view") === "loans") return "loans";
+  if (params.get("view") === "tables") return "tables";
   return "dashboard";
 }
 

@@ -35,6 +35,7 @@ const VIEW_MODULES: Partial<Record<LauncherModuleId, { label: string; hint: stri
   calendar: { label: "Calendar", hint: "Events, tasks and appointments" },
   habits: { label: "Habit Tracker", hint: "Daily routines, streaks and reminders" },
   loans: { label: "Loan Tracker", hint: "Loans, installments and repayments" },
+  tables: { label: "Persora Table", hint: "Spreadsheets and Smart Tables" },
   timeline: { label: "Life Timeline", hint: "Milestones and memories in order" },
   "medical-records": { label: "Medical Records", hint: "Health history and reports" },
   contacts: { label: "Contacts", hint: "The people in your life" },
