@@ -14,7 +14,8 @@
     "test:e2e:calendar": "node tests/e2e/calendar.e2e.mjs",
     "test:e2e:calendar-smart": "node tests/e2e/calendar-smart.e2e.mjs",
     "test:e2e:app-launcher": "node tests/e2e/app-launcher.e2e.mjs",
-    "test:e2e:habits": "node tests/e2e/habits.e2e.mjs"
+    "test:e2e:habits": "node tests/e2e/habits.e2e.mjs",
+    "test:e2e:loans": "node tests/e2e/loans.e2e.mjs"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.3.0",

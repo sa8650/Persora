@@ -71,6 +71,27 @@ const ICONS: Record<LauncherModuleId, Draw> = {
     <circle cx="9" cy="24" r="4" fill={`url(#${id("c")})`} style={gap} strokeWidth="1.8" />
   </>,
 
+  loans: (id) => <>
+    <defs>
+      <Lg id={id("a")} from="#4fd1c5" to="#0f8f8a" />
+      <Lg id={id("b")} from="#ffd36e" to="#f29a0c" vertical />
+      <Lg id={id("c")} from="#ffe39b" to="#f6b21b" vertical />
+    </defs>
+    {/* Repayment card: four installment slots, the first two settled. */}
+    <rect x="6" y="8" width="28" height="31" rx="6" fill={`url(#${id("a")})`} />
+    <rect x="11" y="14" width="18" height="3.6" rx="1.8" fill="#fff" />
+    <rect x="11" y="20.2" width="18" height="3.6" rx="1.8" fill="#fff" />
+    <rect x="11" y="26.4" width="18" height="3.6" rx="1.8" fill="#fff" fillOpacity=".38" />
+    <rect x="11" y="32.6" width="10" height="3.6" rx="1.8" fill="#fff" fillOpacity=".38" />
+    {/* Coin stack. */}
+    <ellipse cx="34" cy="37.2" rx="9" ry="4" fill="#d88407" style={gap} strokeWidth="1.8" />
+    <path d="M25 33.4v3.8c0 2.2 4 4 9 4s9-1.8 9-4v-3.8" fill={`url(#${id("b")})`} />
+    <ellipse cx="34" cy="33.4" rx="9" ry="4" fill={`url(#${id("b")})`} style={gap} strokeWidth="1.8" />
+    <path d="M25 27.6v3.8c0 2.2 4 4 9 4s9-1.8 9-4v-3.8" fill={`url(#${id("b")})`} />
+    <ellipse cx="34" cy="27.6" rx="9" ry="4" fill={`url(#${id("c")})`} style={gap} strokeWidth="1.8" />
+    <ellipse cx="34" cy="27.6" rx="4.6" ry="1.8" fill="none" stroke="#d88407" strokeOpacity=".55" strokeWidth="1.3" />
+  </>,
+
   timeline: (id) => <>
     <defs>
       <Lg id={id("a")} from="#b49cff" to="#7c3aed" />

@@ -68,6 +68,8 @@ import { buildTrashEntry, clearLocalTrash, loadLocalTrash, pushLocalTrash, remov
 import { CALENDAR_CHANGED_EVENT, loadCalendarReminders, markCalendarReminderRead } from "./lib/calendar-api";
 import { HABITS_CHANGED_EVENT, HABITS_RESTORED_EVENT, importHabitBackup, loadHabitReminders, markHabitReminderRead } from "./lib/habit-api";
 import type { HabitReminder } from "./lib/habit-api";
+import { LOANS_CHANGED_EVENT, LOANS_RESTORED_EVENT, importLoanBackup, loadLoanReminders, markLoanReminderRead } from "./lib/loan-api";
+import type { LoanReminder } from "./lib/loan-api";
 import type { CalendarReminder } from "./lib/calendar-api";
 import { localDateOf, safeTimeZone } from "../cloudflare/calendar-rules.js";
 import { loadAdminBootstrapStatus, loadDocumentTypes, loadProjectNotifications, loadPublicPlans, loadPublicSiteContent, markProjectNotificationRead, markProjectNotificationsRead, sendEmailVerificationCode, verifyEmailVerificationCode } from "./lib/cloud";
@@ -125,6 +127,7 @@ export default function App() {
   const [projectNotifications, setProjectNotifications] = useState<ShareNotification[]>([]);
   const [calendarNotifications, setCalendarNotifications] = useState<ShareNotification[]>([]);
   const [habitNotifications, setHabitNotifications] = useState<ShareNotification[]>([]);
+  const [loanNotifications, setLoanNotifications] = useState<ShareNotification[]>([]);
   const [localScheduleNotifications, setLocalScheduleNotifications] = useState<ShareNotification[]>([]);
   const [ringingSchedules, setRingingSchedules] = useState<ActiveScheduleAlert[]>([]);
   const [scheduleNotificationOwner, setScheduleNotificationOwner] = useState("");
@@ -510,6 +513,55 @@ export default function App() {
     return () => {
       active = false; window.clearInterval(timer);
       window.removeEventListener(HABITS_CHANGED_EVENT, refresh); window.removeEventListener("focus", refresh);
+    };
+  }, [user?.id, user?.demo]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Loan reminders (before-due and overdue): created and delivered by the same
+  // server dispatcher; this poll only mirrors delivered ones into the bell and
+  // raises one desktop notification each. Reminders never record a payment.
+  useEffect(() => {
+    setLoanNotifications([]);
+    if (!user || user.demo || !isPagesApiConfigured) return;
+    let active = true;
+    const seenKey = `persora-loan-notified:${user.id}`;
+    const money = (reminder: LoanReminder) => {
+      try { return new Intl.NumberFormat(undefined, { style: "currency", currency: reminder.currency }).format(reminder.amount); }
+      catch { return `${reminder.currency} ${reminder.amount.toFixed(2)}`; }
+    };
+    const day = (date: string) => new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${date}T12:00:00Z`));
+    const message = (reminder: LoanReminder) => reminder.kind === "overdue"
+      ? `Installment ${reminder.installmentNumber} overdue since ${day(reminder.dueDate)} · ${money(reminder)} remaining`
+      : `Installment ${reminder.installmentNumber} due ${day(reminder.dueDate)} · ${money(reminder)}`;
+    const toNotification = (reminder: LoanReminder): ShareNotification => ({
+      id: `loan:${reminder.id}`, kind: "loan", itemTitle: reminder.loanName, actorName: reminder.loanName,
+      message: message(reminder), createdAt: reminder.remindAt, readAt: reminder.readAt || undefined, loanId: reminder.loanId,
+    });
+    const fire = (reminder: LoanReminder) => {
+      let seen: string[] = [];
+      try { seen = JSON.parse(localStorage.getItem(seenKey) || "[]") as string[]; } catch { seen = []; }
+      if (seen.includes(reminder.id)) return;
+      try { localStorage.setItem(seenKey, JSON.stringify([...seen, reminder.id].slice(-300))); } catch { /* best-effort dedupe */ }
+      if (!active) return;
+      notify(`${reminder.kind === "overdue" ? "Overdue installment" : "Installment reminder"}: ${reminder.loanName}`);
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        try { new Notification(reminder.loanName, { body: message(reminder), tag: `persora-loan-${reminder.id}` }); } catch { /* the bell entry remains */ }
+      }
+    };
+    const refresh = () => {
+      void loadLoanReminders().then((rows) => {
+        if (!active) return;
+        setLoanNotifications(rows.map(toNotification));
+        const now = Date.now();
+        for (const row of rows) if (!row.readAt && now - Date.parse(row.remindAt) < 15 * 60_000) fire(row);
+      }).catch(() => { /* retried on the next poll; 503 until the loans migration is applied */ });
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 60_000);
+    window.addEventListener(LOANS_CHANGED_EVENT, refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      active = false; window.clearInterval(timer);
+      window.removeEventListener(LOANS_CHANGED_EVENT, refresh); window.removeEventListener("focus", refresh);
     };
   }, [user?.id, user?.demo]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1222,9 +1274,11 @@ commitContacts(getLocalContacts(DEMO_USER.id));
     setProjectNotifications((current) => current.map((entry) => ({ ...entry, readAt: entry.readAt || now })));
     setCalendarNotifications((current) => current.map((entry) => ({ ...entry, readAt: entry.readAt || now })));
     setHabitNotifications((current) => current.map((entry) => ({ ...entry, readAt: entry.readAt || now })));
+    setLoanNotifications((current) => current.map((entry) => ({ ...entry, readAt: entry.readAt || now })));
     if (!user || user.demo || !isPagesApiConfigured) return;
     if (calendarNotifications.some((entry) => !entry.readAt)) void markCalendarReminderRead().catch(() => { /* re-synced on the next poll */ });
     if (habitNotifications.some((entry) => !entry.readAt)) void markHabitReminderRead().catch(() => { /* re-synced on the next poll */ });
+    if (loanNotifications.some((entry) => !entry.readAt)) void markLoanReminderRead().catch(() => { /* re-synced on the next poll */ });
     try { await Promise.all([markShareNotificationsRead(), markProjectNotificationsRead()]); await refreshSharing(); }
     catch (error) {
       notify(error instanceof Error ? error.message : "Couldn't update notifications.", "error");
@@ -1245,6 +1299,12 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       const now = new Date().toISOString();
       setHabitNotifications((current) => current.map((entry) => entry.id === notificationId ? { ...entry, readAt: entry.readAt || now } : entry));
       if (user && !user.demo && isPagesApiConfigured) void markHabitReminderRead(notificationId.slice("habit:".length)).catch(() => { /* re-synced on the next poll */ });
+      return;
+    }
+    if (notificationId.startsWith("loan:")) {
+      const now = new Date().toISOString();
+      setLoanNotifications((current) => current.map((entry) => entry.id === notificationId ? { ...entry, readAt: entry.readAt || now } : entry));
+      if (user && !user.demo && isPagesApiConfigured) void markLoanReminderRead(notificationId.slice("loan:".length)).catch(() => { /* re-synced on the next poll */ });
       return;
     }
     if (!notificationId.startsWith("project:")) return;
@@ -1361,17 +1421,29 @@ commitContacts(getLocalContacts(DEMO_USER.id));
     const raw = JSON.parse(await file.text()) as { format?: string; items?: unknown; data?: unknown };
     if (raw && raw.format === "persora-complete-export-v1") {
       // persora-export.json from a complete backup: restores Habit Tracker data
-      // (habits + check-ins) into this account. Merges; never overwrites.
+      // (habits + check-ins) and Loan Tracker data (loans, installments,
+      // payments) into this account. Merges; never overwrites.
       if (!user) throw new Error("Please sign in before importing data.");
-      const data = raw.data && typeof raw.data === "object" ? raw.data as { habits?: unknown; habitCheckins?: unknown } : {};
+      const data = raw.data && typeof raw.data === "object" ? raw.data as { habits?: unknown; habitCheckins?: unknown; loans?: unknown; loanInstallments?: unknown; loanPayments?: unknown } : {};
       const habits = Array.isArray(data.habits) ? data.habits : [];
-      if (!habits.length) throw new Error("This complete backup has no Habit Tracker data to restore. Complete backups can restore habits and their check-ins here.");
-      if (user.demo || !isPagesApiConfigured) throw new Error("Sign in to your Persora account to restore Habit Tracker data.");
-      const result = await importHabitBackup(habits, Array.isArray(data.habitCheckins) ? data.habitCheckins : []);
-      window.dispatchEvent(new Event(HABITS_RESTORED_EVENT));
-      window.dispatchEvent(new Event(HABITS_CHANGED_EVENT));
+      const loans = Array.isArray(data.loans) ? data.loans : [];
+      if (!habits.length && !loans.length) throw new Error("This complete backup has no Habit Tracker or Loan Tracker data to restore. Complete backups can restore habits, loans and their history here.");
+      if (user.demo || !isPagesApiConfigured) throw new Error("Sign in to your Persora account to restore Habit Tracker and Loan Tracker data.");
       const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
-      return `Habit Tracker restored: ${plural(result.habitsCreated, "habit")} added${result.habitsMatched ? `, ${plural(result.habitsMatched, "habit")} already here` : ""}, ${plural(result.checkinsAdded, "check-in")} added.`;
+      const parts: string[] = [];
+      if (habits.length) {
+        const result = await importHabitBackup(habits, Array.isArray(data.habitCheckins) ? data.habitCheckins : []);
+        window.dispatchEvent(new Event(HABITS_RESTORED_EVENT));
+        window.dispatchEvent(new Event(HABITS_CHANGED_EVENT));
+        parts.push(`Habit Tracker restored: ${plural(result.habitsCreated, "habit")} added${result.habitsMatched ? `, ${plural(result.habitsMatched, "habit")} already here` : ""}, ${plural(result.checkinsAdded, "check-in")} added.`);
+      }
+      if (loans.length) {
+        const result = await importLoanBackup(loans, Array.isArray(data.loanInstallments) ? data.loanInstallments : [], Array.isArray(data.loanPayments) ? data.loanPayments : []);
+        window.dispatchEvent(new Event(LOANS_RESTORED_EVENT));
+        window.dispatchEvent(new Event(LOANS_CHANGED_EVENT));
+        parts.push(`Loan Tracker restored: ${plural(result.loansCreated, "loan")} added${result.loansMatched ? `, ${plural(result.loansMatched, "loan")} already here` : ""}${result.loansSkipped ? `, ${plural(result.loansSkipped, "loan")} skipped` : ""}, ${plural(result.paymentsAdded, "payment")} added.`);
+      }
+      return parts.join(" ");
     }
     if (!raw || raw.format !== "persora-export-v1" || !Array.isArray(raw.items)) throw new Error("Choose a valid Persora JSON backup.");
     if (!user) throw new Error("Please sign in before importing data.");
@@ -1414,9 +1486,10 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       url.searchParams.delete("project");
       window.history.replaceState(window.history.state, "", url);
     }
-    if (new URLSearchParams(window.location.search).has("view")) {
+    if (new URLSearchParams(window.location.search).has("view") || (next !== "loans" && new URLSearchParams(window.location.search).has("loan"))) {
       const url = new URL(window.location.href);
       url.searchParams.delete("view");
+      if (next !== "loans") url.searchParams.delete("loan");
       window.history.replaceState(window.history.state, "", url);
     }
     if (next !== "documents") {
@@ -1470,7 +1543,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       recordSharesWithMe={recordSharesWithMe}
       contacts={contacts}
       businessCards={businessCards}
-      notifications={[...localScheduleNotifications, ...shareNotifications, ...projectNotifications, ...calendarNotifications, ...habitNotifications].sort((a, b) => b.createdAt.localeCompare(a.createdAt))}
+      notifications={[...localScheduleNotifications, ...shareNotifications, ...projectNotifications, ...calendarNotifications, ...habitNotifications, ...loanNotifications].sort((a, b) => b.createdAt.localeCompare(a.createdAt))}
       ringingSchedules={ringingSchedules}
       sharingAvailable={!user.demo && isPagesApiConfigured}
       timelineEvents={displayTimelineEvents}
@@ -1582,12 +1655,13 @@ commitContacts(getLocalContacts(DEMO_USER.id));
   </>;
 }
 
-/** Deep links: ?project=… opens Projects; ?view=calendar / ?view=habits (reminder emails) open the Calendar / Habit Tracker. */
+/** Deep links: ?project=… opens Projects; ?view=calendar / ?view=habits / ?view=loans[&loan=…] (reminder emails) open the Calendar / Habit Tracker / Loan Tracker. */
 function initialWorkspaceView(): ViewId {
   const params = new URLSearchParams(window.location.search);
   if (params.has("project")) return "projects";
   if (params.get("view") === "calendar") return "calendar";
   if (params.get("view") === "habits") return "habits";
+  if (params.get("view") === "loans") return "loans";
   return "dashboard";
 }
 
