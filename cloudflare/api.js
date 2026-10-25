@@ -11,6 +11,7 @@ import { handleHabits, dispatchHabitReminders, scheduleHabitDispatch, exportHabi
 import { handleLoans, dispatchLoanReminders, scheduleLoanDispatch, exportLoanData, LOANS_ROUTE_PREFIX } from "./loans.js";
 import { handleTables, exportTableData, TABLES_ROUTE_PREFIX } from "./tables.js";
 import { handleWorkspacePreferences, exportWorkspacePreferences, WORKSPACE_PREFERENCES_PATH } from "./workspace-preferences.js";
+import { handleConnections, handleIntegrationAdmin, CONNECTIONS_ROUTE_PREFIX, ADMIN_INTEGRATIONS_PREFIX } from "./connections.js";
 
 const DEFAULT_SETTINGS = {
   billing: { currency: "BDT", manualInstructions: "Follow the account details shown for your selected payment method.", billingEnabled: false, minTermMonths: 1, maxTermMonths: 12 },
@@ -757,6 +758,14 @@ export default {
         }
         return await handlePhotoStudio(request, identity, env, origin);
       }
+      if (url.pathname === CONNECTIONS_ROUTE_PREFIX || url.pathname.startsWith(CONNECTIONS_ROUTE_PREFIX + "/")) {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in to manage your connections." }, 401, origin);
+        // Server-to-server only: the browser never talks to EMS and never sees
+        // the shared secret or the EMS grant. Saving a copy follows the normal
+        // upload rules (paid plan, quota, max upload size) via these services.
+        return await handleConnections(request, identity, env, origin, connectionServices(env));
+      }
       if (url.pathname === PDF_STUDIO_ROUTE_PREFIX || url.pathname.startsWith(PDF_STUDIO_ROUTE_PREFIX + "/")) {
         const identity = await authorize(request, env);
         if (!identity) return json({ error: "Sign in is required to open PDF Studio." }, 401, origin);
@@ -894,6 +903,12 @@ export default {
         return json({ ok: true }, 200, origin);
       }
 
+      if (url.pathname === ADMIN_INTEGRATIONS_PREFIX || url.pathname.startsWith(ADMIN_INTEGRATIONS_PREFIX + "/")) {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required." }, 401, origin);
+        if (!(await isAdministrator(identity.id, env))) return json({ error: "Administrator access is required." }, 403, origin);
+        return await handleIntegrationAdmin(request, identity, env, origin, { logAdminEvent });
+      }
       if (url.pathname === "/admin/console" && request.method === "GET") {
         const identity = await authorize(request, env);
         if (!identity) return json({ error: "Sign in is required." }, 401, origin);
@@ -2763,6 +2778,20 @@ async function saveOwnedVaultItem(identity, body, env) {
   return savedRow;
 }
 
+function connectionServices(env) {
+  return {
+    rateLimit: {
+      blocked: (fingerprint) => callRpc("persora_login_blocked", { p_fingerprint: fingerprint }, env).then(rpcTimestamp),
+      record: (fingerprint, success, limit) => recordLoginAttempt(fingerprint, success, env, limit),
+    },
+    hasUploadPlan: hasActivePaidUploadPlan,
+    uploadPlanError: uploadPlanRequiredError,
+    maxUploadMb: async () => Math.max(1, Math.min(MAX_CONFIGURABLE_UPLOAD_MB, Number((await loadSettings(env)).storage.maxUploadMb) || 25)),
+    storageUsage: userStorageUsage,
+    saveVaultItem: saveOwnedVaultItem,
+    saveVaultFolder,
+  };
+}
 async function isAdministrator(userId, env) {
   const rows = await restRows(`profiles?id=eq.${encodeURIComponent(userId)}&select=role,account_status`, env);
   return Array.isArray(rows) && rows[0]?.role === "admin" && rows[0]?.account_status === "active";

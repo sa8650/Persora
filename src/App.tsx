@@ -1566,6 +1566,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       onOpenMedicalRecordFile={(record) => { void handleOpenMedicalRecordFile(record); }}
       onPreviewMedicalRecordFile={handlePreviewMedicalRecordFile}
       onRefreshMedicalRecords={handleRefreshMedicalRecords}
+      onVaultItemsChanged={() => { if (user && !user.demo) void loadVaultItems().then(setItems).catch(() => undefined); }}
       view={view}
       search={search}
       pendingPlanId={pendingPlanId}
@@ -1656,7 +1657,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
   </>;
 }
 
-/** Deep links: ?project=… opens Projects; ?view=calendar / ?view=habits / ?view=loans[&loan=…] (reminder emails) open the Calendar / Habit Tracker / Loan Tracker; ?view=tables[&table=…] opens Persora Table. */
+/** Deep links: ?project=… opens Projects; ?view=calendar / ?view=habits / ?view=loans[&loan=…] (reminder emails) open the Calendar / Habit Tracker / Loan Tracker; ?view=tables[&table=…] opens Persora Table; ?view=connections opens Connections. */
 function initialWorkspaceView(): ViewId {
   const params = new URLSearchParams(window.location.search);
   if (params.has("project")) return "projects";
@@ -1664,6 +1665,7 @@ function initialWorkspaceView(): ViewId {
   if (params.get("view") === "habits") return "habits";
   if (params.get("view") === "loans") return "loans";
   if (params.get("view") === "tables") return "tables";
+  if (params.get("view") === "connections") return "connections";
   return "dashboard";
 }
 

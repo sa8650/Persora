@@ -4,7 +4,7 @@
 // validate favorites identically.
 //
 // Every id is an existing workspace view (src/types.ts ViewId) shown in the
-// workspace sidebar. Account pages (Settings, Plans & billing, Trash) and the
+// workspace sidebar. Account pages (Connections, Settings, Plans & billing, Trash) and the
 // role-gated admin console are deliberately not launcher modules.
 
 /** Launcher modules in their canonical order (the sidebar's order). */

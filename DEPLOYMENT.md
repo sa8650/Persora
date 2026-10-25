@@ -76,6 +76,9 @@ In the Pages project, open **Settings → Variables and Secrets** (may appear as
 | `PASSWORD_VAULT_ESCROW_PRIVATE_KEY` | Only if it already exists from the earlier encrypted Password Manager | **Encrypted secret; temporary** | Used once to convert records saved by the retired encrypted release, then deleted (see `PASSWORD_VAULT.md`). New deployments do not set it. The Password Manager needs no key or extra secret of its own. |
 | `BREVO_API_KEY` | Brevo API v3 key with transactional-email access | **Encrypted secret** | Sends email-verification OTPs and admin test emails. Server-only; never use a `VITE_` prefix. |
 | `CALENDAR_REMINDER_TOKEN` | Optional; a long random value, e.g. `openssl rand -hex 32` | **Encrypted secret** | Lets pg_cron/pg_net or an external scheduler trigger Calendar and Habit Tracker reminder delivery (see [Calendar reminders](#calendar-reminders)). Without it, `/api/internal/calendar-reminders` is a 404. |
+| `CONNECTIONS_ENCRYPTION_KEY` | A stable random value, e.g. `openssl rand -hex 32` | **Encrypted secret** | Required for **Connections** (EMS). Encrypts members' access grants and the stored EMS shared secret. If unset, `TIMELINE_ENCRYPTION_KEY` is used. Rotating it forces members to reconnect. |
+| `EMS_INTEGRATION_SECRET` | Optional; the same ≥32-character secret configured in EMS | **Encrypted secret** | Overrides the shared secret entered in **Admin → Integrations** and locks that field. |
+| `EMS_API_BASE_URL` | Optional; e.g. `https://ems.example.com` | Plain text variable | EMS address used when the admin console leaves it blank. HTTPS only. |
 | `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT` | Azure Document Intelligence resource's base HTTPS endpoint | **Encrypted secret** | Server-side Smart Scan OCR endpoint; never use a `VITE_` prefix. |
 | `AZURE_DOCUMENT_INTELLIGENCE_KEY` | Azure Document Intelligence resource key | **Encrypted secret** | Authenticates server-side Smart Scan OCR requests; never use a `VITE_` prefix. |
 
@@ -212,6 +215,29 @@ No new binding or npm dependency is needed. Email reminders reuse `BREVO_API_KEY
 - Reminders never record a payment or change a status.
 
 **Verify.** Create a borrowed monthly loan with reducing interest whose first installment is in the past, and check that the preview matches the saved schedule. Record a partial payment, then the rest (an amount above the remaining balance is refused). Correct one payment and reverse another, and confirm both originals stay in the history. Edit the rate and confirm the recalculated future installments, then check that past installments and payments are unchanged. Close the loan with a settlement note and reopen it. Confirm a second account sees none of it, and that a backup from **Settings** imported into another account restores the loans with their payments (importing the same file twice adds nothing).
+
+### Connections (EMS)
+
+**Migration.** Apply `supabase/migrations/202610310001_connections.sql` after the earlier migrations. It creates `integration_settings` and `user_connections`, both with RLS enabled, no policies, and service-role-only grants. It is additive and safe to re-run. Until it is applied, `/api/connections` answers `503 migration_required` and nothing else is affected.
+
+**Secrets.**
+1. Add `CONNECTIONS_ENCRYPTION_KEY`, or rely on `TIMELINE_ENCRYPTION_KEY`.
+2. Generate one shared secret of at least 32 characters and enter it on **both** sides:
+   - EMS: Owner Console → Services → Persora Connections (or EMS secret `PERSORA_INTEGRATION_SECRET`);
+   - Persora: Admin → Integrations (or `EMS_INTEGRATION_SECRET`).
+3. Set the EMS address (HTTPS) in Admin → Integrations or in `EMS_API_BASE_URL`.
+4. Enable both toggles.
+
+Both servers' clocks must be within ±300 seconds, because signed requests outside that window are rejected.
+
+**Verify.**
+1. In Admin → Integrations, click **Test connection to EMS** and expect "EMS accepted Persora's signed request".
+2. As a member, open **Connections → EMS** and sign in with an EMS administrator account that has bought Vaultium. Browse the shop cards, preview a file, download one, and **Save to Persora**. The copy appears in Documents → EMS Vaultium.
+3. Refresh the page and confirm you are still connected.
+4. Disable the integration on either side and confirm access is blocked while the connection is kept.
+5. Click **Disconnect**.
+
+Full details are in [`CONNECTIONS.md`](./CONNECTIONS.md).
 
 ### Preview deployments
 
