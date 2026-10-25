@@ -4,7 +4,7 @@ export type LauncherModuleId =
   | "dashboard" | "calendar" | "habits" | "loans" | "tables" | "timeline" | "medical-records" | "contacts" | "shared" | "personal-finance"
   | "documents" | "academics" | "family" | "photo-studio" | "subscriptions" | "purchases" | "accounts"
   | "memberships" | "wallet-cards" | "password-manager" | "projects" | "pdf-studio" | "study" | "notes"
-  | "business-card" | "urls";
+  | "business-card" | "urls" | "connections";
 
 export const LAUNCHER_MODULE_IDS: readonly LauncherModuleId[];
 export const DEFAULT_LAUNCHER_FAVORITES: readonly LauncherModuleId[];

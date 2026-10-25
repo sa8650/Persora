@@ -5,7 +5,8 @@ import { Archive, ArchiveRestore, BellRing, Check, Repeat, Trash2 } from "lucide
 import ModalPortal from "../ModalPortal";
 import ItemModalShell from "../ItemModalShell";
 import {
-  HABIT_CATEGORIES, HABIT_COLORS, HABIT_ICONS, HABIT_LIMITS, HabitValidationError, WEEK_STARTS_ON, normalizeHabitInput, sameSchedule,
+  HABIT_CATEGORIES, HABIT_COLORS, HABIT_ICONS, HABIT_LIMITS, HabitValidationError, REPETITION_MAX, WEEK_STARTS_ON, isRepetitionHabit, isRepetitionUnit,
+  normalizeHabitInput, sameSchedule,
 } from "../../../cloudflare/habit-rules.js";
 import type { HabitColor, HabitFrequency, HabitIcon, HabitInput, HabitTracking } from "../../../cloudflare/habit-rules.js";
 import { maxDate, startOfWeek } from "../../../cloudflare/calendar-rules.js";
@@ -13,6 +14,9 @@ import type { Habit } from "../../lib/habit-api";
 import {
   CATEGORY_LABELS, HABIT_COLOR_LABELS, HABIT_ICON_COMPONENTS, HABIT_ICON_LABELS, WEEKDAY_LETTER, WEEKDAY_LONG, formatDay,
 } from "./habit-visuals";
+
+type TrackingMode = "check" | "repetitions" | "measurement";
+const TRACKING_MODES: readonly (readonly [TrackingMode, string])[] = [["check", "Checkbox"], ["repetitions", "Repetitions"], ["measurement", "Measurement"]];
 
 interface Draft {
   name: string;
@@ -24,6 +28,8 @@ interface Draft {
   weekdays: number[];
   weeklyTarget: string;
   tracking: HabitTracking;
+  /** UI choice; repetitions and measurements are both stored as tracking "numeric". */
+  mode: TrackingMode;
   targetValue: string;
   unit: string;
   startDate: string;
@@ -36,29 +42,42 @@ function draftFrom(habit: Habit | null, today: string): Draft {
   if (!habit) {
     return {
       name: "", description: "", icon: "check", color: "blue", category: "", frequency: "daily", weekdays: [1, 2, 3, 4, 5], weeklyTarget: "3",
-      tracking: "check", targetValue: "", unit: "", startDate: today, reminderOn: false, reminderTime: "08:00", reminderEmail: false,
+      tracking: "check", mode: "check", targetValue: "", unit: "", startDate: today, reminderOn: false, reminderTime: "08:00", reminderEmail: false,
     };
   }
   return {
     name: habit.name, description: habit.description, icon: habit.icon, color: habit.color, category: habit.category || "",
     frequency: habit.frequency, weekdays: habit.frequency === "weekdays" ? habit.weekdays : [1, 2, 3, 4, 5],
     weeklyTarget: String(habit.weeklyTarget ?? 3), tracking: habit.tracking,
+    mode: habit.tracking === "check" ? "check" : isRepetitionHabit(habit) ? "repetitions" : "measurement",
     targetValue: habit.targetValue === null ? "" : String(habit.targetValue), unit: habit.unit, startDate: habit.startDate,
     reminderOn: Boolean(habit.reminderTime), reminderTime: habit.reminderTime || "08:00", reminderEmail: habit.reminderEmail,
   };
 }
 
 function draftInput(draft: Draft): Record<string, unknown> {
+  // Repetitions keep a counting unit ("times" unless the habit already used e.g. "reps").
+  const unit = draft.mode === "repetitions" ? (draft.unit.trim() && isRepetitionUnit(draft.unit) ? draft.unit.trim() : "times") : draft.unit;
   return {
     name: draft.name, description: draft.description, icon: draft.icon, color: draft.color, category: draft.category || null,
     frequency: draft.frequency, weekdays: draft.weekdays, weeklyTarget: draft.weeklyTarget === "" ? null : Number(draft.weeklyTarget),
-    tracking: draft.tracking, targetValue: draft.targetValue === "" ? null : Number(draft.targetValue), unit: draft.unit,
+    tracking: draft.tracking, targetValue: draft.targetValue === "" ? null : Number(draft.targetValue), unit,
     startDate: draft.startDate, reminderTime: draft.reminderOn ? draft.reminderTime : null, reminderEmail: draft.reminderOn && draft.reminderEmail,
   };
 }
 
 function validate(draft: Draft, today: string): { input: HabitInput | null; error: HabitValidationError | null } {
-  try { return { input: normalizeHabitInput(draftInput(draft), { today }), error: null }; }
+  try {
+    const input = normalizeHabitInput(draftInput(draft), { today });
+    // The mode is derived from the saved values, so keep each choice unambiguous on reload.
+    if (draft.mode === "repetitions" && !isRepetitionHabit(input)) {
+      throw new HabitValidationError(`Enter a whole number of repetitions from 1 to ${REPETITION_MAX}.`, "targetValue");
+    }
+    if (draft.mode === "measurement" && isRepetitionHabit(input)) {
+      throw new HabitValidationError(draft.unit.trim() ? `“${draft.unit.trim()}” counts repetitions — choose Repetitions instead, or use a unit like km or minutes.` : "Add a unit for this measurement, like km, minutes or glasses.", "unit");
+    }
+    return { input, error: null };
+  }
   catch (error) { return { input: null, error: error instanceof HabitValidationError ? error : new HabitValidationError("Check the habit details.") }; }
 }
 
@@ -197,15 +216,25 @@ export default function HabitEditor({ habit, today, email, busy, error, onSave, 
             <fieldset className="hb-fieldset">
               <legend>Tracking</legend>
               <div className="hb-segment" role="radiogroup" aria-label="Tracking">
-                {([["check", "Checkbox"], ["numeric", "Number with target"]] as const).map(([key, label]) =>
-                  <button key={key} type="button" role="radio" aria-checked={draft.tracking === key} className={draft.tracking === key ? "is-active" : ""} onClick={() => update({ tracking: key })}>{label}</button>)}
+                {TRACKING_MODES.map(([key, label]) =>
+                  <button key={key} type="button" role="radio" aria-checked={draft.mode === key} className={draft.mode === key ? "is-active" : ""} onClick={() => update({
+                    mode: key, tracking: key === "check" ? "check" : "numeric",
+                    // Don't carry a counting unit into a measurement (or a measurement unit into repetitions).
+                    unit: key === "measurement" && isRepetitionUnit(draft.unit) ? "" : key === "repetitions" && !isRepetitionUnit(draft.unit) ? "" : draft.unit,
+                  })}>{label}</button>)}
               </div>
-              {draft.tracking === "numeric" && <div className="hb-target-row">
+              {draft.mode === "repetitions" && <div className="hb-target-row">
+                <label className="field-label"><span>Repetitions per day</span>
+                  <input id="hb-field-targetValue" type="number" inputMode="numeric" min={1} max={REPETITION_MAX} step={1} value={draft.targetValue} onChange={(event) => update({ targetValue: event.target.value })} placeholder="5" aria-invalid={Boolean(fieldError("targetValue"))}/>
+                </label>
+                <p className="hb-hint hb-target-hint">Each day shows this many checkboxes to tick off one by one.</p>
+              </div>}
+              {draft.mode === "measurement" && <div className="hb-target-row">
                 <label className="field-label"><span>Daily target</span>
                   <input id="hb-field-targetValue" type="number" inputMode="decimal" min={0.01} step="any" value={draft.targetValue} onChange={(event) => update({ targetValue: event.target.value })} placeholder="8" aria-invalid={Boolean(fieldError("targetValue"))}/>
                 </label>
-                <label className="field-label"><span>Unit <small className="hb-optional">optional</small></span>
-                  <input id="hb-field-unit" value={draft.unit} onChange={(event) => update({ unit: event.target.value })} maxLength={HABIT_LIMITS.unit} placeholder="glasses"/>
+                <label className="field-label"><span>Unit</span>
+                  <input id="hb-field-unit" value={draft.unit} onChange={(event) => update({ unit: event.target.value })} maxLength={HABIT_LIMITS.unit} placeholder="km, minutes, glasses" aria-invalid={Boolean(fieldError("unit"))}/>
                 </label>
               </div>}
               {(fieldError("targetValue") || fieldError("unit") || fieldError("tracking")) && <span className="hb-field-error" role="alert">{fieldError("targetValue") || fieldError("unit") || fieldError("tracking")}</span>}

@@ -43,7 +43,7 @@ const LABELS = {
   shared: 'Shared documents', 'personal-finance': 'Personal Finance', documents: 'Documents', academics: 'Academics', family: 'Family',
   'photo-studio': 'Photo Studio', subscriptions: 'Subscriptions', purchases: 'Purchases & warranty', accounts: 'Accounts',
   memberships: 'Membership wallet', 'wallet-cards': 'Wallet Cards', 'password-manager': 'Password Manager', projects: 'Projects',
-  'pdf-studio': 'PDF Studio', study: 'Study materials', notes: 'Tasks & Notes', 'business-card': 'Digital business card', urls: 'URL manager',
+  'pdf-studio': 'PDF Studio', study: 'Study materials', notes: 'Tasks & Notes', 'business-card': 'Digital business card', urls: 'URL manager', connections: 'Connections',
 };
 assert.deepEqual(Object.keys(LABELS).sort(), [...LAUNCHER_MODULE_IDS].sort());
 const labels = (ids) => ids.map((id) => LABELS[id]);

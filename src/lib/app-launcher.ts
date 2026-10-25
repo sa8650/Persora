@@ -44,6 +44,7 @@ const VIEW_MODULES: Partial<Record<LauncherModuleId, { label: string; hint: stri
   "password-manager": { label: "Password Manager", hint: "Encrypted logins and secrets" },
   projects: { label: "Projects", hint: "Plan and track work together" },
   "pdf-studio": { label: "PDF Studio", hint: "Edit, build and secure PDFs" },
+  connections: { label: "Connections", hint: "Linked services such as EMS" },
 };
 
 /** Tooltip lines for vault sections (labels themselves come from SECTION_BY_ID). */

@@ -1,7 +1,7 @@
 // Persora Habit Tracker — the workspace page.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
-import { Archive, ArchiveRestore, ArrowDown, ArrowUp, Check, ChevronLeft, ChevronRight, ListChecks, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowDown, ArrowUp, Check, ChevronLeft, ChevronRight, ListChecks, MoreHorizontal, Pencil, Plus, Trash2, Undo2, X } from "lucide-react";
 import "./habits.css";
 import type { AppUser } from "../../types";
 import { PagesApiError, isPagesApiConfigured } from "../../lib/cloud";
@@ -10,8 +10,8 @@ import {
 } from "../../lib/habit-api";
 import type { Habit, HabitCheckin, HabitsPayload } from "../../lib/habit-api";
 import {
-  WEEK_STARTS_ON, aggregateDay, dayCompletion, dayStatus, habitStreaks, isDueOn, isScheduledOn, isWeeklyWeek, monthCompletion,
-  trackedUntil, weekCompletion, weekDoneCount, weeklyTargetFor,
+  WEEK_STARTS_ON, aggregateDay, dayCompletion, dayStatus, habitStreaks, isDueOn, isRepetitionHabit, isScheduledOn, isWeeklyWeek, monthCompletion,
+  repetitionsDone, trackedUntil, weekCompletion, weekDoneCount, weeklyTargetFor,
 } from "../../../cloudflare/habit-rules.js";
 import type { HabitCategory, HabitDayStatus, HabitInput, Streaks } from "../../../cloudflare/habit-rules.js";
 import { addDays, addMonths, localDateOf, safeTimeZone, startOfMonth, startOfWeek, weekdayOf } from "../../../cloudflare/calendar-rules.js";
@@ -19,6 +19,10 @@ import HabitEditor from "./HabitEditor";
 import { CATEGORY_LABELS, HabitGlyph, WEEKDAY_SHORT, formatDay, formatNumber, scheduleLabel, streakLabel, targetLabel } from "./habit-visuals";
 
 type Mode = "today" | "week" | "month";
+type CheckinBody = { completed: boolean } | { value: number };
+/** The last check-in change, kept briefly so it can be undone (restores the previous value). */
+interface UndoEntry { id: number; habit: Habit; date: string; previous: CheckinBody; message: string }
+const UNDO_MS = 7000;
 type Filter = "all" | "due" | "completed" | "archived";
 const MODES: { id: Mode; label: string }[] = [{ id: "today", label: "Today" }, { id: "week", label: "Week" }, { id: "month", label: "Month" }];
 
@@ -62,6 +66,7 @@ export default function HabitsView({ user, notify, focusRequest }: {
   const [celebrate, setCelebrate] = useState<string | null>(null);
   const [rowBusy, setRowBusy] = useState<string | null>(null);
   const [liveMessage, setLiveMessage] = useState("");
+  const [undo, setUndo] = useState<UndoEntry | null>(null);
   const range = rangeFor(date);
   const rangeKey = `${range.from}/${range.to}`;
   const loadedKey = useRef("");
@@ -122,19 +127,27 @@ export default function HabitsView({ user, notify, focusRequest }: {
   }, [active, doneById, streaks, today]);
 
   // ---- actions ------------------------------------------------------------
-  const setCheckin = useCallback(async (habit: Habit, day: string, body: { completed: boolean } | { value: number }) => {
+  const setCheckin = useCallback(async (habit: Habit, day: string, body: CheckinBody, options: { isUndo?: boolean } = {}) => {
     const key = keyOf(habit.id, day);
     if (pending.has(key)) return;
     setPending((current) => new Set(current).add(key));
     setLiveMessage(`Saving ${habit.name}…`);
     const wasDone = doneById.get(habit.id)?.has(day) || false;
+    const previousValue = checkinByKey.get(key)?.value ?? 0;
+    const previous: CheckinBody = habit.tracking === "check" ? { completed: wasDone } : { value: previousValue };
     try {
       const result = await saveHabitCheckin(habit.id, day, body);
       setHabits((current) => current.map((entry) => entry.id === habit.id ? { ...entry, completedDates: result.completedDates } : entry));
       setCheckins((current) => [...current.filter((entry) => !(entry.habitId === habit.id && entry.date === day)), ...(result.checkin ? [result.checkin] : [])]);
       const nowDone = result.completedDates.includes(day);
       if (nowDone && !wasDone) { setCelebrate(key); window.setTimeout(() => setCelebrate((current) => (current === key ? null : current)), 700); }
-      setLiveMessage(nowDone ? `${habit.name} marked done.` : result.checkin ? `${habit.name}: ${formatNumber(result.checkin.value)} saved.` : `${habit.name} marked not done.`);
+      const repetition = isRepetitionHabit(habit);
+      const message = options.isUndo ? `${habit.name}: change undone.`
+        : repetition ? `${habit.name}: ${repetitionsDone(habit, result.checkin?.value ?? 0)} / ${formatNumber(habit.targetValue || 0)} completed.`
+          : nowDone ? `${habit.name} marked done.` : result.checkin ? `${habit.name}: ${formatNumber(result.checkin.value)} saved.` : `${habit.name} marked not done.`;
+      setLiveMessage(message);
+      // Offer undo for every change except an undo itself.
+      setUndo(options.isUndo ? null : { id: Date.now(), habit, date: day, previous, message });
       changed();
     } catch (error) {
       setLiveMessage("");
@@ -143,7 +156,18 @@ export default function HabitsView({ user, notify, focusRequest }: {
     } finally {
       setPending((current) => { const next = new Set(current); next.delete(key); return next; });
     }
-  }, [pending, doneById, notify]);
+  }, [pending, doneById, checkinByKey, notify]);
+  useEffect(() => {
+    if (!undo) return;
+    const timer = window.setTimeout(() => setUndo((current) => (current?.id === undo.id ? null : current)), UNDO_MS);
+    return () => window.clearTimeout(timer);
+  }, [undo]);
+  const undoLast = () => {
+    if (!undo) return;
+    const { habit, date: day, previous } = undo;
+    setUndo(null);
+    void setCheckin(habit, day, previous, { isUndo: true });
+  };
 
   const replaceHabit = (habit: Habit) => setHabits((current) => {
     const existing = current.find((entry) => entry.id === habit.id);
@@ -277,6 +301,11 @@ export default function HabitsView({ user, notify, focusRequest }: {
     </div>}
 
     <p className="hb-visually-hidden" role="status" aria-live="polite">{liveMessage}</p>
+    {undo && <div className="hb-undo" key={undo.id}>
+      <span>{undo.message}</span>
+      <button type="button" className="hb-undo-button" onClick={undoLast} disabled={pending.has(keyOf(undo.habit.id, undo.date))}><Undo2 size={14}/> Undo</button>
+      <button type="button" className="hb-undo-close" onClick={() => setUndo(null)} aria-label="Dismiss"><X size={14}/></button>
+    </div>}
 
     {initialLoading ? <HabitSkeleton/> : payload && <>
       {active.length > 0 && <StatsStrip stats={stats}/>}
@@ -374,7 +403,7 @@ interface RowContext {
   pending: Set<string>;
   celebrate: string | null;
   rowBusy: string | null;
-  onCheckin: (habit: Habit, date: string, body: { completed: boolean } | { value: number }) => Promise<void>;
+  onCheckin: (habit: Habit, date: string, body: CheckinBody) => Promise<void>;
   onEdit: (habit: Habit) => void;
   onArchive: (habit: Habit) => void;
   onRestore: (habit: Habit) => void;
@@ -470,20 +499,23 @@ function HabitRow({ habit, date, today, doneById, untilById, checkinByKey, strea
   if (isArchived) meta.push("Archived");
   else if (date < habit.startDate) meta.push(`Starts ${formatDay(habit.startDate, { month: "short", day: "numeric" })}`);
   const statusNote = status === "goal-met" ? "Weekly goal met" : status === "partial" ? "In progress" : null;
+  const repetition = isRepetitionHabit(habit);
 
-  return <li className={`hb-row ${completed ? "is-done" : ""} ${celebrate === key ? "is-celebrating" : ""} ${isArchived ? "is-archived" : ""}`}>
+  return <li className={`hb-row ${completed ? "is-done" : ""} ${celebrate === key ? "is-celebrating" : ""} ${isArchived ? "is-archived" : ""} ${repetition && !isArchived ? "has-reps" : ""}`}>
     <HabitGlyph habit={habit} size={17}/>
     <div className="hb-row-main">
       <button type="button" className="hb-row-name" onClick={() => onEdit(habit)} aria-label={`Edit ${habit.name}`}>{habit.name}</button>
-      <span className="hb-row-meta">{meta.join(" · ")}{statusNote && <span className={`hb-status-note is-${status}`}> · {statusNote}</span>}</span>
+      <span className="hb-row-meta">{meta.join(" · ")}{statusNote && !repetition && <span className={`hb-status-note is-${status}`}> · {statusNote}</span>}</span>
+      {repetition && !isArchived && <RepetitionBoxes habit={habit} value={checkin?.value ?? 0} disabled={!editable} saving={saving} dayLabel={dayLabel}
+        disabledReason={future ? "You can check in once the day arrives" : undefined} onCommit={(value) => onCheckin(habit, date, { value })}/>}
     </div>
     {isArchived ? <div className="hb-row-actions">
       <button type="button" className="hb-button hb-button-small" onClick={() => onRestore(habit)} disabled={rowBusy === habit.id}><ArchiveRestore size={14}/> Restore</button>
       <button type="button" className="hb-icon-button" onClick={() => onEdit(habit)} aria-label={`Open ${habit.name} to delete or edit`} title="Edit or delete"><Trash2 size={15}/></button>
     </div> : <div className="hb-row-actions">
-      {habit.tracking === "numeric" && <NumericEntry habit={habit} value={checkin?.value ?? 0} disabled={!editable || saving} dayLabel={dayLabel}
+      {habit.tracking === "numeric" && !repetition && <NumericEntry habit={habit} value={checkin?.value ?? 0} disabled={!editable || saving} dayLabel={dayLabel}
         onCommit={(value) => void onCheckin(habit, date, { value })}/>}
-      <button
+      {!repetition && <button
         type="button" className={`hb-check ${completed ? "is-checked" : ""} hb-c-${habit.color}`} aria-pressed={completed} disabled={!editable || saving} aria-busy={saving}
         aria-label={completed ? `${habit.name}: done on ${dayLabel}. Mark as not done` : `Mark ${habit.name} done for ${dayLabel}`}
         title={future ? "You can check in once the day arrives" : completed ? "Mark as not done" : habit.tracking === "numeric" ? `Complete (${target})` : "Mark done"}
@@ -491,11 +523,63 @@ function HabitRow({ habit, date, today, doneById, untilById, checkinByKey, strea
           if (habit.tracking === "numeric") void onCheckin(habit, date, { value: completed ? 0 : habit.targetValue || 0 });
           else void onCheckin(habit, date, { completed: !completed });
         }}
-      >{saving ? <span className="hb-spinner hb-spinner-small" aria-hidden="true"/> : <Check size={16} strokeWidth={3}/>}</button>
+      >{saving ? <span className="hb-spinner hb-spinner-small" aria-hidden="true"/> : <Check size={16} strokeWidth={3}/>}</button>}
       <RowMenu habit={habit} busy={rowBusy === habit.id} canMoveUp={canMoveUp} canMoveDown={canMoveDown}
         onEdit={() => onEdit(habit)} onMove={(direction) => onMove(habit, direction)} onArchive={() => onArchive(habit)}/>
     </div>}
   </li>;
+}
+
+/**
+ * One checkbox per repetition. Each box toggles independently; the stored value is simply how many
+ * are ticked (capped at the target), saved per habit and local day through the normal check-in API.
+ * Quick taps are batched into a single save, and a save is queued if one is already in flight.
+ */
+function RepetitionBoxes({ habit, value, disabled, disabledReason, saving, dayLabel, onCommit }: {
+  habit: Habit; value: number; disabled: boolean; disabledReason?: string; saving: boolean; dayLabel: string; onCommit: (value: number) => Promise<void>;
+}) {
+  const target = Math.max(1, Math.round(habit.targetValue || 1));
+  const serverDone = repetitionsDone(habit, value);
+  const firstN = (count: number) => new Set(Array.from({ length: count }, (_, index) => index));
+  const [ticked, setTicked] = useState<Set<number>>(() => firstN(serverDone));
+  const dirty = useRef(false);
+  const timer = useRef<number | undefined>(undefined);
+  const latest = useRef({ ticked, saving, serverDone, onCommit });
+  latest.current = { ticked, saving, serverDone, onCommit };
+
+  // Follow the server (another device, undo, a failed save) whenever nothing local is waiting.
+  useEffect(() => {
+    if (!dirty.current && !saving) setTicked((current) => (current.size === serverDone && [...current].every((index) => index < target) ? current : firstN(serverDone)));
+  }, [serverDone, saving, target]);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+
+  const flush = () => {
+    const { ticked: now, saving: busy, serverDone: stored, onCommit: commit } = latest.current;
+    if (busy) { timer.current = window.setTimeout(flush, 250); return; }
+    dirty.current = false;
+    if (now.size !== stored) void commit(now.size);
+  };
+  const toggle = (index: number) => {
+    if (disabled) return;
+    dirty.current = true;
+    setTicked((current) => { const next = new Set(current); if (next.has(index)) next.delete(index); else next.add(index); return next; });
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(flush, 350);
+  };
+  const done = Math.min(ticked.size, target);
+  const size = target <= 10 ? "is-small" : target <= 20 ? "is-medium" : "is-large";
+  return <div className={`hb-reps ${size} hb-c-${habit.color} ${done >= target ? "is-complete" : ""}`}>
+    <div className="hb-reps-grid" role="group" aria-label={`${habit.name} repetitions for ${dayLabel}`}>
+      {Array.from({ length: target }, (_, index) => {
+        const on = ticked.has(index);
+        return <button key={index} type="button" className={`hb-rep ${on ? "is-on" : ""}`} aria-pressed={on} disabled={disabled}
+          aria-label={`Repetition ${index + 1} of ${target}${on ? ", done" : ""}`} title={disabledReason || `Repetition ${index + 1}`} onClick={() => toggle(index)}>
+          {on && <Check size={target > 20 ? 10 : target > 10 ? 12 : 14} strokeWidth={3.2} aria-hidden="true"/>}
+        </button>;
+      })}
+    </div>
+    <span className="hb-reps-progress" aria-live="off">{done} / {target} completed{saving && <span className="hb-spinner hb-spinner-small" aria-hidden="true"/>}</span>
+  </div>;
 }
 
 function NumericEntry({ habit, value, disabled, dayLabel, onCommit }: { habit: Habit; value: number; disabled: boolean; dayLabel: string; onCommit: (value: number) => void }) {

@@ -33,7 +33,9 @@ const INLINE_SAFE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "imag
 
 /**
  * Provider registry. `available: false` providers render as "Coming soon"
- * cards; flipping one on only requires a handler + admin config entry.
+ * rows with no connect action; flipping one on only requires a handler + admin
+ * config entry. Every provider needs its own official logo in
+ * src/assets/connections (see PROVIDER_LOGOS in ConnectionParts.tsx).
  */
 export const CONNECTION_PROVIDERS = Object.freeze([
   { id: "ems", name: "EMS", vendor: "Dexter Studio", category: "Business", available: true,
@@ -44,7 +46,8 @@ export const CONNECTION_PROVIDERS = Object.freeze([
   { id: "google-docs", name: "Google Docs", vendor: "Google", category: "Documents", available: false, description: "Keep copies of important documents in Persora.", capabilities: [] },
   { id: "google-calendar", name: "Google Calendar", vendor: "Google", category: "Calendar", available: false, description: "See your calendar alongside Persora reminders.", capabilities: [] },
   { id: "notion", name: "Notion", vendor: "Notion Labs", category: "Notes", available: false, description: "Link pages and notes from your workspace.", capabilities: [] },
-  { id: "dexter-studio", name: "Dexter Studio apps", vendor: "Dexter Studio", category: "Apps", available: false, description: "More Dexter Studio products, connected to one Persora account.", capabilities: [] },
+  { id: "microsoft-onedrive", name: "Microsoft OneDrive", vendor: "Microsoft", category: "Storage", available: false, description: "Keep copies of your OneDrive files in Persora.", capabilities: [] },
+  { id: "microsoft-outlook", name: "Microsoft Outlook", vendor: "Microsoft", category: "Calendar", available: false, description: "Bring Outlook calendar events next to your Persora reminders.", capabilities: [] },
 ]);
 const ADMIN_PROVIDERS = new Set(["ems"]);
 

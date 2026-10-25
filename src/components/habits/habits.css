@@ -178,6 +178,51 @@
 .hb-row.is-celebrating .hb-check { animation: hb-pop .45s ease; }
 .hb-row.is-celebrating { animation: hb-glow .7s ease; }
 @keyframes hb-pop { 0% { transform: scale(.82); } 55% { transform: scale(1.12); } 100% { transform: scale(1); } }
+
+/* ---- repetition checkboxes (target N → exactly N boxes) ----------------------- */
+.hb-row.has-reps { align-items: flex-start; padding-block: 10px; }
+.hb-row.has-reps .hb-row-actions { margin-top: 2px; }
+.hb-reps { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 7px; min-width: 0; }
+.hb-reps-grid { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.hb-rep {
+  display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; border-radius: 8px; cursor: pointer;
+  border: 1.5px solid color-mix(in srgb, var(--hb-c) 45%, var(--hb-line-strong)); background: var(--hb-surface); color: #fff;
+  transition: background .15s ease, border-color .15s ease, transform .15s ease;
+}
+.hb-rep:hover:not(:disabled) { background: color-mix(in srgb, var(--hb-c) 10%, var(--hb-surface)); border-color: var(--hb-c); }
+.hb-rep:active:not(:disabled) { transform: scale(.92); }
+.hb-rep.is-on { border-color: var(--hb-c); background: var(--hb-c); }
+.hb-rep.is-on:hover:not(:disabled) { border-color: var(--hb-c); background: color-mix(in srgb, var(--hb-c) 86%, #000); }
+.dark .hb-rep.is-on, [data-theme="dark"] .hb-rep.is-on { color: #202124; }
+.hb-rep:disabled { cursor: default; opacity: .5; }
+/* 11–20: a tighter grid, at most ten per line. */
+.hb-reps.is-medium .hb-reps-grid { display: grid; grid-template-columns: repeat(auto-fill, 22px); gap: 5px; width: 100%; max-width: calc(10 * 22px + 9 * 5px); }
+.hb-reps.is-medium .hb-rep { width: 22px; height: 22px; border-radius: 6px; }
+/* More than 20: a compact grid that fills the available width. */
+.hb-reps.is-large .hb-reps-grid { display: grid; grid-template-columns: repeat(auto-fill, 18px); gap: 4px; width: 100%; max-width: calc(25 * 18px + 24 * 4px); }
+.hb-reps.is-large .hb-rep { width: 18px; height: 18px; border-radius: 5px; border-width: 1.25px; }
+.hb-reps-progress { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--hb-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.hb-reps.is-complete .hb-reps-progress { color: var(--hb-done); }
+.hb-reps .hb-spinner { border-color: color-mix(in srgb, var(--hb-c) 30%, transparent); border-top-color: var(--hb-c); }
+@media (prefers-reduced-motion: reduce) { .hb-rep { transition: none; } .hb-rep:active:not(:disabled) { transform: none; } }
+
+/* ---- undo toast ------------------------------------------------------------------ */
+.hb-undo {
+  position: fixed; left: 50%; bottom: 24px; z-index: 80; transform: translateX(-50%); display: flex; align-items: center; gap: 4px;
+  max-width: min(520px, calc(100vw - 24px)); padding: 6px 6px 6px 14px; border-radius: 12px; background: #202124; color: #e8eaed;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .22); font-size: 13px; animation: hb-undo-in .18s ease-out;
+}
+.hb-undo > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 6px; }
+.hb-undo-button { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 10px; border: 0; border-radius: 8px; background: none; color: #8ab4f8; font-size: 13px; font-weight: 650; cursor: pointer; }
+.hb-undo-button:hover:not(:disabled) { background: rgba(138, 180, 248, .14); }
+.hb-undo-button:disabled { opacity: .5; cursor: default; }
+.hb-undo-close { display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 8px; background: none; color: #9aa0a6; cursor: pointer; }
+.hb-undo-close:hover { background: rgba(255, 255, 255, .08); color: #e8eaed; }
+.hb-undo :focus-visible { outline: 2px solid #8ab4f8; outline-offset: 1px; }
+.dark .hb-undo, [data-theme="dark"] .hb-undo { background: #e8eaed; color: #202124; }
+.dark .hb-undo-button, [data-theme="dark"] .hb-undo-button { color: #1a73e8; }
+@keyframes hb-undo-in { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@media (prefers-reduced-motion: reduce) { .hb-undo { animation: none; } }
 @keyframes hb-glow { 0% { background: color-mix(in srgb, var(--hb-done) 12%, transparent); } 100% { background: transparent; } }
 @media (prefers-reduced-motion: reduce) {
   .hb-row.is-celebrating, .hb-row.is-celebrating .hb-check { animation: none; }

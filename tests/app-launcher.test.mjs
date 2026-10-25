@@ -17,7 +17,7 @@ const catalogue = read('src/lib/app-launcher.ts');
 const icons = read('src/components/launcher/LauncherIcons.tsx');
 const migration = read('supabase/migrations/202610270001_workspace_preferences.sql');
 
-const ACCOUNT_VIEWS = new Set(['trash', 'billing', 'settings', 'connections']);
+const ACCOUNT_VIEWS = new Set(['trash', 'billing', 'settings']);
 const viewIds = () => {
   const union = types.match(/export type ViewId\s*=([^;]+);/)[1];
   const literals = [...union.matchAll(/"([a-z-]+)"/g)].map((match) => match[1]);

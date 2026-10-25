@@ -36,7 +36,10 @@
 /* Private workspace shell and navigation */
 .workspace-shell { position: relative; display: flex; gap: 0; align-items: stretch; width: 100%; height: 100vh; height: 100dvh; min-height: 0; margin: 0; overflow: hidden; color: var(--p-text); background: var(--p-bg); font-size: 14px; }
 .striped-pattern { position: absolute; inset: 0; display: block; width: 100%; height: 100%; pointer-events: none; stroke-width: .5; }
-.workspace-striped-pattern { z-index: 0!important; color: rgba(26,115,232,.18); opacity: .43; stroke-width: .55; -webkit-mask-image: radial-gradient(ellipse 72% 82% at 61% 39%,#000 0%,rgba(0,0,0,.64) 58%,transparent 100%); mask-image: radial-gradient(ellipse 72% 82% at 61% 39%,#000 0%,rgba(0,0,0,.64) 58%,transparent 100%); }
+/* The stripes sit behind page content: each host is its own stacking context (isolation) and the
+   pattern takes z-index -1 inside it — above the host's background, below cards, menus and text. */
+.workspace-main, .admin-portal, .admin-access-page { isolation: isolate; }
+.workspace-striped-pattern { z-index: -1!important; color: rgba(26,115,232,.18); opacity: .43; stroke-width: .55; -webkit-mask-image: radial-gradient(ellipse 72% 82% at 61% 39%,#000 0%,rgba(0,0,0,.64) 58%,transparent 100%); mask-image: radial-gradient(ellipse 72% 82% at 61% 39%,#000 0%,rgba(0,0,0,.64) 58%,transparent 100%); }
 .workspace-sidebar { z-index: 30; position: relative; display: flex; flex: 0 0 254px; flex-direction: column; width: 254px; min-width: 254px; height: 100%; border-right: 1px solid var(--p-line); background: transparent; }
 .sidebar-header { position: relative; z-index: 2; display: flex; align-items: center; justify-content: flex-start; height: 74px; min-height: 74px; flex: 0 0 74px; box-sizing: border-box; border-bottom: 1px solid rgba(232,234,237,.72); padding: 0 22px; background: rgba(255,255,255,.60); backdrop-filter: blur(12px); }
 .workspace-brand { display: inline-flex; align-items: center; gap: 9px; border: 0; padding: 0; color: #202124; background: transparent; font-size: 20px; font-weight: 710; letter-spacing: -.055em; cursor: pointer; }

@@ -1,19 +1,31 @@
-import { useState, type FormEvent, type ReactNode } from "react";
-import { BookOpen, CalendarDays, Check, CircleAlert, Cloud, Eye, EyeOff, FileText, Image as ImageIcon, LayoutGrid, LockKeyhole, Plug, ShieldCheck, Store, Unplug } from "lucide-react";
+import { useState, type FormEvent } from "react";
+import { Check, CircleAlert, Eye, EyeOff, LockKeyhole, ShieldCheck, Unplug } from "lucide-react";
 import ItemModalShell from "../ItemModalShell";
 import ModalPortal from "../ModalPortal";
 import { connectEms, type ConnectionStatus } from "../../lib/connections-api";
+import emsLogo from "../../assets/connections/ems.svg";
+import googleDriveLogo from "../../assets/connections/google-drive.svg";
+import googlePhotosLogo from "../../assets/connections/google-photos.svg";
+import googleDocsLogo from "../../assets/connections/google-docs.svg";
+import googleCalendarLogo from "../../assets/connections/google-calendar.svg";
+import notionLogo from "../../assets/connections/notion.svg";
+import oneDriveLogo from "../../assets/connections/microsoft-onedrive.svg";
+import outlookLogo from "../../assets/connections/microsoft-outlook.svg";
 import "./connections.css";
 
-/** Visual identity per provider. New providers only need an entry here + a backend handler. */
-const PROVIDER_LOOK: Record<string, { icon: ReactNode; tone: string; mark?: string }> = {
-  ems: { icon: <Store size={20}/>, tone: "ems", mark: "EMS" },
-  "google-drive": { icon: <Cloud size={20}/>, tone: "drive" },
-  "google-photos": { icon: <ImageIcon size={20}/>, tone: "photos" },
-  "google-docs": { icon: <FileText size={20}/>, tone: "docs" },
-  "google-calendar": { icon: <CalendarDays size={20}/>, tone: "calendar" },
-  notion: { icon: <BookOpen size={20}/>, tone: "notion" },
-  "dexter-studio": { icon: <LayoutGrid size={20}/>, tone: "dexter" },
+/**
+ * Each service's own official logo, bundled locally (see src/assets/connections/README.md).
+ * A new provider needs its real logo here — never a generic icon or a shared brand mark.
+ */
+export const PROVIDER_LOGOS: Record<string, string> = {
+  ems: emsLogo,
+  "google-drive": googleDriveLogo,
+  "google-photos": googlePhotosLogo,
+  "google-docs": googleDocsLogo,
+  "google-calendar": googleCalendarLogo,
+  notion: notionLogo,
+  "microsoft-onedrive": oneDriveLogo,
+  "microsoft-outlook": outlookLogo,
 };
 
 const STATUS_LABEL: Record<ConnectionStatus, string> = {
@@ -25,9 +37,12 @@ export function ConnectionStatusPill({ status, degraded = false }: { status: Con
   return <span className={`cn-pill cn-pill-${tone}`}><i aria-hidden="true"/>{degraded && status === "connected" ? "Connected · limited" : STATUS_LABEL[status]}</span>;
 }
 
-export function ProviderMark({ id, size = "md" }: { id: string; size?: "md" | "lg" }) {
-  const look = PROVIDER_LOOK[id] || { icon: <Plug size={20}/>, tone: "default" };
-  return <span className={`cn-mark cn-mark-${look.tone} cn-mark-${size}`} aria-hidden="true">{look.mark ? <b>{look.mark}</b> : look.icon}</span>;
+/** The service's official logo in a consistent tile; proportions are preserved (object-fit: contain). */
+export function ProviderLogo({ id, name, size = "md" }: { id: string; name: string; size?: "sm" | "md" | "lg" }) {
+  const src = PROVIDER_LOGOS[id];
+  return <span className={`cn-logo cn-logo-${size}`}>
+    {src ? <img src={src} alt={`${name} logo`} draggable={false} decoding="async"/> : <b aria-label={name}>{name.slice(0, 1).toUpperCase()}</b>}
+  </span>;
 }
 
 /** Connect / reconnect EMS inside Persora — no redirect to EMS. */
@@ -49,7 +64,7 @@ export function EmsConnectDialog({ reconnect = false, defaultEmail = "", onClose
       setError(err instanceof Error ? err.message : "EMS couldn't be connected.");
     } finally { setBusy(false); }
   };
-  return <ModalPortal><ItemModalShell labelledBy="cn-connect-title" className="cn-dialog" icon={<Store size={18}/>} iconClassName="cn-dialog-icon" eyebrow="EMS · Dexter Studio" title={<span id="cn-connect-title">{reconnect ? "Reconnect EMS" : "Connect EMS"}</span>} onClose={onClose} closeDisabled={busy} dismissable={!busy}>
+  return <ModalPortal><ItemModalShell labelledBy="cn-connect-title" className="cn-dialog" icon={<img className="cn-dialog-logo" src={emsLogo} alt="" draggable={false}/>} iconClassName="cn-dialog-icon" eyebrow="EMS · Dexter Studio" title={<span id="cn-connect-title">{reconnect ? "Reconnect EMS" : "Connect EMS"}</span>} onClose={onClose} closeDisabled={busy} dismissable={!busy}>
     <form className="cn-connect-form" onSubmit={(e) => void submit(e)}>
       <p className="cn-connect-lead">Sign in with your <b>EMS administrator</b> account. Persora checks it directly with EMS — you stay right here.</p>
       <label className="cn-field"><span>EMS administrator email</span><input type="email" autoComplete="username" required maxLength={254} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="admin@yourbusiness.com" disabled={busy} autoFocus/></label>

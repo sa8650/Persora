@@ -4,8 +4,9 @@
 // validate favorites identically.
 //
 // Every id is an existing workspace view (src/types.ts ViewId) shown in the
-// workspace sidebar. Account pages (Connections, Settings, Plans & billing, Trash) and the
-// role-gated admin console are deliberately not launcher modules.
+// workspace sidebar. Connections is a launcher module (it's where linked services
+// such as EMS are browsed); the other account pages (Settings, Plans & billing,
+// Trash) and the role-gated admin console are deliberately not launcher modules.
 
 /** Launcher modules in their canonical order (the sidebar's order). */
 export const LAUNCHER_MODULE_IDS = Object.freeze([
@@ -35,6 +36,7 @@ export const LAUNCHER_MODULE_IDS = Object.freeze([
   "notes",
   "business-card",
   "urls",
+  "connections",
 ]);
 
 /** Shown until a member customizes their favorites: one full 3 × 3 grid. */

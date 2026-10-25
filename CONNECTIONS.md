@@ -1,6 +1,6 @@
 # Persora Connections
 
-**Connections** (sidebar → Account → Connections, or `/?view=connections`) links a Persora account to services outside Persora. This release ships one provider, **EMS** (Dexter Studio's business management platform). The registry is built so more can be added later, such as Google Drive, Photos and Docs, Notion, Calendar, or other Dexter Studio apps.
+**Connections** (sidebar → Account → Connections, or `/?view=connections`) links a Persora account to services outside Persora. This release ships one provider, **EMS** (Dexter Studio's business management platform). The registry is built so more can be added later; Google Drive, Photos, Docs and Calendar, Notion, Microsoft OneDrive and Outlook are listed as "Coming soon" (no connect action). Each service shows its own official logo from `src/assets/connections/` (sources in that folder's README).
 
 ---
 

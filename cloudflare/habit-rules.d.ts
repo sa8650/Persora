@@ -110,3 +110,9 @@ export function reminderDecision(
   reminder: { local_date: string },
   context: { dayDone: boolean; weekDone: number; nowMs: number; timeZone: string },
 ): { deliver: boolean; note: string | null };
+
+export const REPETITION_MAX: number;
+export const REPETITION_UNITS: readonly string[];
+export function isRepetitionUnit(unit: string | null | undefined): boolean;
+export function isRepetitionHabit(habit: { tracking?: HabitTracking | string; targetValue?: number | null; unit?: string | null } | null | undefined): boolean;
+export function repetitionsDone(habit: { targetValue?: number | null } | null | undefined, value: number | null | undefined): number;

@@ -136,6 +136,35 @@ export function normalizeHabitInput(input, { today } = {}) {
   };
 }
 
+/**
+ * Repetition habits are numeric habits that count whole repetitions ("5 times a day"). They are
+ * stored exactly like any numeric habit (tracking "numeric", targetValue, unit) — no extra column —
+ * and the app shows them as N individual checkboxes instead of a number field. A habit qualifies
+ * when its target is a whole number from 1 to REPETITION_MAX and its unit is empty or a counting
+ * word; anything else (2.5 km, 30 minutes, 8 glasses) stays a measurement with a number field.
+ */
+export const REPETITION_MAX = 100;
+export const REPETITION_UNITS = Object.freeze([
+  "", "x", "×", "time", "times", "rep", "reps", "repetition", "repetitions", "set", "sets", "round", "rounds", "session", "sessions",
+]);
+const repetitionUnit = (unit) => String(unit ?? "").trim().toLowerCase();
+/** @param {string | null | undefined} unit */
+export function isRepetitionUnit(unit) {
+  return REPETITION_UNITS.includes(repetitionUnit(unit));
+}
+/** @param {{ tracking?: string; targetValue?: number | null; unit?: string | null }} habit */
+export function isRepetitionHabit(habit) {
+  if (!habit || habit.tracking !== "numeric") return false;
+  const target = Number(habit.targetValue);
+  return Number.isInteger(target) && target >= 1 && target <= REPETITION_MAX && isRepetitionUnit(habit.unit);
+}
+/** Completed repetitions to show for a stored value: whole, never negative, capped at the target. */
+export function repetitionsDone(habit, value) {
+  const target = Number(habit?.targetValue) || 0;
+  const done = Math.floor(Number(value) || 0);
+  return Math.max(0, Math.min(done, target));
+}
+
 /** A check-in request → the value to store (null = remove the check-in). */
 export function normalizeCheckinInput(habit, body) {
   if (!body || typeof body !== "object" || Array.isArray(body)) fail("Send the check-in as JSON.");

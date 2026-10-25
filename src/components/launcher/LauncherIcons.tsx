@@ -364,6 +364,23 @@ const ICONS: Record<LauncherModuleId, Draw> = {
     <rect x="20.5" y="17.5" width="21" height="13" rx="6.5" transform="rotate(-45 31 24)" fill="none" style={gap} strokeWidth="8" />
     <rect x="20.5" y="17.5" width="21" height="13" rx="6.5" transform="rotate(-45 31 24)" fill="none" stroke={`url(#${id("b")})`} strokeWidth="4.4" />
   </>,
+  connections: (id) => <>
+    <defs>
+      <Lg id={id("a")} from="#34d6c3" to="#0f8f86" />
+      <Lg id={id("b")} from="#6aacfb" to="#2563eb" />
+      <Lg id={id("c")} from="#b69cff" to="#7c4ddb" />
+      <Lg id={id("d")} from="#ffbe7a" to="#f97316" />
+      <Lg id={id("e")} from="#5fe39a" to="#16a34a" />
+    </defs>
+    <path d="M24 24 10.5 10.5M24 24 37.5 10.5M24 24 10.5 37.5M24 24 37.5 37.5" stroke="#9fb1cf" strokeWidth="4.2" strokeLinecap="round" />
+    <circle cx="10.5" cy="10.5" r="5.5" fill={`url(#${id("b")})`} style={gap} strokeWidth="2" />
+    <circle cx="37.5" cy="10.5" r="5.5" fill={`url(#${id("c")})`} style={gap} strokeWidth="2" />
+    <circle cx="10.5" cy="37.5" r="5.5" fill={`url(#${id("e")})`} style={gap} strokeWidth="2" />
+    <circle cx="37.5" cy="37.5" r="5.5" fill={`url(#${id("d")})`} style={gap} strokeWidth="2" />
+    <circle cx="24" cy="24" r="9.2" fill={`url(#${id("a")})`} style={gap} strokeWidth="2.4" />
+    <circle cx="24" cy="24" r="3.4" fill="#fff" />
+    <path d="M18.6 20.4a6.2 6.2 0 0 1 3.2-3.3" stroke="#fff" strokeOpacity=".55" strokeWidth="1.5" strokeLinecap="round" />
+  </>,
 };
 
 export function LauncherModuleIcon({ id, size = 40 }: { id: LauncherModuleId; size?: number }) {
