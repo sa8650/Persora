@@ -1,0 +1,74 @@
+/* Project charts — Activity analytics card (cult-ui Analytics Chart).
+   Uses the Projects (`pj-`) design language; chart colours come from the
+   shared --card / --border / --foreground / --muted-foreground tokens. */
+
+.pc-activity-card { gap: 0.9rem; min-width: 0; }
+.pc-head { flex-wrap: wrap; }
+.pc-head h3 svg { color: var(--p-blue, #465cff); }
+.pc-range button { min-width: 2.6rem; }
+
+.pc-metrics {
+  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.5rem;
+}
+.pc-metric {
+  display: grid; grid-template-columns: 1fr auto; grid-template-areas: "title title" "value delta";
+  align-items: baseline; gap: 0.15rem 0.4rem; min-width: 0;
+  padding: 0.6rem 0.75rem; border-radius: 0.8rem; text-align: left; cursor: pointer;
+  border: 1px solid var(--border-soft, rgba(15, 23, 42, 0.08));
+  background: transparent; color: var(--pj-body, #475569);
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+.pc-metric:hover { border-color: rgba(70, 92, 255, 0.35); }
+.pc-metric:focus-visible { outline: 2px solid var(--p-blue, #465cff); outline-offset: 2px; }
+.pc-metric.is-active {
+  border-color: rgba(70, 92, 255, 0.45); background: rgba(70, 92, 255, 0.06);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+.pc-metric-title { grid-area: title; font-size: 0.74rem; font-weight: 600; color: var(--pj-muted, #64748b); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pc-metric.is-active .pc-metric-title { color: var(--p-blue, #465cff); }
+.pc-metric-value { grid-area: value; font-size: 1.15rem; font-weight: 700; color: var(--pj-strong, #0f172a); font-variant-numeric: tabular-nums; line-height: 1.2; }
+.pc-metric-delta { grid-area: delta; font-size: 0.7rem; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pc-metric-delta.is-up { color: #15803d; }
+.pc-metric-delta.is-down { color: #b45309; }
+.pc-metric-delta.is-flat { color: var(--pj-muted, #64748b); }
+
+.pc-chart-area { position: relative; min-height: 260px; }
+.pc-chart { margin: 0 -0.25rem; }
+.pc-state {
+  min-height: 260px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem;
+  color: var(--pj-muted, #64748b); font-size: 0.82rem; text-align: center;
+}
+.pj-view .pc-state p, .pj-view .pc-empty-note, .pj-view .pc-foot, .pj-view .pc-inline-error { margin: 0; }
+.pc-state-error svg { color: #dc2626; }
+.pc-empty-note {
+  position: absolute; top: 0.4rem; left: 50%; transform: translateX(-50%); z-index: 2;
+  padding: 0.3rem 0.7rem; border-radius: 999px; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+  font-size: 0.75rem; color: var(--pj-muted, #64748b);
+  background: var(--card, #fff); border: 1px solid var(--border-soft, rgba(15, 23, 42, 0.08));
+}
+.pc-refreshing {
+  position: absolute; top: 0; right: 0; display: inline-flex; align-items: center; gap: 0.3rem;
+  font-size: 0.7rem; color: var(--pj-muted, #64748b);
+}
+.pc-foot {
+  display: flex; flex-wrap: wrap; gap: 0.35rem 1.1rem;
+  font-size: 0.75rem !important; color: var(--pj-muted, #64748b) !important;
+}
+.pc-foot b { color: var(--pj-strong, #0f172a); font-weight: 600; }
+.pc-foot-zone { margin-left: auto; }
+.pc-inline-error { font-size: 0.75rem; color: #b91c1c; }
+
+.dark .pc-metric.is-active, [data-theme="dark"] .pc-metric.is-active { background: rgba(70, 92, 255, 0.16); }
+.dark .pc-metric, [data-theme="dark"] .pc-metric { border-color: rgba(148, 163, 184, 0.16); }
+.dark .pc-metric-delta.is-up, [data-theme="dark"] .pc-metric-delta.is-up { color: #4ade80; }
+.dark .pc-metric-delta.is-down, [data-theme="dark"] .pc-metric-delta.is-down { color: #fbbf24; }
+
+@media (max-width: 760px) {
+  .pc-metrics { grid-template-columns: repeat(auto-fit, minmax(7.2rem, 1fr)); }
+  .pc-foot-zone { margin-left: 0; }
+}
+@media (max-width: 420px) {
+  .pc-metrics { display: flex; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+  .pc-metrics::-webkit-scrollbar { display: none; }
+  .pc-metric { flex: 0 0 7.4rem; }
+}

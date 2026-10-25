@@ -1,4 +1,4 @@
-import type { PdfStudioDocument, PdfStudioFileMeta, PdfStudioSaveInput, PhotoStudioPhoto, PhotoStudioSaveInput, RecordShareType, SharedPhotoRecord, AdminConsoleSnapshot, AdminMetrics, AiControls, AlarmRingtone, BillingSnapshot, BusinessCardDraft, BusinessSocialLink, DigitalBusinessCard, DocumentTypeOption, MedicalRecord, MedicalRecordDraft, MedicalRecordFile, MedicalRecordLink, PersoraContact, PaymentRecord, ProjectDetail, ProjectField, ProjectFieldAttachment, ProjectSubtask, ProjectFieldComment, ProjectFieldRequest, ProjectFolder, ProjectFolderColor, ProjectFieldStatus, ProjectKind, ProjectMemberRole, ProjectRecord, ProjectSummary, ProjectNotification, ProjectNotificationPreferences, PublicDigitalBusinessCard, ShareComment, ShareNotification, SharePermission, SharedDirection, SharedVaultEntry, RecordShareEntry, SiteContent, SmartScanFieldDefinition, SmartScanResult, SubscriptionPlan, TimelineAttachment, TimelineDraft, TimelineEvent, TransferProgress, VaultFile, VaultFolder, VaultFolderDraft, VaultFolderScope, VaultItem } from "../types";
+import type { PdfStudioDocument, PdfStudioFileMeta, PdfStudioSaveInput, PhotoStudioPhoto, PhotoStudioSaveInput, RecordShareType, SharedPhotoRecord, AdminConsoleSnapshot, AdminMetrics, AiControls, AlarmRingtone, BillingSnapshot, BusinessCardDraft, BusinessSocialLink, DigitalBusinessCard, DocumentTypeOption, MedicalRecord, MedicalRecordDraft, MedicalRecordFile, MedicalRecordLink, PersoraContact, PaymentRecord, ProjectActivityRange, ProjectActivityStats, ProjectDetail, ProjectField, ProjectFieldAttachment, ProjectSubtask, ProjectFieldComment, ProjectFieldRequest, ProjectFolder, ProjectFolderColor, ProjectFieldStatus, ProjectKind, ProjectMemberRole, ProjectRecord, ProjectSummary, ProjectNotification, ProjectNotificationPreferences, PublicDigitalBusinessCard, ShareComment, ShareNotification, SharePermission, SharedDirection, SharedVaultEntry, RecordShareEntry, SiteContent, SmartScanFieldDefinition, SmartScanResult, SubscriptionPlan, TimelineAttachment, TimelineDraft, TimelineEvent, TransferProgress, VaultFile, VaultFolder, VaultFolderDraft, VaultFolderScope, VaultItem } from "../types";
 import { DEFAULT_SITE_CONTENT } from "../data/siteContent";
 
 // Cloudflare Pages always serves the authenticated Functions API from /api in production.
@@ -761,6 +761,9 @@ export async function createProject(input: { name: string; description?: string;
 }
 export async function loadProjectDetail(projectId: string): Promise<ProjectDetail> {
   return pagesApiJson<ProjectDetail>(`/projects/${encodeURIComponent(projectId)}`);
+}
+export async function loadProjectActivityStats(projectId: string, range: ProjectActivityRange): Promise<ProjectActivityStats> {
+  return pagesApiJson<ProjectActivityStats>(`/projects/${encodeURIComponent(projectId)}/activity-stats?range=${range}`);
 }
 export async function updateProject(projectId: string, patch: { name?: string; description?: string; kind?: ProjectKind }): Promise<ProjectRecord> {
   const data = await patchJson<{ project: ProjectRecord }>(`/projects/${encodeURIComponent(projectId)}`, patch);

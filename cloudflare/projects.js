@@ -7,6 +7,8 @@
 //   editor + grant   → create fields & folders, edit/delete own fields
 //   other members    → view, react, comment, request new fields for approval
 //   field creator    → edit/delete own fields (and only the OWNER can edit theirs)
+import { projectActivityWindow, summarizeProjectActivity } from "./project-activity-rules.js";
+
 export const PROJECTS_ROUTE_PREFIX = "/projects";
 
 const FIELD_STATUSES = new Set(["planning", "in-progress", "in-review", "blocked", "completed"]);
@@ -358,6 +360,18 @@ async function listProjects(userId, env) {
       },
     };
   });
+}
+
+/**
+ * Activity analytics for the Activity tab chart. Reads every activity row in
+ * the selected window plus the equally long previous window (paged through
+ * `listRows`, never capped) and buckets them by the viewer's local day.
+ */
+async function projectActivityStats(projectId, identity, range, env, now = Date.now()) {
+  await loadProjectAccess(projectId, identity.id, env);
+  const period = projectActivityWindow(range, identity.timezone, now);
+  const rows = await listRows(`project_activity?project_id=eq.${encodeURIComponent(projectId)}&created_at=gte.${encodeURIComponent(period.since)}&select=actor_id,action,created_at&order=created_at.asc`, env);
+  return summarizeProjectActivity(rows, { range: period.range, timeZone: period.timeZone, now });
 }
 
 async function projectDetail(projectId, userId, env) {
@@ -929,6 +943,14 @@ export async function handleProjects(request, identity, env, origin, services = 
         }
       }
       return json({ error: "That project page is not available." }, 404, origin);
+    }
+
+    // /projects/:id/activity-stats?range=7|30|90
+    if (section === "activity-stats") {
+      if (segments.length === 2 && request.method === "GET") {
+        return json(await projectActivityStats(projectId, identity, url.searchParams.get("range"), env), 200, origin);
+      }
+      return json({ error: "Method not allowed." }, 405, origin);
     }
 
     // /projects/:id/requests[/:requestId[/resolve]]

@@ -514,6 +514,26 @@ export interface ProjectDetail {
 }
 export interface ProjectPerson { name: string; avatarUrl: string }
 
+/** Activity tab analytics — every event in the window, bucketed by the viewer's local day. */
+export type ProjectActivityMetric = "all" | "fields" | "comments" | "requests" | "team";
+export type ProjectActivityRange = 7 | 30 | 90;
+export type ProjectActivityCounts = Record<ProjectActivityMetric, number>;
+export interface ProjectActivityBucket { start: string; end: string; counts: ProjectActivityCounts }
+export interface ProjectActivityStats {
+  range: ProjectActivityRange;
+  bucket: "day" | "week";
+  timeZone: string;
+  from: string;
+  to: string;
+  previousFrom: string;
+  previousTo: string;
+  generatedAt: string;
+  totals: ProjectActivityCounts;
+  previousTotals: ProjectActivityCounts;
+  activeMembers: number;
+  buckets: ProjectActivityBucket[];
+}
+
 // ---------------------------------------------------------------------------
 // Photo Studio (2026-10-22)
 // ---------------------------------------------------------------------------

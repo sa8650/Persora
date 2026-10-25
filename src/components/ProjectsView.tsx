@@ -23,6 +23,7 @@ import ModalPortal from "./ModalPortal";
 import MoreOptionsMenu from "./MoreOptionsMenu";
 import { MagicCard } from "./magic-ui";
 import "./projects.css";
+import { ProjectActivityChart } from "./project-charts/ProjectActivityChart";
 
 interface Props { user: AppUser; maxUploadMb?: number; notify: (message: string, kind?: "success" | "error") => void }
 type DetailTab = "overview" | "fields" | "activity";
@@ -515,6 +516,7 @@ export default function ProjectsView({ user, maxUploadMb = 25, notify }: Props) 
 
           {tab === "activity" && (
             <section className="pj-panel">
+              <ProjectActivityChart projectId={detail.project.id} refreshKey={`${detail.activity.length}:${detail.activity[0]?.id ?? ""}`} />
               <div className="pj-card">
                 <div className="pj-card-head"><h3>Recently updated fields</h3></div>
                 <div className="pj-table-scroll">
