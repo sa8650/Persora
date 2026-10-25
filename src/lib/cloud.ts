@@ -1,4 +1,4 @@
-import type { PdfStudioDocument, PdfStudioFileMeta, PdfStudioSaveInput, PhotoStudioPhoto, PhotoStudioSaveInput, RecordShareType, SharedPhotoRecord, AdminConsoleSnapshot, AdminMetrics, AiControls, AlarmRingtone, BillingSnapshot, BusinessCardDraft, BusinessSocialLink, DigitalBusinessCard, DocumentTypeOption, MedicalRecord, MedicalRecordDraft, MedicalRecordFile, MedicalRecordLink, PersoraContact, PaymentRecord, ProjectActivityRange, ProjectActivityStats, ProjectDetail, ProjectField, ProjectFieldAttachment, ProjectSubtask, ProjectFieldComment, ProjectFieldRequest, ProjectFolder, ProjectFolderColor, ProjectFieldStatus, ProjectKind, ProjectMemberRole, ProjectRecord, ProjectSummary, ProjectNotification, ProjectNotificationPreferences, PublicDigitalBusinessCard, ShareComment, ShareNotification, SharePermission, SharedDirection, SharedVaultEntry, RecordShareEntry, SiteContent, SmartScanFieldDefinition, SmartScanResult, SubscriptionPlan, TimelineAttachment, TimelineDraft, TimelineEvent, TransferProgress, VaultFile, VaultFolder, VaultFolderDraft, VaultFolderScope, VaultItem } from "../types";
+import type { PdfStudioDocument, PdfStudioFileMeta, PdfStudioSaveInput, PhotoStudioPhoto, PhotoStudioSaveInput, RecordShareType, SharedPhotoRecord, AdminConsoleSnapshot, AdminMetrics, AiControls, AlarmRingtone, BillingSnapshot, BusinessCardDraft, BusinessSocialLink, DigitalBusinessCard, DocumentTypeOption, MedicalRecord, MedicalRecordDraft, MedicalRecordFile, MedicalRecordLink, PersoraContact, PaymentRecord, ProjectActivityRange, ProjectActivityStats, ProjectDetail, ProjectField, ProjectFieldAttachment, ProjectFieldComment, ProjectFieldRequest, ProjectFolder, ProjectFolderColor, ProjectFieldStatus, ProjectKind, ProjectMemberRole, ProjectRecord, ProjectSummary, ProjectNotification, ProjectNotificationPreferences, ProjectTask, ProjectTaskAttachment, ProjectTaskComment, ProjectTaskStatus, PublicDigitalBusinessCard, ShareComment, ShareNotification, SharePermission, SharedDirection, SharedVaultEntry, RecordShareEntry, SiteContent, SmartScanFieldDefinition, SmartScanResult, SubscriptionPlan, TimelineAttachment, TimelineDraft, TimelineEvent, TransferProgress, VaultFile, VaultFolder, VaultFolderDraft, VaultFolderScope, VaultItem } from "../types";
 import { DEFAULT_SITE_CONTENT } from "../data/siteContent";
 
 // Cloudflare Pages always serves the authenticated Functions API from /api in production.
@@ -803,20 +803,56 @@ export async function updateProjectField(projectId: string, fieldId: string, inp
 export async function deleteProjectField(projectId: string, fieldId: string): Promise<void> {
   await deleteJson(`/projects/${encodeURIComponent(projectId)}/fields/${encodeURIComponent(fieldId)}`);
 }
-export async function createProjectSubtask(projectId: string, fieldId: string, input: { title: string; assigneeId?: string | null }): Promise<ProjectSubtask> {
-  const data = await postJson<{ subtask: ProjectSubtask }>(`/projects/${encodeURIComponent(projectId)}/fields/${encodeURIComponent(fieldId)}/subtasks`, input);
-  return data.subtask;
+export interface ProjectTaskInput { name: string; description?: string; fieldId: string; assigneeId?: string | null; status?: ProjectTaskStatus }
+export type ProjectTaskPatch = Partial<Pick<ProjectTaskInput, "name" | "description" | "fieldId" | "assigneeId" | "status">>;
+export async function createProjectTask(projectId: string, input: ProjectTaskInput): Promise<ProjectTask> {
+  const data = await postJson<{ task: ProjectTask }>(`/projects/${encodeURIComponent(projectId)}/tasks`, input);
+  return data.task;
 }
-export async function updateProjectSubtask(projectId: string, fieldId: string, subtaskId: string, patch: { title?: string; completed?: boolean; assigneeId?: string | null }): Promise<ProjectSubtask> {
-  const data = await patchJson<{ subtask: ProjectSubtask }>(`/projects/${encodeURIComponent(projectId)}/fields/${encodeURIComponent(fieldId)}/subtasks/${encodeURIComponent(subtaskId)}`, patch);
-  return data.subtask;
+export async function updateProjectTask(projectId: string, taskId: string, patch: ProjectTaskPatch): Promise<ProjectTask> {
+  const data = await patchJson<{ task: ProjectTask }>(`/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}`, patch);
+  return data.task;
 }
-export async function reorderProjectSubtasks(projectId: string, fieldId: string, order: string[]): Promise<void> {
-  await patchJson(`/projects/${encodeURIComponent(projectId)}/fields/${encodeURIComponent(fieldId)}/subtasks/reorder`, { order });
+export async function loadProjectTask(projectId: string, taskId: string): Promise<ProjectTask> {
+  const data = await pagesApiJson<{ task: ProjectTask }>(`/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}`);
+  return data.task;
 }
-export async function deleteProjectSubtask(projectId: string, fieldId: string, subtaskId: string): Promise<void> {
-  await deleteJson(`/projects/${encodeURIComponent(projectId)}/fields/${encodeURIComponent(fieldId)}/subtasks/${encodeURIComponent(subtaskId)}`);
+export async function moveProjectTask(projectId: string, taskId: string, status: ProjectTaskStatus): Promise<ProjectTask> {
+  const data = await postJson<{ task: ProjectTask }>(`/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/move`, { status });
+  return data.task;
 }
+export async function pauseProjectTask(projectId: string, taskId: string, paused: boolean): Promise<ProjectTask> {
+  const data = await patchJson<{ task: ProjectTask }>(`/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/pause`, { paused });
+  return data.task;
+}
+export async function deleteProjectTask(projectId: string, taskId: string): Promise<void> {
+  await deleteJson(`/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}`);
+}
+export async function addProjectTaskComment(projectId: string, taskId: string, body: string): Promise<ProjectTaskComment> {
+  const data = await postJson<{ comment: ProjectTaskComment }>(`/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/comments`, { body });
+  return data.comment;
+}
+export async function updateProjectTaskComment(projectId: string, taskId: string, commentId: string, body: string): Promise<ProjectTaskComment> {
+  const data = await patchJson<{ comment: ProjectTaskComment }>(`/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/comments/${encodeURIComponent(commentId)}`, { body });
+  return data.comment;
+}
+export async function deleteProjectTaskComment(projectId: string, taskId: string, commentId: string): Promise<void> {
+  await deleteJson(`/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/comments/${encodeURIComponent(commentId)}`);
+}
+export async function uploadProjectTaskAttachment(projectId: string, taskId: string, file: File): Promise<ProjectTaskAttachment> {
+  const form = new FormData(); form.append("file", file, file.name);
+  const response = await pagesApiRequest(`/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/attachments`, { method: "POST", body: form });
+  const data = await response.json() as { attachment: ProjectTaskAttachment };
+  return data.attachment;
+}
+export async function deleteProjectTaskAttachment(projectId: string, taskId: string, attachmentId: string): Promise<void> {
+  await deleteJson(`/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/attachments/${encodeURIComponent(attachmentId)}`);
+}
+export async function loadProjectTaskAttachment(projectId: string, taskId: string, attachmentId: string, preview = false): Promise<Blob> {
+  const url = `/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/attachments/${encodeURIComponent(attachmentId)}/file${preview ? "?preview=1" : ""}`;
+  return (await pagesApiRequest(url)).blob();
+}
+
 export async function uploadProjectFieldAttachment(projectId: string, fieldId: string, file: File): Promise<ProjectFieldAttachment> {
   const form = new FormData(); form.append("file", file, file.name);
   const response = await pagesApiRequest(`/projects/${encodeURIComponent(projectId)}/fields/${encodeURIComponent(fieldId)}/attachments`, { method: "POST", body: form });
@@ -862,7 +898,7 @@ export async function loadProjectNotifications(): Promise<ShareNotification[]> {
     id: `project:${row.id}`, kind: row.kind === "access_removed" ? "access_removed" : "project",
     itemTitle: row.projectName || row.title, actorName: row.actorName || "Project update", message: row.message,
     createdAt: row.createdAt, readAt: row.readAt, projectId: row.projectId, projectName: row.projectName,
-    projectEventKind: row.kind, fieldId: row.fieldId, subtaskId: row.subtaskId,
+    projectEventKind: row.kind, fieldId: row.fieldId, subtaskId: row.subtaskId, taskId: row.taskId,
   })) : [];
 }
 export async function markProjectNotificationRead(notificationId: string): Promise<void> {

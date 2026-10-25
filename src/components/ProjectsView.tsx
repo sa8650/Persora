@@ -1,32 +1,33 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import {
-  Activity, ArrowDown, ArrowUp, Bell, Check, CheckCircle2, ChevronLeft, CircleAlert, Clock3, Download, Eye, FileText, Folder, FolderKanban, FolderPlus, FolderOpen, Info, LayoutGrid, List, Loader2,
+  Activity, Bell, Check, CheckCircle2, ChevronLeft, CircleAlert, Clock3, Download, Eye, FileText, Folder, FolderKanban, FolderPlus, FolderOpen, Info, LayoutGrid, List, Loader2,
   MessageSquare, Paperclip, Pencil, Pin, Plus, RefreshCw, Search, Send, ShieldCheck, Star, Trash2, UserPlus, UsersRound, X,
 } from "lucide-react";
 import type {
-  AppUser, ProjectDetail, ProjectField, ProjectFieldAttachment, ProjectSubtask, ProjectFieldComment, ProjectFieldRequest, ProjectFieldStatus,
+  AppUser, ProjectDetail, ProjectField, ProjectFieldAttachment, ProjectFieldComment, ProjectFieldRequest, ProjectFieldStatus,
   ProjectFolder, ProjectFolderColor, ProjectKind, ProjectMemberRole, ProjectNotificationPreferences, ProjectPerson, ProjectSummary,
 } from "../types";
 import {
-  addProjectComment, addProjectMember, cancelProjectFieldRequest, createProject, createProjectField, createProjectFolder, createProjectSubtask,
-  deleteProject, deleteProjectComment, deleteProjectField, deleteProjectFolder, deleteProjectSubtask, deleteProjectFieldAttachment, listProjects, loadProjectDetail,
-  loadProjectFieldAttachment, loadProjectNotificationPreferences, reactToProjectField, reorderProjectSubtasks, removeProjectMember, requestProjectField, resolveProjectFieldRequest, updateProject,
-  updateProjectComment, updateProjectField, updateProjectFolder, updateProjectMember, updateProjectSubtask, uploadProjectFieldAttachment, saveProjectNotificationPreferences, type ProjectFieldInput,
+  addProjectComment, addProjectMember, cancelProjectFieldRequest, createProject, createProjectField, createProjectFolder,
+  deleteProject, deleteProjectComment, deleteProjectField, deleteProjectFolder, deleteProjectFieldAttachment, listProjects, loadProjectDetail,
+  loadProjectFieldAttachment, loadProjectNotificationPreferences, reactToProjectField, removeProjectMember, requestProjectField, resolveProjectFieldRequest, updateProject,
+  updateProjectComment, updateProjectField, updateProjectFolder, updateProjectMember, uploadProjectFieldAttachment, saveProjectNotificationPreferences, type ProjectFieldInput,
 } from "../lib/cloud";
 import {
-  activityLabel, avatarTone, canCreateField, checklistDraftFrom, checklistProgress, fieldProgress, planChecklistSync, canCreateFolder, canDeleteComment, canEditComment,
-  canEditField, canManageFolder, canManageMembers, canRequestField, canToggleChecklistItem, filterSortFields, formatDate, initialsFor, profileAvatar,
+  activityLabel, avatarTone, canCreateField, fieldProgress, fieldsWithTaskProgress, canCreateFolder, canDeleteComment, canEditComment,
+  canEditField, canManageFolder, canManageMembers, canRequestField, filterSortFields, formatDate, initialsFor, profileAvatar,
   projectKindLabel, projectStats, relativeTime, statusMeta, FOLDER_COLORS, PROJECT_MEMBER_ROLES,
-  PROJECT_SORT_OPTIONS, PROJECT_STATUSES, type ChecklistDraftItem, type FieldFilter, type ProjectSortKey,
+  PROJECT_SORT_OPTIONS, PROJECT_STATUSES, type FieldFilter, type ProjectSortKey,
 } from "../lib/projects";
 import ModalPortal from "./ModalPortal";
 import MoreOptionsMenu from "./MoreOptionsMenu";
 import { MagicCard } from "./magic-ui";
 import "./projects.css";
 import { ProjectActivityChart } from "./project-charts/ProjectActivityChart";
+import ProjectTaskList from "./ProjectTaskList";
 
 interface Props { user: AppUser; maxUploadMb?: number; notify: (message: string, kind?: "success" | "error") => void }
-type DetailTab = "overview" | "fields" | "activity";
+type DetailTab = "overview" | "fields" | "task-list" | "activity";
 type ModalState =
   | { kind: "project"; editing: ProjectDetail | null }
   | { kind: "delete-project"; detail: ProjectDetail }
@@ -48,6 +49,7 @@ function projectFolderTone(color: ProjectFolderColor): string {
 const DETAIL_TABS: { id: DetailTab; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "fields", label: "Fields" },
+  { id: "task-list", label: "Task List" },
   { id: "activity", label: "Activity" },
 ];
 
@@ -71,6 +73,7 @@ function syncProjectUrl(projectId: string) {
   if (projectId) url.searchParams.set("project", projectId);
   else url.searchParams.delete("project");
   url.searchParams.delete("field");
+  url.searchParams.delete("task");
   url.searchParams.delete("subtask");
   window.history.pushState({ ...(window.history.state || {}), persoraProjectId: projectId || null }, "", url);
 }
@@ -108,7 +111,9 @@ export default function ProjectsView({ user, maxUploadMb = 25, notify }: Props) 
   const [modal, setModal] = useState<ModalState | null>(null);
   const [layout, setLayoutState] = useState<"grid" | "list">(loadLayout);
   const [filter, setFilter] = useState<FieldFilter>({ query: "", status: "all", folderId: "all", sort: "updated" });
-  const [pendingProjectDestination, setPendingProjectDestination] = useState<{ projectId: string; fieldId: string; subtaskId: string } | null>(null);
+  const [pendingProjectDestination, setPendingProjectDestination] = useState<{ projectId: string; fieldId: string; taskId: string } | null>(null);
+  const [pendingTaskOpenId, setPendingTaskOpenId] = useState("");
+  const [taskFieldFilterId, setTaskFieldFilterId] = useState("");
   const lastProjectDestination = useRef("");
   const detailRequest = useRef(0);
 
@@ -168,11 +173,11 @@ export default function ProjectsView({ user, maxUploadMb = 25, notify }: Props) 
 
   useEffect(() => {
     const onProjectNotification = (event: Event) => {
-      const destination = (event as CustomEvent<{ projectId?: string; fieldId?: string; subtaskId?: string }>).detail;
+      const destination = (event as CustomEvent<{ projectId?: string; fieldId?: string; taskId?: string; subtaskId?: string }>).detail;
       if (!destination || !isProjectUuid(destination.projectId || "")) return;
       lastProjectDestination.current = "";
-      setPendingProjectDestination({ projectId: destination.projectId!, fieldId: destination.fieldId || "", subtaskId: destination.subtaskId || "" });
-      setModal(null); setTab("fields");
+      setPendingProjectDestination({ projectId: destination.projectId!, fieldId: destination.fieldId || "", taskId: destination.taskId || destination.subtaskId || "" });
+      setModal(null); setTab(destination.taskId || destination.subtaskId ? "task-list" : "fields");
       if (selectedId === destination.projectId) { setDetailLoading(true); void reloadDetail(destination.projectId); }
       else setSelectedId(destination.projectId!);
     };
@@ -184,15 +189,23 @@ export default function ProjectsView({ user, maxUploadMb = 25, notify }: Props) 
     const url = typeof window === "undefined" ? null : new URL(window.location.href);
     const projectId = pendingProjectDestination?.projectId || selectedId;
     const fieldId = pendingProjectDestination?.fieldId || url?.searchParams.get("field") || "";
-    const subtaskId = pendingProjectDestination?.subtaskId || url?.searchParams.get("subtask") || "";
-    if (!fieldId || !detail || detail.project.id !== projectId) return;
-    const destinationKey = `${projectId}:${fieldId}:${subtaskId}`;
+    // Old notification links may still carry subtask IDs; the migration preserves their source UUIDs.
+    const taskId = pendingProjectDestination?.taskId || url?.searchParams.get("task") || url?.searchParams.get("subtask") || "";
+    if (!detail || detail.project.id !== projectId) return;
+    if (taskId && detail.tasks.some((task) => task.id === taskId)) {
+      const destinationKey = `${projectId}:task:${taskId}`;
+      if (lastProjectDestination.current === destinationKey) return;
+      lastProjectDestination.current = destinationKey;
+      setTab("task-list"); setPendingTaskOpenId(taskId); setPendingProjectDestination(null);
+      return;
+    }
+    if (!fieldId) return;
+    const destinationKey = `${projectId}:${fieldId}`;
     if (lastProjectDestination.current === destinationKey) return;
     const field = detail.fields.find((entry) => entry.id === fieldId);
     if (!field) return;
     lastProjectDestination.current = destinationKey;
     setTab("fields"); setModal({ kind: "field-detail", field }); setPendingProjectDestination(null);
-    if (subtaskId) window.setTimeout(() => document.getElementById(`project-subtask-${subtaskId}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 320);
   }, [detail, selectedId, pendingProjectDestination]);
 
   const openProject = useCallback((projectId: string) => {
@@ -304,7 +317,7 @@ export default function ProjectsView({ user, maxUploadMb = 25, notify }: Props) 
                   <div className="pj-project-card-stats">
                     <span><FileText size={13} /> {project.stats.fields} field{project.stats.fields === 1 ? "" : "s"}</span>
                     <span><CheckCircle2 size={13} /> {project.stats.completed} done</span>
-                    {(project.stats.subtasksTotal || 0) > 0 && <span><CheckCircle2 size={13} /> {project.stats.subtasksCompleted || 0}/{project.stats.subtasksTotal} tasks</span>}
+                    {(project.stats.tasksTotal || 0) > 0 && <span><CheckCircle2 size={13} /> {project.stats.tasksCompleted || 0}/{project.stats.tasksTotal} tasks complete</span>}
                     {project.kind === "shared" && <span><UsersRound size={13} /> {project.stats.members}</span>}
                   </div>
                   {project.stats.fields > 0 && (
@@ -312,7 +325,7 @@ export default function ProjectsView({ user, maxUploadMb = 25, notify }: Props) 
                       <span style={{ width: `${Math.round((project.stats.completed / project.stats.fields) * 100)}%` }} />
                     </div>
                   )}
-                  {(project.stats.subtasksTotal || 0) > 0 && <div className="pj-project-task-progress" aria-label={`${project.stats.subtasksCompleted || 0} of ${project.stats.subtasksTotal} subtasks complete`}><span>Checklist progress</span><b>{project.stats.subtasksCompleted || 0}/{project.stats.subtasksTotal}</b><div className="pj-progress-track"><span style={{ width: `${Math.round(((project.stats.subtasksCompleted || 0) / (project.stats.subtasksTotal || 1)) * 100)}%` }} /></div></div>}
+                  {(project.stats.tasksTotal || 0) > 0 && <div className="pj-project-task-progress" aria-label={`${project.stats.tasksCompleted || 0} of ${project.stats.tasksTotal} tasks complete`}><span>Task progress</span><b>{project.stats.tasksCompleted || 0}/{project.stats.tasksTotal}</b><div className="pj-progress-track"><span style={{ width: `${Math.round(((project.stats.tasksCompleted || 0) / (project.stats.tasksTotal || 1)) * 100)}%` }} /></div></div>}
                 </div>
               </MagicCard>
             ))}
@@ -514,6 +527,29 @@ export default function ProjectsView({ user, maxUploadMb = 25, notify }: Props) 
             </section>
           )}
 
+          {tab === "task-list" && (
+            <ProjectTaskList
+              projectId={detail.project.id}
+              tasks={detail.tasks || []}
+              fields={detail.fields}
+              access={access}
+              owner={detail.owner}
+              members={detail.members}
+              userId={user.id}
+              uploadsEnabled={Boolean(user.uploadsEnabled)}
+              maxUploadMb={maxUploadMb}
+              loading={detailLoading}
+              onTasksChange={(tasks) => setDetail((current) => current ? { ...current, tasks, fields: fieldsWithTaskProgress(current.fields, tasks) } : current)}
+              onRefresh={async () => { await Promise.all([reloadDetail(detail.project.id), refreshList()]); }}
+              onOpenField={(field) => setModal({ kind: "field-detail", field })}
+              notify={notify}
+              initialTaskId={pendingTaskOpenId}
+              onTaskOpened={() => setPendingTaskOpenId("")}
+              initialFieldId={taskFieldFilterId}
+              onFieldFilterApplied={() => setTaskFieldFilterId("")}
+            />
+          )}
+
           {tab === "activity" && (
             <section className="pj-panel">
               <ProjectActivityChart projectId={detail.project.id} refreshKey={`${detail.activity.length}:${detail.activity[0]?.id ?? ""}`} />
@@ -600,26 +636,15 @@ export default function ProjectsView({ user, maxUploadMb = 25, notify }: Props) 
       {modal?.kind === "field" && detail && access && (
         <FieldFormModal busy={busy} mode={modal.mode} field={modal.field} detail={detail}
           onClose={() => setModal(null)}
-          onSubmit={async (input, note, checklist, markPersisted) => {
+          onSubmit={async (input, note) => {
             const ok = await act(async () => {
               if (modal.mode === "request") { await requestProjectField(selectedId, { ...input, note }); return "Request sent — the project owner will review it."; }
-              let fieldId = modal.mode === "edit" && modal.field ? modal.field.id : "";
-              if (fieldId) {
-                await updateProjectField(selectedId, fieldId, input);
-              } else {
-                const created = await createProjectField(selectedId, input);
-                fieldId = created.id;
-                // If a checklist write fails below, a retry edits this saved field instead of creating a duplicate.
-                setModal({ kind: "field", mode: "edit", field: created });
+              if (modal.mode === "edit" && modal.field) {
+                await updateProjectField(selectedId, modal.field.id, input);
+                return "Field saved.";
               }
-              const baseline = detail.fields.find((entry) => entry.id === fieldId)?.subtasks || [];
-              try {
-                await syncFieldChecklist(selectedId, fieldId, baseline, checklist, markPersisted);
-              } catch (error) {
-                await reloadDetail(selectedId);
-                throw error;
-              }
-              return modal.mode === "edit" ? "Field saved." : `“${input.title}” added to the project.`;
+              const created = await createProjectField(selectedId, input);
+              return `“${created.title || input.title}” added to the project.`;
             });
             if (ok) setModal(null);
           }}
@@ -631,6 +656,7 @@ export default function ProjectsView({ user, maxUploadMb = 25, notify }: Props) 
           onToggleReaction={(key) => void toggleReaction(detail.fields.find((entry) => entry.id === modal.field.id) || modal.field, key)}
           onEdit={() => setModal({ kind: "field", mode: "edit", field: detail.fields.find((entry) => entry.id === modal.field.id) || modal.field })}
           onDelete={() => setModal({ kind: "delete-field", field: modal.field })}
+          onViewTasks={() => { setTaskFieldFilterId(modal.field.id); setTab("task-list"); setModal(null); }}
           onChanged={async () => { await Promise.all([reloadDetail(selectedId), refreshList()]); }}
           notify={notify}
         />
@@ -688,27 +714,6 @@ export default function ProjectsView({ user, maxUploadMb = 25, notify }: Props) 
 }
 
 // ============================================================================
-// Checklist persistence (Create / Edit field)
-// ============================================================================
-/** Applies the edited checklist to the saved field: deletes, updates, creates, then restores the edited order. */
-async function syncFieldChecklist(projectId: string, fieldId: string, baseline: ProjectSubtask[], draft: ChecklistDraftItem[], markPersisted: (key: string, id: string) => void): Promise<void> {
-  const plan = planChecklistSync(baseline, draft);
-  for (const id of plan.remove) await deleteProjectSubtask(projectId, fieldId, id);
-  for (const change of plan.update) await updateProjectSubtask(projectId, fieldId, change.id, change.patch);
-  const createdIds = new Map<string, string>();
-  for (const item of plan.create) {
-    const task = await createProjectSubtask(projectId, fieldId, { title: item.title, assigneeId: item.assigneeId || null });
-    createdIds.set(item.key, task.id);
-    markPersisted(item.key, task.id);
-    if (item.completed) await updateProjectSubtask(projectId, fieldId, task.id, { completed: true });
-  }
-  const removed = new Set(plan.remove);
-  const serverOrder = [...baseline.map((task) => task.id).filter((id) => !removed.has(id)), ...plan.create.map((item) => createdIds.get(item.key) as string)];
-  const editedOrder = draft.map((item) => item.id || createdIds.get(item.key)).filter((id): id is string => Boolean(id));
-  if (editedOrder.length > 1 && editedOrder.join(",") !== serverOrder.join(",")) await reorderProjectSubtasks(projectId, fieldId, editedOrder);
-}
-
-// ============================================================================
 // Field card
 // ============================================================================
 const PROJECT_ATTACHMENT_MIMES: Record<string, string> = {
@@ -743,7 +748,9 @@ function FieldCard({ field, layout, folders, onOpen, onToggleReaction }: {
   const folder = folders.find((entry) => entry.id === field.folder_id);
   const overdue = Boolean(field.due_date && field.status !== "completed" && field.due_date < new Date().toISOString().slice(0, 10));
   const mine = field.mine || { pinned: false, favourite: false };
-  const checklist = checklistProgress(field.subtasks);
+  const progress = fieldProgress(field);
+  const taskCount = field.taskCount || 0;
+  const completedTaskCount = field.completedTaskCount || 0;
   return (
     <MagicCard className="pj-field-card-magic" onClick={onOpen} role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(); } }}>
     <article className={`pj-field-card ${layout === "list" ? "pj-field-card-row" : ""}`}>
@@ -760,11 +767,11 @@ function FieldCard({ field, layout, folders, onOpen, onToggleReaction }: {
       <h3>{field.title}</h3>
       {field.description && <p className="pj-field-card-desc">{field.description}</p>}
       <div className="pj-field-card-progress">
-        <span className="pj-progress-track" role="progressbar" aria-label="Field progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={checklist.percent}><span style={{ width: `${checklist.percent}%` }} /></span>
+        <span className="pj-progress-track" role="progressbar" aria-label="Field task progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><span style={{ width: `${progress}%` }} /></span>
         <span className={`pj-chip pj-chip-${meta.tone}`}>{meta.label}</span>
-        <b>{checklist.percent}%</b>
+        <b>{progress}%</b>
       </div>
-      <div className="pj-field-card-checklist"><CheckCircle2 size={12} /> {checklist.total ? `${checklist.completed}/${checklist.total} checklist items` : "No checklist items"}</div>
+      <div className="pj-field-card-task-count"><CheckCircle2 size={12} /> {taskCount ? `${completedTaskCount}/${taskCount} tasks complete` : "No tasks"}</div>
       <footer>
         <span className="pj-people-inline">
           {field.creator_name && <PersonAvatar small userId={field.creator_id} name={field.creator_name} title={`Created by ${field.creator_name}`} />}
@@ -861,17 +868,13 @@ function ProjectFormModal({ busy, editing, onClose, onSubmit, onDelete }: {
   );
 }
 
-type ChecklistPersisted = (key: string, id: string) => void;
-let checklistKeySeed = 0;
-const nextChecklistKey = () => `draft-${Date.now().toString(36)}-${(checklistKeySeed += 1)}`;
-
 function FieldFormModal({ busy, mode, field, detail, onClose, onSubmit }: {
   busy: boolean;
   mode: "create" | "request" | "edit";
   field?: ProjectField;
   detail: ProjectDetail;
   onClose: () => void;
-  onSubmit: (input: ProjectFieldInput, note: string, checklist: ChecklistDraftItem[], markPersisted: ChecklistPersisted) => Promise<void>;
+  onSubmit: (input: ProjectFieldInput, note: string) => Promise<void>;
 }) {
   const [title, setTitle] = useState(field?.title || "");
   const [description, setDescription] = useState(field?.description || "");
@@ -880,48 +883,20 @@ function FieldFormModal({ busy, mode, field, detail, onClose, onSubmit }: {
   const [assigneeId, setAssigneeId] = useState(field?.assignee_id || "");
   const [dueDate, setDueDate] = useState(field?.due_date || "");
   const [note, setNote] = useState("");
-  // Checklist is managed only here (Create / Edit field). Items are saved with the field.
-  const [checklist, setChecklist] = useState<ChecklistDraftItem[]>(() => checklistDraftFrom(field?.subtasks));
-  const [newItemTitle, setNewItemTitle] = useState("");
-  const [newItemAssignee, setNewItemAssignee] = useState("");
   const requestMode = mode === "request";
   const team = useMemo(() => {
     const people: { id: string; name: string }[] = [];
     if (detail.owner) people.push({ id: detail.owner.id, name: `${detail.owner.name} (owner)` });
-    for (const member of detail.members) people.push({ id: member.userId, name: member.name });
+    for (const member of detail.members) if (!people.some((person) => person.id === member.userId)) people.push({ id: member.userId, name: member.name });
     return people;
   }, [detail]);
-  const progress = checklistProgress(checklist);
-  const markPersisted = useCallback<ChecklistPersisted>((key, id) => {
-    setChecklist((items) => items.map((item) => item.key === key ? { ...item, id } : item));
-  }, []);
-  const addItem = () => {
-    const itemTitle = newItemTitle.trim();
-    if (!itemTitle || checklist.length >= 500) return;
-    setChecklist((items) => [...items, { key: nextChecklistKey(), title: itemTitle.slice(0, 240), completed: false, assigneeId: newItemAssignee || null }]);
-    setNewItemTitle(""); setNewItemAssignee("");
-  };
-  const patchItem = (key: string, patch: Partial<ChecklistDraftItem>) => setChecklist((items) => items.map((item) => item.key === key ? { ...item, ...patch } : item));
-  const removeItem = (key: string) => setChecklist((items) => items.filter((item) => item.key !== key));
-  const moveItem = (index: number, delta: number) => setChecklist((items) => {
-    const target = index + delta;
-    if (target < 0 || target >= items.length) return items;
-    const next = [...items]; [next[index], next[target]] = [next[target], next[index]];
-    return next;
-  });
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    const items = requestMode ? [] : checklist.map((item) => ({ ...item, title: item.title.trim() }));
     const input: ProjectFieldInput = {
-      title: title.trim(),
-      description: description.trim(),
-      folderId: folderId || null,
-      status,
-      progress: checklistProgress(items).percent,
-      assigneeId: assigneeId || null,
-      dueDate: dueDate || null,
+      title: title.trim(), description: description.trim(), folderId: folderId || null,
+      status, assigneeId: assigneeId || null, dueDate: dueDate || null,
     };
-    void onSubmit(input, note.trim(), items, markPersisted);
+    void onSubmit(input, note.trim());
   };
   return (
     <ModalShell title={mode === "edit" ? "Edit field" : requestMode ? "Request a new field" : "New field"} onClose={onClose}>
@@ -943,47 +918,10 @@ function FieldFormModal({ busy, mode, field, detail, onClose, onSubmit }: {
             {team.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
           </select></label>
         </div>
-        {!requestMode && (
-          <div className="pj-checklist-editor" role="group" aria-label="Checklist">
-            <div className="pj-checklist-editor-head">
-              <span>Checklist <small>{progress.completed}/{progress.total}</small></span>
-              <b>Progress {progress.percent}%</b>
-            </div>
-            <div className="pj-progress-track" role="progressbar" aria-label="Field progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress.percent}><span style={{ width: `${progress.percent}%` }} /></div>
-            <div className="pj-checklist-editor-hint">Progress is calculated automatically from completed checklist items.</div>
-            {checklist.length > 0 && (
-              <ul className="pj-checklist-editor-list">
-                {checklist.map((item, index) => (
-                  <li key={item.key} className={item.completed ? "is-complete" : ""}>
-                    <input type="checkbox" checked={item.completed} onChange={() => patchItem(item.key, { completed: !item.completed })} aria-label={`${item.completed ? "Mark incomplete" : "Complete"}: ${item.title || "checklist item"}`} />
-                    <input type="text" className="pj-checklist-editor-title" value={item.title} maxLength={240} required onChange={(event) => patchItem(item.key, { title: event.target.value })} aria-label={`Checklist item ${index + 1}`} />
-                    <select value={item.assigneeId || ""} onChange={(event) => patchItem(item.key, { assigneeId: event.target.value || null })} aria-label={`Assign ${item.title || "checklist item"}`}>
-                      <option value="">Unassigned</option>
-                      {team.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
-                    </select>
-                    <span className="pj-checklist-editor-actions">
-                      <button type="button" className="pj-icon-button" onClick={() => moveItem(index, -1)} disabled={index === 0} aria-label={`Move ${item.title} up`}><ArrowUp size={13} /></button>
-                      <button type="button" className="pj-icon-button" onClick={() => moveItem(index, 1)} disabled={index === checklist.length - 1} aria-label={`Move ${item.title} down`}><ArrowDown size={13} /></button>
-                      <button type="button" className="pj-icon-button pj-danger-text" onClick={() => removeItem(item.key)} aria-label={`Delete ${item.title || "checklist item"}`}><Trash2 size={13} /></button>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <div className="pj-checklist-editor-add">
-              <input type="text" value={newItemTitle} maxLength={240} onChange={(event) => setNewItemTitle(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addItem(); } }} placeholder="Add a checklist item…" aria-label="New checklist item" />
-              <select value={newItemAssignee} onChange={(event) => setNewItemAssignee(event.target.value)} aria-label="Assign new checklist item">
-                <option value="">Unassigned</option>
-                {team.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
-              </select>
-              <button type="button" className="pj-ghost-button" onClick={addItem} disabled={!newItemTitle.trim() || checklist.length >= 500}><Plus size={14} /> Add</button>
-            </div>
-          </div>
-        )}
         {requestMode && <label>Note for the owner <small>(optional)</small><textarea rows={2} maxLength={1000} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Why does the team need this field?" /></label>}
         <div className="pj-modal-actions">
           <button type="button" className="pj-ghost-button" onClick={onClose} disabled={busy}>Cancel</button>
-          <button type="submit" className="pj-primary-button" disabled={busy}>{busy ? <Loader2 size={15} className="pj-spin" /> : null}{mode === "edit" ? "Save field" : requestMode ? "Send request" : "Create field"}</button>
+          <button type="submit" className="pj-primary-button" disabled={busy || !title.trim()}>{busy ? <Loader2 size={15} className="pj-spin" /> : null}{mode === "edit" ? "Save field" : requestMode ? "Send request" : "Create field"}</button>
         </div>
       </form>
     </ModalShell>
@@ -1020,7 +958,7 @@ function FolderFormModal({ busy, folder, onClose, onSubmit }: {
   );
 }
 
-function FieldDetailModal({ busy, field, detail, user, maxUploadMb, onClose, onToggleReaction, onEdit, onDelete, onChanged, notify }: {
+function FieldDetailModal({ busy, field, detail, user, maxUploadMb, onClose, onToggleReaction, onEdit, onDelete, onViewTasks, onChanged, notify }: {
   busy: boolean;
   field: ProjectField;
   detail: ProjectDetail;
@@ -1030,6 +968,7 @@ function FieldDetailModal({ busy, field, detail, user, maxUploadMb, onClose, onT
   onToggleReaction: (key: "pinned" | "favourite") => void;
   onEdit: () => void;
   onDelete: () => void;
+  onViewTasks: () => void;
   onChanged: (() => Promise<void>) | (() => void);
   notify: (message: string, kind?: "success" | "error") => void;
 }) {
@@ -1040,31 +979,13 @@ function FieldDetailModal({ busy, field, detail, user, maxUploadMb, onClose, onT
   const [attachmentBusy, setAttachmentBusy] = useState(false);
   const [attachmentPreview, setAttachmentPreview] = useState<{ url: string; type: string; name: string } | null>(null);
   const comments = field.comments || [];
-  // Completion ticks in flight (subtask id → requested state) so the checkbox and progress respond instantly.
-  const [pendingChecks, setPendingChecks] = useState<Record<string, boolean>>({});
-  const subtasks = (field.subtasks || []).map((task) => (task.id in pendingChecks ? { ...task, completed: pendingChecks[task.id] } : task));
   const attachments = field.attachments || [];
-  // Same checklist-derived value the field cards show, so both stay in sync after every reload.
-  const progress = checklistProgress(subtasks);
+  const linkedTasks = (detail.tasks || []).filter((task) => task.field_id === field.id);
+  const progress = fieldProgress(field);
+  const completedTaskCount = linkedTasks.filter((task) => task.status === "complete").length;
   const mine = field.mine || { pinned: false, favourite: false };
   const meta = statusMeta(field.status);
   const editable = canEditField(detail.access, field, user.id);
-  const canCheckAny = subtasks.some((task) => canToggleChecklistItem(detail.access, field, task, user.id));
-
-  /** Assigned people tick items off here; adding, renaming, and deleting items stays in Edit field. */
-  const toggleChecklistItem = async (task: ProjectSubtask) => {
-    if (task.id in pendingChecks || !canToggleChecklistItem(detail.access, field, task, user.id)) return;
-    const next = !task.completed;
-    setPendingChecks((current) => ({ ...current, [task.id]: next }));
-    try {
-      await updateProjectSubtask(detail.project.id, field.id, task.id, { completed: next });
-      await onChanged();
-    } catch (error) {
-      notify(error instanceof Error ? error.message : "The checklist item could not be updated.", "error");
-    } finally {
-      setPendingChecks((current) => { const rest = { ...current }; delete rest[task.id]; return rest; });
-    }
-  };
 
   const postComment = async () => {
     const body = comment.trim();
@@ -1167,26 +1088,9 @@ function FieldDetailModal({ busy, field, detail, user, maxUploadMb, onClose, onT
         </section>
 
         <section className="pj-detail-section pj-progress-section">
-          <header><span className="pj-detail-section-icon pj-detail-green"><CheckCircle2 size={15} /></span><h3>Status &amp; progress</h3><span className={`pj-chip pj-chip-${meta.tone}`}>{meta.label}</span></header>
-          <div className="pj-detail-progress-row"><div className="pj-progress-track pj-progress-track-lg" role="progressbar" aria-label="Field progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress.percent}><span style={{ width: `${progress.percent}%` }} /></div><b>{progress.percent}%</b></div>
-          <small className="pj-detail-progress-note">{progress.total ? `${progress.completed} of ${progress.total} checklist item${progress.total === 1 ? "" : "s"} complete.` : "No checklist items yet — progress is 0%."}{editable ? " Manage the checklist from Edit." : canCheckAny ? " Check off the items assigned to you." : ""}</small>
-          {subtasks.length > 0 && (
-            <ul className="pj-checklist-readonly" aria-label="Checklist">
-              {subtasks.map((task) => {
-                const checkable = canToggleChecklistItem(detail.access, field, task, user.id);
-                const saving = task.id in pendingChecks;
-                return (
-                  <li key={task.id} id={`project-subtask-${task.id}`} className={`${task.completed ? "is-complete" : ""}${checkable ? " is-checkable" : ""}`}>
-                    {checkable ? (
-                      <button type="button" role="checkbox" aria-checked={task.completed} className="pj-checklist-readonly-mark pj-checklist-toggle" onClick={() => void toggleChecklistItem(task)} disabled={saving} aria-busy={saving || undefined} aria-label={`${task.title} — mark as ${task.completed ? "not complete" : "complete"}`}>{task.completed ? <Check size={11} /> : null}</button>
-                    ) : <span className="pj-checklist-readonly-mark" aria-hidden="true">{task.completed ? <Check size={11} /> : null}</span>}
-                    <span className="pj-checklist-readonly-title">{task.title}{!checkable && <span className="pj-visually-hidden">{task.completed ? " (complete)" : " (not complete)"}</span>}</span>
-                    {task.assigneeName && <small className="pj-checklist-assignee"><PersonAvatar small userId={task.assignee_id} name={task.assigneeName} />{task.assigneeName}</small>}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+          <header><span className="pj-detail-section-icon pj-detail-green"><CheckCircle2 size={15} /></span><h3>Status &amp; task progress</h3><span className={`pj-chip pj-chip-${meta.tone}`}>{meta.label}</span><span className="pj-flex-spacer" /><button type="button" className="pj-link-button" onClick={onViewTasks}>View Task List</button></header>
+          <div className="pj-detail-progress-row"><div className="pj-progress-track pj-progress-track-lg" role="progressbar" aria-label="Completed linked tasks" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><span style={{ width: `${progress}%` }} /></div><b>{progress}%</b></div>
+          <small className="pj-detail-progress-note">{linkedTasks.length ? `${completedTaskCount} of ${linkedTasks.length} linked task${linkedTasks.length === 1 ? "" : "s"} complete.` : "No linked tasks — progress is 0%."} Field workflow status remains separate from task completion.</small>
         </section>
 
         <section className="pj-detail-section pj-attachments-section">
@@ -1257,7 +1161,7 @@ function ProjectNotificationPreferencesModal({ onClose, notify }: { onClose: () 
     { key: "membership", label: "Invitations and membership", note: "New invites, role changes, and access removal" },
     { key: "assignments", label: "Assignments", note: "Field assignments and reassignment changes" },
     { key: "requests", label: "Permission requests", note: "New requests and owner decisions" },
-    { key: "subtasks", label: "Subtasks", note: "Subtask assignments and completions" },
+    { key: "subtasks", label: "Tasks", note: "Task assignments and status changes" },
     { key: "comments", label: "Comments", note: "New comments on fields you can access" },
     { key: "attachments", label: "Attachments", note: "New private field attachments" },
     { key: "deadlines", label: "Overdue deadlines", note: "Overdue fields assigned to you or owned by you" },

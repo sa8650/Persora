@@ -37,7 +37,7 @@ test('sanitizeFieldPayload enforces title requirement and field shapes', () => {
   assert.throws(() => sanitizeFieldPayload({ title: 'x'.repeat(161) }), ProjectError);
   const field = sanitizeFieldPayload({ title: ' Copy refresh ', status: 'in-progress', progress: 160, dueDate: '2026-11-01' });
   assert.equal(field.title, 'Copy refresh');
-  assert.equal(field.progress, 100);
+  assert.equal(Object.hasOwn(field, 'progress'), false, 'field progress is derived from persisted tasks, not client input');
   assert.equal(field.due_date, '2026-11-01');
   assert.throws(() => sanitizeFieldPayload({ title: 'T', status: 'nope' }), ProjectError);
   assert.throws(() => sanitizeFieldPayload({ title: 'T', folderId: 'not-a-uuid' }), ProjectError);
@@ -50,5 +50,5 @@ test('sanitizeFieldPayload keeps explicit clears and omits absent keys', () => {
   assert.ok('assignee_id' in payload && payload.assignee_id === '');
   assert.ok('due_date' in payload && payload.due_date === '');
   const partial = sanitizeFieldPayload({ progress: 40 });
-  assert.deepEqual(Object.keys(partial), ['progress']);
+  assert.deepEqual(partial, {}, 'progress-only edits are ignored because task status is authoritative');
 });

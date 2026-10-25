@@ -12,6 +12,7 @@ import { projectActivityWindow, summarizeProjectActivity } from "./project-activ
 export const PROJECTS_ROUTE_PREFIX = "/projects";
 
 const FIELD_STATUSES = new Set(["planning", "in-progress", "in-review", "blocked", "completed"]);
+const TASK_STATUSES = new Set(["todo", "in-progress", "in-review", "complete"]);
 const MEMBER_ROLES = new Set(["editor", "commenter", "viewer"]);
 const FOLDER_COLORS = new Set(["cyan", "purple", "pink", "blue", "orange", "green"]);
 const MAX_PROJECTS_PER_USER = 200;
@@ -85,24 +86,35 @@ function inList(ids) {
   return `in.(${ids.map((id) => encodeURIComponent(id)).join(",")})`;
 }
 
-export function sanitizeProjectSubtaskInput(body, { allowPartial = false } = {}) {
-  if (!body || typeof body !== "object" || Array.isArray(body)) throw new ProjectError("Enter valid subtask details.", 400);
+export function sanitizeProjectTaskInput(body, { allowPartial = false } = {}) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) throw new ProjectError("Enter valid task details.", 400);
   const result = {};
-  if (body.title !== undefined) {
-    const title = typeof body.title === "string" ? body.title.trim() : "";
-    if (!title || title.length > 240) throw new ProjectError("Enter a subtask between 1 and 240 characters.", 400);
-    result.title = title;
+  if (body.name !== undefined) {
+    const name = typeof body.name === "string" ? body.name.trim() : "";
+    if (!name || name.length > 240) throw new ProjectError("Enter a task name between 1 and 240 characters.", 400);
+    result.name = name;
+  }
+  if (body.description !== undefined) {
+    const description = typeof body.description === "string" ? body.description : "";
+    if (description.length > 4000) throw new ProjectError("Keep the task description under 4,000 characters.", 400);
+    result.description = description;
+  }
+  if (body.fieldId !== undefined) {
+    const fieldId = String(body.fieldId || "");
+    if (!isUuid(fieldId)) throw new ProjectError("Choose a field from this project.", 400);
+    result.field_id = fieldId;
   }
   if (body.assigneeId !== undefined) {
-    if (body.assigneeId !== null && body.assigneeId !== "" && !isUuid(body.assigneeId)) throw new ProjectError("Choose a valid project member for this subtask.", 400);
+    if (body.assigneeId !== null && body.assigneeId !== "" && !isUuid(body.assigneeId)) throw new ProjectError("Choose a valid project member for this task.", 400);
     result.assignee_id = body.assigneeId || null;
   }
-  if (body.completed !== undefined) {
-    if (typeof body.completed !== "boolean") throw new ProjectError("Choose a valid subtask status.", 400);
-    result.completed = body.completed;
+  if (body.status !== undefined) {
+    if (!TASK_STATUSES.has(body.status)) throw new ProjectError("Choose a valid task status.", 400);
+    if (!allowPartial && body.status === "complete") throw new ProjectError("New tasks cannot start as Complete; move a task through In Review first.", 400);
+    result.status = body.status;
   }
-  if (!allowPartial && result.title === undefined) throw new ProjectError("Enter a subtask title.", 400);
-  if (allowPartial && !Object.keys(result).length) throw new ProjectError("There is nothing to update on this subtask.", 400);
+  if (!allowPartial && (result.name === undefined || result.field_id === undefined)) throw new ProjectError("A task name and field are required.", 400);
+  if (allowPartial && !Object.keys(result).length) throw new ProjectError("There is nothing to update on this task.", 400);
   return result;
 }
 
@@ -202,11 +214,6 @@ export function sanitizeFieldPayload(body, { requireTitle = false } = {}) {
     const status = typeof body.status === "string" ? body.status : "";
     if (!FIELD_STATUSES.has(status)) throw new ProjectError("Choose a valid field status.", 400);
     payload.status = status;
-  }
-  if (Object.prototype.hasOwnProperty.call(body, "progress")) {
-    const progress = typeof body.progress === "number" ? body.progress : Number(body.progress);
-    if (!Number.isFinite(progress)) throw new ProjectError("Progress must be a percentage between 0 and 100.", 400);
-    payload.progress = Math.max(0, Math.min(100, Math.round(progress)));
   }
   if (Object.prototype.hasOwnProperty.call(body, "assigneeId")) {
     const assigneeId = body.assigneeId === null || body.assigneeId === "" ? "" : String(body.assigneeId);
@@ -313,11 +320,11 @@ async function listProjects(userId, env) {
   all.sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)));
   const ids = all.map((project) => project.id);
   if (!ids.length) return [];
-  const [fieldRows, memberRows, requestRows, subtaskRows] = await Promise.all([
+  const [fieldRows, memberRows, requestRows, taskRows] = await Promise.all([
     listRows(`project_fields?project_id=${inList(ids)}&select=project_id,status`, env),
     listRows(`project_members?project_id=${inList(ids)}&select=project_id`, env),
     listRows(`project_field_requests?project_id=${inList(ids)}&status=eq.pending&select=project_id`, env),
-    listRows(`project_subtasks?project_id=${inList(ids)}&select=project_id,completed`, env),
+    listRows(`project_tasks?project_id=${inList(ids)}&select=project_id,status`, env),
   ]);
   const fieldStats = new Map();
   for (const row of fieldRows) {
@@ -332,10 +339,10 @@ async function listProjects(userId, env) {
   const pendingCounts = new Map();
   for (const row of requestRows) pendingCounts.set(row.project_id, (pendingCounts.get(row.project_id) || 0) + 1);
   const taskStats = new Map();
-  for (const row of subtaskRows) {
+  for (const row of taskRows) {
     const count = taskStats.get(row.project_id) || { total: 0, completed: 0 };
     count.total += 1;
-    if (row.completed) count.completed += 1;
+    if (row.status === "complete") count.completed += 1;
     taskStats.set(row.project_id, count);
   }
   return all.map((project) => {
@@ -355,8 +362,8 @@ async function listProjects(userId, env) {
         inReview: stats.inReview,
         members: (memberCounts.get(project.id) || 0) + 1,
         pendingRequests: isOwner ? pendingCounts.get(project.id) || 0 : 0,
-        subtasksTotal: tasks.total,
-        subtasksCompleted: tasks.completed,
+        tasksTotal: tasks.total,
+        tasksCompleted: tasks.completed,
       },
     };
   });
@@ -374,9 +381,29 @@ async function projectActivityStats(projectId, identity, range, env, now = Date.
   return summarizeProjectActivity(rows, { range: period.range, timeZone: period.timeZone, now });
 }
 
+function projectTaskView(task, profiles, fieldTitle = "") {
+  return {
+    id: task.id, project_id: task.project_id, field_id: task.field_id,
+    name: task.name, description: task.description || "", status: task.status,
+    assignee_id: task.assignee_id || null, paused: Boolean(task.paused),
+    created_by: task.created_by, updated_by: task.updated_by || null, sort_order: Number(task.sort_order) || 0,
+    created_at: task.created_at, updated_at: task.updated_at,
+    assigneeName: task.assignee_id ? displayName(profiles.get(task.assignee_id)) : null,
+    creatorName: displayName(profiles.get(task.created_by)), fieldTitle,
+  };
+}
+
+function taskAttachmentView(row, uploaderName) {
+  return {
+    id: row.id, project_id: row.project_id, field_id: row.field_id, task_id: row.task_id,
+    uploader_id: row.uploader_id, uploaderName: uploaderName || "A member",
+    file_name: row.file_name, file_size: Number(row.file_size), file_type: row.file_type, created_at: row.created_at,
+  };
+}
+
 async function projectDetail(projectId, userId, env) {
   const { project, isOwner, member } = await loadProjectAccess(projectId, userId, env);
-  const [folders, fields, memberRows, requestRows, activityRows, subtaskRows, attachmentRows] = await Promise.all([
+  const [folders, fields, memberRows, requestRows, activityRows, taskRows, attachmentRows] = await Promise.all([
     listRows(`project_folders?project_id=eq.${encodeURIComponent(projectId)}&select=id,project_id,name,color,created_by,created_at,updated_at&order=name.asc`, env),
     listRows(`project_fields?project_id=eq.${encodeURIComponent(projectId)}&select=id,project_id,folder_id,title,description,status,progress,creator_id,creator_name,assignee_id,due_date,created_at,updated_at&order=updated_at.desc`, env),
     listRows(`project_members?project_id=eq.${encodeURIComponent(projectId)}&select=project_id,user_id,role,can_create_fields,invited_by,created_at,updated_at&order=created_at.asc`, env),
@@ -384,7 +411,7 @@ async function projectDetail(projectId, userId, env) {
       ? listRows(`project_field_requests?project_id=eq.${encodeURIComponent(projectId)}&select=id,project_id,requester_id,requester_name,note,payload,status,resolution_note,field_id,created_at,resolved_at&order=created_at.desc&limit=50`, env)
       : listRows(`project_field_requests?project_id=eq.${encodeURIComponent(projectId)}&requester_id=eq.${encodeURIComponent(userId)}&select=id,project_id,requester_id,requester_name,note,payload,status,resolution_note,field_id,created_at,resolved_at&order=created_at.desc&limit=25`, env),
     listRows(`project_activity?project_id=eq.${encodeURIComponent(projectId)}&select=id,actor_id,actor_name,action,target,created_at&order=created_at.desc&limit=40`, env),
-    listRows(`project_subtasks?project_id=eq.${encodeURIComponent(projectId)}&select=id,project_id,field_id,title,completed,sort_order,assignee_id,created_by,updated_by,created_at,updated_at&order=sort_order.asc,created_at.asc`, env),
+    listRows(`project_tasks?project_id=eq.${encodeURIComponent(projectId)}&select=id,project_id,field_id,name,description,status,assignee_id,paused,created_by,updated_by,sort_order,created_at,updated_at&order=status.asc,sort_order.asc,created_at.asc`, env),
     listRows(`project_field_attachments?project_id=eq.${encodeURIComponent(projectId)}&select=id,project_id,field_id,uploader_id,file_name,file_size,file_type,created_at&order=created_at.desc`, env),
   ]);
   const fieldIds = fields.map((field) => field.id);
@@ -403,23 +430,25 @@ async function projectDetail(projectId, userId, env) {
     commentsByField.set(comment.field_id, bucket);
   }
   const reactions = new Map(reactionRows.map((reaction) => [reaction.field_id, reaction]));
-  const subtasksByField = new Map();
-  for (const task of subtaskRows) {
-    const bucket = subtasksByField.get(task.field_id) || [];
-    bucket.push(task);
-    subtasksByField.set(task.field_id, bucket);
-  }
   const attachmentsByField = new Map();
   for (const attachment of attachmentRows) {
     const bucket = attachmentsByField.get(attachment.field_id) || [];
     bucket.push(attachment);
     attachmentsByField.set(attachment.field_id, bucket);
   }
+  const fieldById = new Map(fields.map((field) => [field.id, field]));
+  const taskCounts = new Map();
+  for (const task of taskRows) {
+    const count = taskCounts.get(task.field_id) || { total: 0, completed: 0 };
+    count.total += 1;
+    if (task.status === "complete") count.completed += 1;
+    taskCounts.set(task.field_id, count);
+  }
   const profileIds = [
     project.owner_id,
     ...memberRows.map((row) => row.user_id),
     ...fields.map((field) => field.assignee_id).filter(Boolean),
-    ...subtaskRows.flatMap((row) => [row.assignee_id, row.created_by]).filter(Boolean),
+    ...taskRows.flatMap((row) => [row.assignee_id, row.created_by, row.updated_by]).filter(Boolean),
     ...attachmentRows.map((row) => row.uploader_id).filter(Boolean),
     ...fields.map((field) => field.creator_id).filter(Boolean),
     ...commentRows.map((row) => row.author_id).filter(Boolean),
@@ -453,24 +482,24 @@ async function projectDetail(projectId, userId, env) {
       };
     }),
     folders: folders.map((folder) => ({ ...folder, fieldCount: fields.filter((field) => field.folder_id === folder.id).length })),
-    fields: fields.map((field) => ({
-      ...field,
-      assigneeName: field.assignee_id ? displayName(profiles.get(field.assignee_id)) : null,
-      mine: {
-        pinned: Boolean(reactions.get(field.id)?.pinned),
-        favourite: Boolean(reactions.get(field.id)?.favourite),
-      },
-      commentCount: commentCounts.get(field.id) || 0,
-      comments: commentsByField.get(field.id) || [],
-      subtasks: (subtasksByField.get(field.id) || []).map((task) => ({
-        id: task.id, project_id: task.project_id, field_id: task.field_id, title: task.title, completed: Boolean(task.completed),
-        sort_order: task.sort_order, assignee_id: task.assignee_id || null, created_by: task.created_by,
-        created_at: task.created_at, updated_at: task.updated_at,
-        assigneeName: task.assignee_id ? displayName(profiles.get(task.assignee_id)) : null,
-        creatorName: displayName(profiles.get(task.created_by)),
-      })),
-      attachments: (attachmentsByField.get(field.id) || []).map((attachment) => attachmentView(attachment, displayName(profiles.get(attachment.uploader_id)))),
-    })),
+    fields: fields.map((field) => {
+      const taskCount = taskCounts.get(field.id) || { total: 0, completed: 0 };
+      return {
+        ...field,
+        progress: taskCount.total ? Math.round((taskCount.completed / taskCount.total) * 100) : 0,
+        taskCount: taskCount.total,
+        completedTaskCount: taskCount.completed,
+        assigneeName: field.assignee_id ? displayName(profiles.get(field.assignee_id)) : null,
+        mine: {
+          pinned: Boolean(reactions.get(field.id)?.pinned),
+          favourite: Boolean(reactions.get(field.id)?.favourite),
+        },
+        commentCount: commentCounts.get(field.id) || 0,
+        comments: commentsByField.get(field.id) || [],
+        attachments: (attachmentsByField.get(field.id) || []).map((attachment) => attachmentView(attachment, displayName(profiles.get(attachment.uploader_id)))),
+      };
+    }),
+    tasks: taskRows.map((task) => projectTaskView(task, profiles, fieldById.get(task.field_id)?.title || "")),
     requests: requestRows,
     activity: activityRows,
     // Display name + chosen profile picture for everyone referenced above, keyed by user id.
@@ -499,12 +528,12 @@ async function accessibleProjects(userId, env) {
 async function listProjectNotifications(userId, env) {
   await rpc("persora__project_overdue_notifications", { p_user: userId }, env);
   const [rows, accessible] = await Promise.all([
-    listRows(`project_notifications?recipient_id=eq.${encodeURIComponent(userId)}&select=id,actor_id,actor_name,project_id,field_id,subtask_id,kind,title,message,created_at,read_at&order=created_at.desc&limit=100`, env),
+    listRows(`project_notifications?recipient_id=eq.${encodeURIComponent(userId)}&select=id,actor_id,actor_name,project_id,field_id,subtask_id,task_id,kind,title,message,created_at,read_at&order=created_at.desc&limit=100`, env),
     accessibleProjects(userId, env),
   ]);
   return rows.flatMap((row) => {
     const project = accessible.get(row.project_id);
-    if (project) return [{ id: row.id, kind: row.kind, actorName: row.actor_name, title: row.title, message: row.message, createdAt: row.created_at, readAt: row.read_at || undefined, projectId: row.project_id, projectName: project.name, fieldId: row.field_id || undefined, subtaskId: row.subtask_id || undefined }];
+    if (project) return [{ id: row.id, kind: row.kind, actorName: row.actor_name, title: row.title, message: row.message, createdAt: row.created_at, readAt: row.read_at || undefined, projectId: row.project_id, projectName: project.name, fieldId: row.field_id || undefined, subtaskId: row.subtask_id || undefined, taskId: row.task_id || undefined }];
     if (row.kind === "access_removed") return [{ id: row.id, kind: "access_removed", actorName: "Project owner", title: "Project access changed", message: "Your access to a shared project was removed.", createdAt: row.created_at, readAt: row.read_at || undefined, projectId: null, projectName: "", fieldId: undefined, subtaskId: undefined }];
     return [];
   });
@@ -527,13 +556,56 @@ async function getEditableProjectField(projectId, fieldId, userId, env) {
   return { ...access, field };
 }
 
-/** Field creator, project owner, field assignee, or the checklist item's own assignee may toggle completion. */
-async function assertCanToggleProjectSubtask(projectId, task, userId, env) {
+async function getProjectTaskRecord(projectId, taskId, env) {
+  if (!isUuid(taskId)) throw new ProjectError("That task is not available.", 404);
+  const task = await firstRow(`project_tasks?id=eq.${encodeURIComponent(taskId)}&project_id=eq.${encodeURIComponent(projectId)}&select=id,project_id,field_id,name,description,status,assignee_id,paused,created_by,updated_by,sort_order,created_at,updated_at`, env);
+  if (!task) throw new ProjectError("That task is not available.", 404);
+  const field = await firstRow(`project_fields?id=eq.${encodeURIComponent(task.field_id)}&project_id=eq.${encodeURIComponent(projectId)}&select=id,project_id,title,assignee_id`, env);
+  if (!field) throw new ProjectError("That task is not available.", 404);
+  return { task, field };
+}
+
+async function assertCanManageProjectTask(projectId, taskId, userId, env) {
   const access = await loadProjectAccess(projectId, userId, env);
-  const field = await firstRow(`project_fields?id=eq.${encodeURIComponent(task.field_id)}&project_id=eq.${encodeURIComponent(projectId)}&select=id,creator_id,assignee_id`, env);
-  if (!field) throw new ProjectError("That field is not available.", 404);
-  if (access.isOwner || field.creator_id === userId || field.assignee_id === userId || task.assignee_id === userId) return { ...access, field };
-  throw new ProjectError("Only the people assigned to this field or checklist item can check it off.", 403);
+  const { task, field } = await getProjectTaskRecord(projectId, taskId, env);
+  if (!access.isOwner && field.assignee_id !== userId) {
+    throw new ProjectError("Only the project owner or the assignee of this field can manage its tasks.", 403);
+  }
+  return { ...access, task, field };
+}
+
+async function assertCanMoveProjectTask(projectId, taskId, status, userId, env) {
+  if (!TASK_STATUSES.has(status)) throw new ProjectError("Choose a valid task status.", 400);
+  const access = await loadProjectAccess(projectId, userId, env);
+  const { task, field } = await getProjectTaskRecord(projectId, taskId, env);
+  const manager = access.isOwner || field.assignee_id === userId;
+  if (manager) {
+    if (status === "complete" && task.status !== "in-review" && task.status !== "complete") {
+      throw new ProjectError("Move the task to In Review before completing it.", 409);
+    }
+    return { ...access, task, field };
+  }
+  if (task.assignee_id === userId && task.status !== "complete" && status !== "complete") return { ...access, task, field };
+  throw new ProjectError("Task assignees can move active tasks among To Do, In Progress, and In Review only.", 403);
+}
+
+async function loadProjectTaskDetail(projectId, taskId, userId, env) {
+  await loadProjectAccess(projectId, userId, env);
+  const { task, field } = await getProjectTaskRecord(projectId, taskId, env);
+  const [comments, attachments] = await Promise.all([
+    listRows(`project_task_comments?task_id=eq.${encodeURIComponent(taskId)}&project_id=eq.${encodeURIComponent(projectId)}&select=id,task_id,project_id,author_id,author_name,body,created_at,updated_at&order=created_at.asc`, env),
+    listRows(`project_task_attachments?task_id=eq.${encodeURIComponent(taskId)}&project_id=eq.${encodeURIComponent(projectId)}&select=id,project_id,field_id,task_id,uploader_id,file_name,file_size,file_type,created_at&order=created_at.desc`, env),
+  ]);
+  const profiles = await loadProfiles([
+    task.assignee_id, task.created_by, task.updated_by,
+    ...comments.map((comment) => comment.author_id),
+    ...attachments.map((attachment) => attachment.uploader_id),
+  ].filter(Boolean), env);
+  return {
+    ...projectTaskView(task, profiles, field.title),
+    comments,
+    attachments: attachments.map((attachment) => taskAttachmentView(attachment, displayName(profiles.get(attachment.uploader_id)))),
+  };
 }
 
 async function processProjectAttachmentCleanup(fileKey, ownerId, env) {
@@ -541,8 +613,9 @@ async function processProjectAttachmentCleanup(fileKey, ownerId, env) {
   const encoded = encodeURIComponent(fileKey);
   const owner = encodeURIComponent(ownerId);
   const trashMatch = encodeURIComponent(`["${fileKey}"]`);
-  const [projectRefs, vaultRefs, medicalRefs, contactRefs, photoRefs, logoRefs, trashRefs] = await Promise.all([
+  const [projectRefs, taskRefs, vaultRefs, medicalRefs, contactRefs, photoRefs, logoRefs, trashRefs] = await Promise.all([
     listRows(`project_field_attachments?file_key=eq.${encoded}&select=id&limit=1`, env),
+    listRows(`project_task_attachments?file_key=eq.${encoded}&select=id&limit=1`, env),
     listRows(`vault_items?user_id=eq.${owner}&file_key=eq.${encoded}&select=id&limit=1`, env),
     listRows(`medical_records?user_id=eq.${owner}&file_key=eq.${encoded}&select=id&limit=1`, env),
     listRows(`contacts?user_id=eq.${owner}&photo_key=eq.${encoded}&select=id&limit=1`, env),
@@ -550,11 +623,11 @@ async function processProjectAttachmentCleanup(fileKey, ownerId, env) {
     listRows(`business_cards?user_id=eq.${owner}&business_logo_key=eq.${encoded}&select=id&limit=1`, env),
     listRows(`trash_items?owner_id=eq.${owner}&file_keys=cs.${trashMatch}&status=in.(active,restoring)&select=id&limit=1`, env),
   ]);
-  if (projectRefs.length || vaultRefs.length || medicalRefs.length || contactRefs.length || photoRefs.length || logoRefs.length || trashRefs.length) return false;
+  if (projectRefs.length || taskRefs.length || vaultRefs.length || medicalRefs.length || contactRefs.length || photoRefs.length || logoRefs.length || trashRefs.length) return false;
   const object = await env.VAULT_FILES.head(fileKey);
   if (object) {
     const metadata = object.customMetadata || {};
-    if (metadata.ownerId !== ownerId || metadata.projectAttachment !== "true") {
+    if (metadata.ownerId !== ownerId || (metadata.projectAttachment !== "true" && metadata.projectTaskAttachment !== "true")) {
       console.error("Refusing to remove a project attachment with mismatched storage ownership metadata.");
       return false;
     }
@@ -624,6 +697,71 @@ async function downloadProjectAttachment(projectId, fieldId, attachmentId, ident
   const object = await env.VAULT_FILES.get(row.file_key);
   const metadata = object?.customMetadata || {};
   if (!object || metadata.ownerId !== project.owner_id || metadata.projectAttachment !== "true" || metadata.projectId !== projectId || metadata.fieldId !== fieldId || metadata.uploaderId !== row.uploader_id) throw new ProjectError("That private attachment is unavailable.", 404);
+  const type = projectAttachmentType(row.file_name, row.file_type);
+  const inline = preview && type.preview;
+  const fileName = sanitizeProjectFilename(row.file_name);
+  const fallbackName = fileName.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_");
+  return new Response(object.body, { status: 200, headers: headersFor(origin, {
+    "Content-Type": type.type,
+    "Content-Length": String(object.size),
+    "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${fallbackName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+    "X-File-Name": encodeURIComponent(fileName),
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "Content-Security-Policy": "sandbox",
+    "Cache-Control": "private, no-store, max-age=0",
+  }) });
+}
+
+async function uploadProjectTaskAttachment(request, identity, projectId, taskId, env, services) {
+  const { project, task } = await assertCanManageProjectTask(projectId, taskId, identity.id, env);
+  if (!env.VAULT_FILES) throw new ProjectError("Private task file storage is unavailable.", 503);
+  const maxMb = Math.max(1, Math.min(150, Number(services?.maxUploadMb) || 25));
+  const maxBytes = Math.min(PROJECT_ATTACHMENT_MAX_BYTES, maxMb * 1024 * 1024);
+  const length = Number(request.headers.get("content-length") || 0);
+  if (length > maxBytes + 1024 * 1024) throw new ProjectError(`Attachments must be ${maxMb} MB or smaller.`, 413);
+  let form;
+  try { form = await request.formData(); } catch { throw new ProjectError("Choose a valid file upload.", 400); }
+  const file = form.get("file");
+  if (!(file instanceof File) || !file.size) throw new ProjectError("Choose a file to attach.", 400);
+  if (file.size > maxBytes) throw new ProjectError(`Attachments must be ${maxMb} MB or smaller.`, 413);
+  const type = projectAttachmentType(file.name, file.type);
+  await validateProjectFile(file, type);
+  if (typeof services?.storageUsage !== "function") throw new ProjectError("Private task file storage is unavailable.", 503);
+  const storageOwnerId = project.owner_id;
+  const usage = await services.storageUsage(storageOwnerId, env.VAULT_FILES, env);
+  if (usage.bytesUsed + file.size > usage.storageLimitBytes) throw new ProjectError(`This attachment exceeds the project owner's ${usage.storageLimitGb} GB storage limit.`, 413);
+  const safeName = sanitizeProjectFilename(file.name);
+  const key = `${storageOwnerId}/projects/${projectId}/tasks/${taskId}/${crypto.randomUUID()}-${safeName}`;
+  await env.VAULT_FILES.put(key, file.stream(), { httpMetadata: { contentType: type.type }, customMetadata: {
+    ownerId: storageOwnerId, projectTaskAttachment: "true", projectId, taskId, fieldId: task.field_id,
+    uploaderId: identity.id, originalName: safeName, createdAt: new Date().toISOString(),
+  } });
+  try {
+    const savedResult = await rpc("persora_project_task_attachment_add", { p_user: identity.id, p_task: taskId, p_file_key: key, p_file_name: safeName, p_file_size: file.size, p_file_type: type.type }, env);
+    const saved = Array.isArray(savedResult) ? savedResult[0] : savedResult;
+    if (!saved?.id) throw new ProjectError("The task attachment could not be confirmed after upload.", 502);
+    return taskAttachmentView(saved, displayName(identity));
+  } catch (error) {
+    try {
+      const refs = await listRows(`project_task_attachments?file_key=eq.${encodeURIComponent(key)}&select=id&limit=1`, env);
+      if (!refs.length) await env.VAULT_FILES.delete(key);
+    } catch (cleanupError) { console.error("Task upload cleanup deferred", cleanupError instanceof Error ? cleanupError.message : "unknown error"); }
+    throw error;
+  }
+}
+
+async function downloadProjectTaskAttachment(projectId, taskId, attachmentId, identity, env, origin, preview) {
+  const { project } = await loadProjectAccess(projectId, identity.id, env);
+  const { task } = await getProjectTaskRecord(projectId, taskId, env);
+  if (!isUuid(attachmentId) || !env.VAULT_FILES) throw new ProjectError("That attachment is not available.", 404);
+  const row = await firstRow(`project_task_attachments?id=eq.${encodeURIComponent(attachmentId)}&project_id=eq.${encodeURIComponent(projectId)}&task_id=eq.${encodeURIComponent(taskId)}&select=id,owner_id,uploader_id,field_id,file_key,file_name,file_size,file_type`, env);
+  if (!row || row.owner_id !== project.owner_id || !row.file_key.startsWith(`${project.owner_id}/projects/${projectId}/tasks/${taskId}/`)) throw new ProjectError("That attachment is not available.", 404);
+  const object = await env.VAULT_FILES.get(row.file_key);
+  const metadata = object?.customMetadata || {};
+  if (!object || metadata.ownerId !== project.owner_id || metadata.projectTaskAttachment !== "true" || metadata.projectId !== projectId || metadata.taskId !== taskId || metadata.uploaderId !== row.uploader_id) throw new ProjectError("That private task attachment is unavailable.", 404);
+  // Keep task association checked even if its parent field changed after upload.
+  if (!task || !task.id) throw new ProjectError("That task is not available.", 404);
   const type = projectAttachmentType(row.file_name, row.file_type);
   const inline = preview && type.preview;
   const fileName = sanitizeProjectFilename(row.file_name);
@@ -749,6 +887,114 @@ export async function handleProjects(request, identity, env, origin, services = 
 
     const section = segments[1];
 
+    // /projects/:id/tasks[/:taskId[/move|pause|attachments|comments]]
+    if (section === "tasks") {
+      if (segments.length === 2 && request.method === "POST") {
+        const payload = sanitizeProjectTaskInput(await readBody());
+        const result = await rpc("persora_project_task_create", { p_user: userId, p_project: projectId, p_payload: payload }, env);
+        const task = Array.isArray(result) ? result[0] : result;
+        if (!task?.id) throw new ProjectError("The task could not be confirmed after saving.", 502);
+        return json({ task }, 201, origin);
+      }
+      if (segments.length >= 3 && isUuid(segments[2])) {
+        const taskId = segments[2];
+        if (segments.length === 3) {
+          if (request.method === "GET") return json({ task: await loadProjectTaskDetail(projectId, taskId, userId, env) }, 200, origin);
+          if (request.method === "PATCH") {
+            const payload = sanitizeProjectTaskInput(await readBody(), { allowPartial: true });
+            await assertCanManageProjectTask(projectId, taskId, userId, env);
+            const task = await rpc("persora_project_task_update", { p_user: userId, p_task: taskId, p_payload: payload }, env);
+            return json({ task }, 200, origin);
+          }
+          if (request.method === "DELETE") {
+            const { project } = await assertCanManageProjectTask(projectId, taskId, userId, env);
+            const result = await rpc("persora_project_task_delete", { p_user: userId, p_task: taskId }, env);
+            let attachmentCleanupPending = false;
+            try { attachmentCleanupPending = await drainProjectAttachmentCleanup(project.owner_id, env); }
+            catch (error) { attachmentCleanupPending = true; console.error("Task removed; attachment cleanup remains queued", error instanceof Error ? error.message : "unknown error"); }
+            return json({ ...result, attachmentCleanupPending }, 200, origin);
+          }
+          return json({ error: "Method not allowed." }, 405, origin);
+        }
+        const action = segments[3];
+        if (segments.length === 4 && action === "move" && request.method === "POST") {
+          const body = await readBody();
+          const status = typeof body?.status === "string" ? body.status : "";
+          await assertCanMoveProjectTask(projectId, taskId, status, userId, env);
+          const task = await rpc("persora_project_task_move", { p_user: userId, p_task: taskId, p_status: status }, env);
+          return json({ task }, 200, origin);
+        }
+        if (segments.length === 4 && action === "pause" && request.method === "PATCH") {
+          const body = await readBody();
+          if (typeof body?.paused !== "boolean") throw new ProjectError("Choose Pause or Resume.", 400);
+          await assertCanManageProjectTask(projectId, taskId, userId, env);
+          const task = await rpc("persora_project_task_pause", { p_user: userId, p_task: taskId, p_paused: body.paused }, env);
+          return json({ task }, 200, origin);
+        }
+        if (segments.length === 4 && action === "attachments") {
+          if (request.method === "POST") return json({ attachment: await uploadProjectTaskAttachment(request, identity, projectId, taskId, env, services) }, 201, origin);
+          if (request.method === "GET") {
+            await loadProjectAccess(projectId, userId, env);
+            await getProjectTaskRecord(projectId, taskId, env);
+            const rows = await listRows(`project_task_attachments?project_id=eq.${encodeURIComponent(projectId)}&task_id=eq.${encodeURIComponent(taskId)}&select=id,project_id,field_id,task_id,uploader_id,file_name,file_size,file_type,created_at&order=created_at.desc`, env);
+            const profiles = await loadProfiles(rows.map((row) => row.uploader_id), env);
+            return json({ attachments: rows.map((row) => taskAttachmentView(row, displayName(profiles.get(row.uploader_id)))) }, 200, origin);
+          }
+          return json({ error: "Method not allowed." }, 405, origin);
+        }
+        if (segments.length === 6 && action === "attachments" && isUuid(segments[4]) && segments[5] === "file" && request.method === "GET") {
+          return await downloadProjectTaskAttachment(projectId, taskId, segments[4], identity, env, origin, url.searchParams.get("preview") === "1");
+        }
+        if (segments.length === 5 && action === "attachments" && isUuid(segments[4]) && request.method === "DELETE") {
+          await loadProjectAccess(projectId, userId, env);
+          await getProjectTaskRecord(projectId, taskId, env);
+          const attachmentId = segments[4];
+          const row = await firstRow(`project_task_attachments?id=eq.${encodeURIComponent(attachmentId)}&project_id=eq.${encodeURIComponent(projectId)}&task_id=eq.${encodeURIComponent(taskId)}&select=id,owner_id`, env);
+          if (!row) throw new ProjectError("That attachment is not available.", 404);
+          const result = await rpc("persora_project_task_attachment_delete", { p_user: userId, p_attachment: attachmentId }, env);
+          let attachmentCleanupPending = false;
+          try { attachmentCleanupPending = await drainProjectAttachmentCleanup(row.owner_id, env, result?.file_key); }
+          catch (error) { attachmentCleanupPending = true; console.error("Task attachment removed; storage cleanup remains queued", error instanceof Error ? error.message : "unknown error"); }
+          return json({ ok: true, attachmentCleanupPending }, 200, origin);
+        }
+        if (action === "comments") {
+          if (segments.length === 4) {
+            if (request.method === "GET") {
+              await loadProjectAccess(projectId, userId, env);
+              await getProjectTaskRecord(projectId, taskId, env);
+              const comments = await listRows(`project_task_comments?task_id=eq.${encodeURIComponent(taskId)}&project_id=eq.${encodeURIComponent(projectId)}&select=id,task_id,project_id,author_id,author_name,body,created_at,updated_at&order=created_at.asc`, env);
+              return json({ comments }, 200, origin);
+            }
+            if (request.method === "POST") {
+              const body = await readBody();
+              const text = typeof body?.body === "string" ? body.body.trim() : "";
+              if (text.length < 1 || text.length > 2000) throw new ProjectError("Write a comment between 1 and 2,000 characters.", 400);
+              const comment = await rpc("persora_project_task_comment_add", { p_user: userId, p_task: taskId, p_body: text }, env);
+              return json({ comment }, 201, origin);
+            }
+            return json({ error: "Method not allowed." }, 405, origin);
+          }
+          if (segments.length === 5 && isUuid(segments[4])) {
+            await loadProjectAccess(projectId, userId, env);
+            await getProjectTaskRecord(projectId, taskId, env);
+            const commentId = segments[4];
+            const existing = await firstRow(`project_task_comments?id=eq.${encodeURIComponent(commentId)}&task_id=eq.${encodeURIComponent(taskId)}&project_id=eq.${encodeURIComponent(projectId)}&select=id`, env);
+            if (!existing) throw new ProjectError("That task comment is not available.", 404);
+            if (request.method === "PATCH") {
+              const body = await readBody();
+              const text = typeof body?.body === "string" ? body.body.trim() : "";
+              if (text.length < 1 || text.length > 2000) throw new ProjectError("Write a comment between 1 and 2,000 characters.", 400);
+              const comment = await rpc("persora_project_task_comment_update", { p_user: userId, p_comment: commentId, p_body: text }, env);
+              return json({ comment }, 200, origin);
+            }
+            if (request.method === "DELETE") return json(await rpc("persora_project_task_comment_delete", { p_user: userId, p_comment: commentId }, env), 200, origin);
+          }
+          return json({ error: "Method not allowed." }, 405, origin);
+        }
+      }
+      return json({ error: "That task route is not available." }, 404, origin);
+    }
+
     // /projects/:id/members[/:userId]
     if (section === "members") {
       if (segments.length === 2 && request.method === "POST") {
@@ -810,54 +1056,11 @@ export async function handleProjects(request, identity, env, origin, services = 
 
     // /projects/:id/fields[/:fieldId[...]]
     if (section === "fields") {
+      if (segments[3] === "subtasks") return json({ error: "Field checklists have been migrated to the project Task List. Use the task routes instead." }, 410, origin);
       if (segments.length === 2 && request.method === "POST") {
         const payload = sanitizeFieldPayload(await readBody(), { requireTitle: true });
         const field = await rpc("persora_project_field_create", { p_user: userId, p_project: projectId, p_payload: payload }, env);
         return json({ field }, 201, origin);
-      }
-      if (segments.length === 4 && isUuid(segments[2]) && segments[3] === "subtasks") {
-        const fieldId = segments[2];
-        if (request.method === "GET") {
-          await loadProjectAccess(projectId, userId, env);
-          const field = await firstRow(`project_fields?id=eq.${encodeURIComponent(fieldId)}&project_id=eq.${encodeURIComponent(projectId)}&select=id`, env);
-          if (!field) throw new ProjectError("That field is not available.", 404);
-          const rows = await listRows(`project_subtasks?project_id=eq.${encodeURIComponent(projectId)}&field_id=eq.${encodeURIComponent(fieldId)}&select=id,project_id,field_id,title,completed,sort_order,assignee_id,created_by,created_at,updated_at&order=sort_order.asc,created_at.asc`, env);
-          const profiles = await loadProfiles(rows.flatMap((row) => [row.assignee_id, row.created_by]).filter(Boolean), env);
-          return json({ subtasks: rows.map((task) => ({ ...task, assigneeName: task.assignee_id ? displayName(profiles.get(task.assignee_id)) : null, creatorName: displayName(profiles.get(task.created_by)) })) }, 200, origin);
-        }
-        if (request.method === "POST") {
-          const { field } = await getEditableProjectField(projectId, fieldId, userId, env);
-          const payload = sanitizeProjectSubtaskInput(await readBody());
-          const subtask = await rpc("persora_project_subtask_create", { p_user: userId, p_field: field.id, p_title: payload.title, p_assignee: payload.assignee_id || null }, env);
-          const profiles = await loadProfiles([subtask.assignee_id, subtask.created_by].filter(Boolean), env);
-          return json({ subtask: { ...subtask, assigneeName: subtask.assignee_id ? displayName(profiles.get(subtask.assignee_id)) : null, creatorName: displayName(profiles.get(subtask.created_by)) } }, 201, origin);
-        }
-        return json({ error: "Method not allowed." }, 405, origin);
-      }
-      if (segments.length === 5 && isUuid(segments[2]) && segments[3] === "subtasks" && segments[4] === "reorder" && request.method === "PATCH") {
-        const { field } = await getEditableProjectField(projectId, segments[2], userId, env);
-        const body = await readBody();
-        const order = body?.order;
-        if (!Array.isArray(order) || order.length > 500 || order.some((id) => !isUuid(id)) || new Set(order).size !== order.length) throw new ProjectError("Refresh this field and choose a valid subtask order.", 400);
-        await rpc("persora_project_subtask_reorder", { p_user: userId, p_field: field.id, p_order: order }, env);
-        return json({ ok: true }, 200, origin);
-      }
-      if (segments.length === 5 && isUuid(segments[2]) && segments[3] === "subtasks" && isUuid(segments[4])) {
-        const subtaskId = segments[4];
-        const task = await firstRow(`project_subtasks?id=eq.${encodeURIComponent(subtaskId)}&project_id=eq.${encodeURIComponent(projectId)}&field_id=eq.${encodeURIComponent(segments[2])}&select=id,field_id,assignee_id`, env);
-        if (!task) throw new ProjectError("That subtask is not available.", 404);
-        if (request.method === "PATCH") {
-          const payload = sanitizeProjectSubtaskInput(await readBody(), { allowPartial: true });
-          // Checking an item off is open to the field's assignee and the item's assignee;
-          // every other subtask change stays limited to the field creator and project owner.
-          if (Object.keys(payload).length === 1 && payload.completed !== undefined) await assertCanToggleProjectSubtask(projectId, task, userId, env);
-          else await getEditableProjectField(projectId, task.field_id, userId, env);
-          const subtask = await rpc("persora_project_subtask_update", { p_user: userId, p_subtask: subtaskId, p_payload: payload }, env);
-          const profiles = await loadProfiles([subtask.assignee_id, subtask.created_by].filter(Boolean), env);
-          return json({ subtask: { ...subtask, assigneeName: subtask.assignee_id ? displayName(profiles.get(subtask.assignee_id)) : null, creatorName: displayName(profiles.get(subtask.created_by)) } }, 200, origin);
-        }
-        if (request.method === "DELETE") return json(await rpc("persora_project_subtask_delete", { p_user: userId, p_subtask: subtaskId }, env), 200, origin);
-        return json({ error: "Method not allowed." }, 405, origin);
       }
       if (segments.length === 4 && isUuid(segments[2]) && segments[3] === "attachments") {
         const fieldId = segments[2];

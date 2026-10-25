@@ -10,8 +10,8 @@ import { addDays, daysBetween, localDateOf, safeTimeZone, startOfDayInstant } fr
 /** Metric → the activity actions it counts. `all` counts every action, including future ones. */
 export const PROJECT_ACTIVITY_METRICS = Object.freeze({
   all: null,
-  fields: Object.freeze(["field_created", "field_updated", "field_status_changed", "field_deleted"]),
-  comments: Object.freeze(["comment_added"]),
+  fields: Object.freeze(["field_created", "field_updated", "field_status_changed", "field_deleted", "task_created", "task_updated", "task_status_changed", "task_field_changed", "task_paused", "task_resumed", "task_deleted", "task_attachment_added", "task_attachment_removed"]),
+  comments: Object.freeze(["comment_added", "task_comment_added"]),
   requests: Object.freeze(["field_requested", "field_request_withdrawn", "field_request_approved", "field_request_rejected"]),
   team: Object.freeze(["member_added", "member_updated", "member_removed", "member_left"]),
 });

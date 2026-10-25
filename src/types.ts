@@ -145,6 +145,7 @@ export interface ShareNotification {
   projectEventKind?: string;
   fieldId?: string;
   subtaskId?: string;
+  taskId?: string;
 }
 
 export interface ShareComment {
@@ -465,15 +466,22 @@ export type ProjectAccessRole = ProjectMemberRole | "owner";
 export type ProjectFolderColor = "cyan" | "purple" | "pink" | "blue" | "orange" | "green";
 export interface ProjectRecord { id: string; owner_id: string; name: string; description: string; kind: ProjectKind; created_at: string; updated_at: string }
 export interface ProjectAccess { owner: boolean; role: ProjectAccessRole; canCreateFields: boolean; canRequest?: boolean }
-export interface ProjectStats { fields: number; completed: number; inReview: number; members: number; pendingRequests: number; subtasksTotal?: number; subtasksCompleted?: number }
+export interface ProjectStats { fields: number; completed: number; inReview: number; members: number; pendingRequests: number; tasksTotal?: number; tasksCompleted?: number }
 export interface ProjectSummary extends ProjectRecord { access: { owner: boolean; role: ProjectAccessRole; canCreateFields: boolean }; stats: ProjectStats }
 export interface ProjectMember { userId: string; role: ProjectMemberRole; canCreateFields: boolean; invitedBy: string | null; createdAt: string; name: string; email: string; loginId: string; avatarUrl?: string }
 export interface ProjectFolder { id: string; project_id: string; name: string; color: ProjectFolderColor; created_by: string | null; created_at: string; updated_at: string; fieldCount?: number }
 export interface ProjectFieldComment { id: string; field_id: string; author_id: string; author_name: string; body: string; created_at: string; updated_at: string }
-export interface ProjectSubtask {
-  id: string; project_id: string; field_id: string; title: string; completed: boolean; sort_order: number;
-  assignee_id: string | null; created_by: string; created_at: string; updated_at: string;
-  assigneeName?: string | null; creatorName?: string;
+export type ProjectTaskStatus = "todo" | "in-progress" | "in-review" | "complete";
+export interface ProjectTaskComment { id: string; task_id: string; project_id: string; author_id: string; author_name: string; body: string; created_at: string; updated_at: string }
+export interface ProjectTaskAttachment {
+  id: string; project_id: string; field_id: string; task_id: string; uploader_id: string; uploaderName: string;
+  file_name: string; file_size: number; file_type: string; created_at: string;
+}
+export interface ProjectTask {
+  id: string; project_id: string; field_id: string; name: string; description: string; status: ProjectTaskStatus;
+  assignee_id: string | null; paused: boolean; created_by: string; updated_by: string | null; sort_order: number;
+  created_at: string; updated_at: string; assigneeName?: string | null; creatorName?: string; fieldTitle?: string;
+  comments?: ProjectTaskComment[]; attachments?: ProjectTaskAttachment[];
 }
 export interface ProjectFieldAttachment {
   id: string; project_id: string; field_id: string; uploader_id: string; uploaderName: string;
@@ -481,7 +489,7 @@ export interface ProjectFieldAttachment {
 }
 export interface ProjectNotification {
   id: string; kind: string; actorName: string; title: string; message: string; createdAt: string; readAt?: string;
-  projectId: string | null; projectName: string; fieldId?: string; subtaskId?: string;
+  projectId: string | null; projectName: string; fieldId?: string; subtaskId?: string; taskId?: string;
 }
 export interface ProjectNotificationPreferences {
   membership: boolean; assignments: boolean; requests: boolean; subtasks: boolean;
@@ -492,7 +500,7 @@ export interface ProjectField {
   status: ProjectFieldStatus; progress: number; creator_id: string; creator_name: string;
   assignee_id: string | null; due_date: string | null; created_at: string; updated_at: string;
   assigneeName?: string | null; mine?: { pinned: boolean; favourite: boolean }; commentCount?: number; comments?: ProjectFieldComment[];
-  subtasks?: ProjectSubtask[]; attachments?: ProjectFieldAttachment[];
+  taskCount?: number; completedTaskCount?: number; attachments?: ProjectFieldAttachment[];
 }
 export interface ProjectFieldRequest {
   id: string; project_id: string; requester_id: string; requester_name: string; note: string;
@@ -507,6 +515,8 @@ export interface ProjectDetail {
   members: ProjectMember[];
   folders: ProjectFolder[];
   fields: ProjectField[];
+  /** Tasks scoped to this project; private task files/conversations load on demand in Task View. */
+  tasks: ProjectTask[];
   requests: ProjectFieldRequest[];
   activity: ProjectActivity[];
   /** Display name + chosen profile picture (photo, emoji, avatar) for everyone the project references. */

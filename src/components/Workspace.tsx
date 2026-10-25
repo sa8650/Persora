@@ -387,10 +387,11 @@ export default function Workspace({ user, items, sharedByMe, sharedWithMe, recor
     const url = new URL(window.location.href);
     url.searchParams.set("project", notification.projectId);
     if (notification.fieldId) url.searchParams.set("field", notification.fieldId); else url.searchParams.delete("field");
+    if (notification.taskId) url.searchParams.set("task", notification.taskId); else url.searchParams.delete("task");
     if (notification.subtaskId) url.searchParams.set("subtask", notification.subtaskId); else url.searchParams.delete("subtask");
     window.history.pushState({ ...(window.history.state || {}), persoraProjectId: notification.projectId }, "", url);
     updateView("projects");
-    window.setTimeout(() => window.dispatchEvent(new CustomEvent("persora-project-notification-navigation", { detail: { projectId: notification.projectId, fieldId: notification.fieldId || "", subtaskId: notification.subtaskId || "" } })), 0);
+    window.setTimeout(() => window.dispatchEvent(new CustomEvent("persora-project-notification-navigation", { detail: { projectId: notification.projectId, fieldId: notification.fieldId || "", taskId: notification.taskId || "", subtaskId: notification.subtaskId || "" } })), 0);
   };
   const openAddDocument = (draft: AddDocumentFlowDraft | null = null) => { setAddDocumentDraft(draft); setAddDocumentOpen(true); };
   useEffect(() => {

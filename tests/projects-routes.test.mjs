@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { handleProjects, projectAttachmentType, sanitizeProjectSubtaskInput } from '../cloudflare/projects.js';
+import { handleProjects, projectAttachmentType, sanitizeProjectTaskInput } from '../cloudflare/projects.js';
 
 const OWNER = '4a1b2c3d-4e5f-4678-8a9b-0c1d2e3f4a5b';
 const PROJECT = '6b2c3d4e-5f60-4789-8a1b-2c3d4e5f6071';
@@ -64,12 +64,16 @@ test('project creation returns the persisted database UUID and verifies owner ac
   assert.ok(calls.some(({ url }) => url.pathname.endsWith('/projects') && url.searchParams.get('id') === `eq.${PROJECT}` && url.searchParams.get('owner_id') === `eq.${OWNER}`), 'the API reads back the saved row by its real ID and owner');
 });
 
-test('subtask and attachment validators reject malformed input before storage or RPC work', () => {
-  assert.deepEqual(sanitizeProjectSubtaskInput({ title: '  Ship layout  ', assigneeId: null }), { title: 'Ship layout', assignee_id: null });
-  assert.deepEqual(sanitizeProjectSubtaskInput({ completed: true }, { allowPartial: true }), { completed: true });
-  assert.throws(() => sanitizeProjectSubtaskInput({ title: '   ' }), /subtask/i);
-  assert.throws(() => sanitizeProjectSubtaskInput({ assigneeId: 'not-a-uuid' }), /project member/i);
-  assert.throws(() => sanitizeProjectSubtaskInput({}), /subtask/i);
+test('task and attachment validators reject malformed input before storage or RPC work', () => {
+  assert.deepEqual(sanitizeProjectTaskInput({ name: '  Ship layout  ', description: ' Cut one card ', fieldId: '6b2c3d4e-5f60-4789-8a1b-2c3d4e5f6072', assigneeId: null, status: 'in-review' }), {
+    name: 'Ship layout', description: ' Cut one card ', field_id: '6b2c3d4e-5f60-4789-8a1b-2c3d4e5f6072', assignee_id: null, status: 'in-review',
+  });
+  assert.deepEqual(sanitizeProjectTaskInput({ assigneeId: null }, { allowPartial: true }), { assignee_id: null });
+  assert.throws(() => sanitizeProjectTaskInput({ name: '   ', fieldId: '6b2c3d4e-5f60-4789-8a1b-2c3d4e5f6072' }), /task name/i);
+  assert.throws(() => sanitizeProjectTaskInput({ name: 'Missing field' }), /field/i);
+  assert.throws(() => sanitizeProjectTaskInput({ name: 'Task', fieldId: 'not-a-uuid' }), /field/i);
+  assert.throws(() => sanitizeProjectTaskInput({ name: 'Task', fieldId: '6b2c3d4e-5f60-4789-8a1b-2c3d4e5f6072', status: 'complete' }), /cannot start as Complete/i);
+  assert.throws(() => sanitizeProjectTaskInput({ paused: true }, { allowPartial: true }), /nothing to update/i);
   assert.equal(projectAttachmentType('plan.pdf', 'application/pdf').preview, true);
   assert.equal(projectAttachmentType('table.csv', 'application/vnd.ms-excel').type, 'text/csv');
   assert.throws(() => projectAttachmentType('report.pdf', 'image/png'), /content type/i);
@@ -152,70 +156,99 @@ test('private attachment download refuses nonmembers before reaching object stor
   assert.equal(objectReads, 0, 'R2 is not consulted until project membership is confirmed');
 });
 
-test('Worker rejects subtask writes for a member who is neither project owner nor field creator', async () => {
-  const MEMBER = '7c3d4e5f-6071-489a-9b2c-3d4e5f607182';
-  const FIELD = '7c3d4e5f-6071-489a-9b2c-3d4e5f607183';
-  let mutationRpcCalls = 0;
-  globalThis.fetch = async (input) => {
-    const url = new URL(String(input));
-    if (url.pathname.endsWith('/projects') && url.searchParams.has('id')) return Response.json([record()]);
-    if (url.pathname.endsWith('/project_members')) return Response.json([{ role: 'editor', can_create_fields: true }]);
-    if (url.pathname.endsWith('/project_fields')) return Response.json([{ id: FIELD, project_id: PROJECT, creator_id: OWNER, title: 'Owner-only field' }]);
-    if (url.pathname.includes('/rpc/')) mutationRpcCalls++;
-    return Response.json([]);
-  };
-  const response = await handleProjects(new Request(`https://persora.example/api/projects/${PROJECT}/fields/${FIELD}/subtasks`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Unauthorized task' }),
-  }), { id: MEMBER }, env, 'https://persora.example');
-  assert.equal(response.status, 403);
-  assert.equal(mutationRpcCalls, 0, 'the unauthorized request is rejected before any mutation RPC');
-});
+const MEMBER = '7c3d4e5f-6071-489a-9b2c-3d4e5f607182';
+const BYSTANDER = '8d4e5f60-7182-49ab-8c3d-4e5f60718293';
+const FIELD = '7c3d4e5f-6071-489a-9b2c-3d4e5f607183';
+const TASK = '7c3d4e5f-6071-489a-9b2c-3d4e5f607185';
 
-function subtaskToggleDatabase({ fieldAssignee = null, taskAssignee = null } = {}) {
-  const MEMBER = '7c3d4e5f-6071-489a-9b2c-3d4e5f607182';
-  const FIELD = '7c3d4e5f-6071-489a-9b2c-3d4e5f607183';
-  const TASK = '7c3d4e5f-6071-489a-9b2c-3d4e5f607185';
+function taskRouteDatabase({ caller = MEMBER, fieldAssignee = OWNER, taskAssignee = MEMBER, status = 'todo', membership = true } = {}) {
   const rpcCalls = [];
+  const task = { id: TASK, project_id: PROJECT, field_id: FIELD, name: 'Task', description: '', status, assignee_id: taskAssignee, paused: false, created_by: OWNER, updated_by: OWNER, sort_order: 10, created_at: '2026-10-22T10:00:00Z', updated_at: '2026-10-22T10:00:00Z' };
   globalThis.fetch = async (input, init = {}) => {
     const url = new URL(String(input));
     if (url.pathname.endsWith('/projects') && url.searchParams.has('id')) return Response.json([record()]);
-    if (url.pathname.endsWith('/project_members')) return Response.json([{ role: 'viewer', can_create_fields: false }]);
-    if (url.pathname.endsWith('/project_fields')) return Response.json([{ id: FIELD, project_id: PROJECT, creator_id: OWNER, assignee_id: fieldAssignee, title: 'Owner field' }]);
-    if (url.pathname.endsWith('/project_subtasks')) return Response.json([{ id: TASK, field_id: FIELD, assignee_id: taskAssignee }]);
+    if (url.pathname.endsWith('/project_members')) return Response.json(membership ? [{ project_id: PROJECT, user_id: caller, role: 'viewer', can_create_fields: false }] : []);
+    if (url.pathname.endsWith('/project_tasks')) return Response.json([task]);
+    if (url.pathname.endsWith('/project_fields')) return Response.json([{ id: FIELD, project_id: PROJECT, assignee_id: fieldAssignee, title: 'Assigned field' }]);
     if (url.pathname.includes('/rpc/')) {
-      rpcCalls.push({ name: url.pathname.split('/').pop(), body: JSON.parse(init.body || '{}') });
-      return Response.json({ id: TASK, field_id: FIELD, title: 'Item', completed: true, assignee_id: taskAssignee, created_by: OWNER });
+      const name = url.pathname.split('/').pop();
+      const args = JSON.parse(init.body || '{}');
+      rpcCalls.push({ name, args });
+      if (name === 'persora_project_task_move') return Response.json({ ...task, status: args.p_status });
+      return Response.json({ id: TASK, ...args });
     }
     return Response.json([]);
   };
-  const patch = (body) => handleProjects(new Request(`https://persora.example/api/projects/${PROJECT}/fields/${FIELD}/subtasks/${TASK}`, {
-    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-  }), { id: MEMBER }, env, 'https://persora.example');
-  return { MEMBER, rpcCalls, patch };
+  const request = (path, method = 'GET', body, extraEnv = env, services = {}) => handleProjects(new Request(`https://persora.example/api/projects/${PROJECT}${path}`, {
+    method,
+    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  }), { id: caller }, extraEnv, 'https://persora.example', services);
+  return { task, rpcCalls, request };
 }
 
-test('the checklist item assignee may toggle completion — and nothing else — on a field they did not create', async () => {
-  const MEMBER = '7c3d4e5f-6071-489a-9b2c-3d4e5f607182';
-  const { rpcCalls, patch } = subtaskToggleDatabase({ taskAssignee: MEMBER });
-  const ok = await patch({ completed: true });
-  assert.equal(ok.status, 200);
-  assert.deepEqual(rpcCalls.map((call) => call.name), ['persora_project_subtask_update']);
-  assert.deepEqual(rpcCalls[0].body.p_payload, { completed: true });
-  const rename = await patch({ title: 'Renamed', completed: true });
-  assert.equal(rename.status, 403, 'renaming stays limited to the field creator and owner');
-  const reassign = await patch({ assigneeId: null });
-  assert.equal(reassign.status, 403, 'reassigning stays limited to the field creator and owner');
-  assert.equal(rpcCalls.length, 1, 'rejected edits never reach the database');
+test('legacy checklist mutation routes are retired without deleting retained source records', async () => {
+  let databaseCalls = 0;
+  globalThis.fetch = async () => { databaseCalls++; return Response.json([]); };
+  const response = await handleProjects(new Request(`https://persora.example/api/projects/${PROJECT}/fields/${FIELD}/subtasks`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'No longer create checklist items' }),
+  }), { id: OWNER }, env, 'https://persora.example');
+  assert.equal(response.status, 410);
+  assert.equal(databaseCalls, 0, 'legacy routes cannot mutate retained checklist data');
 });
 
-test('the field assignee may toggle any item; unrelated members may not', async () => {
-  const MEMBER = '7c3d4e5f-6071-489a-9b2c-3d4e5f607182';
-  const assigned = subtaskToggleDatabase({ fieldAssignee: MEMBER, taskAssignee: OWNER });
-  assert.equal((await assigned.patch({ completed: false })).status, 200);
-  const bystander = subtaskToggleDatabase({ fieldAssignee: OWNER, taskAssignee: OWNER });
-  const denied = await bystander.patch({ completed: true });
-  assert.equal(denied.status, 403);
-  assert.equal(bystander.rpcCalls.length, 0);
+test('task assignees can move active tasks but cannot CRUD, pause, complete, or reopen tasks', async () => {
+  const assignee = taskRouteDatabase({ caller: MEMBER, fieldAssignee: OWNER, taskAssignee: MEMBER, status: 'todo' });
+  const edit = await assignee.request(`/${'tasks'}/${TASK}`, 'PATCH', { name: 'Unauthorized rename' });
+  assert.equal(edit.status, 403);
+  assert.equal(assignee.rpcCalls.length, 0, 'task assignee CRUD is rejected before any mutation RPC');
+  const pause = await assignee.request(`/tasks/${TASK}/pause`, 'PATCH', { paused: true });
+  assert.equal(pause.status, 403);
+  const activeMove = await assignee.request(`/tasks/${TASK}/move`, 'POST', { status: 'in-review' });
+  assert.equal(activeMove.status, 200);
+  assert.deepEqual(assignee.rpcCalls.map((call) => call.name), ['persora_project_task_move']);
+  assert.equal(assignee.rpcCalls[0].args.p_status, 'in-review');
+
+  const complete = taskRouteDatabase({ caller: MEMBER, fieldAssignee: OWNER, taskAssignee: MEMBER, status: 'in-review' });
+  assert.equal((await complete.request(`/tasks/${TASK}/move`, 'POST', { status: 'complete' })).status, 403, 'task assignee cannot complete');
+  assert.equal(complete.rpcCalls.length, 0);
+  const reopen = taskRouteDatabase({ caller: MEMBER, fieldAssignee: OWNER, taskAssignee: MEMBER, status: 'complete' });
+  assert.equal((await reopen.request(`/tasks/${TASK}/move`, 'POST', { status: 'todo' })).status, 403, 'task assignee cannot reopen completed work');
+});
+
+test('project owner and field assignee follow the In Review gate; direct completion is rejected', async () => {
+  const owner = taskRouteDatabase({ caller: OWNER, fieldAssignee: MEMBER, taskAssignee: null, status: 'todo' });
+  const bypass = await owner.request(`/tasks/${TASK}/move`, 'POST', { status: 'complete' });
+  assert.equal(bypass.status, 409);
+  assert.equal(owner.rpcCalls.length, 0, 'invalid direct completion never reaches the database');
+  const fieldAssignee = taskRouteDatabase({ caller: MEMBER, fieldAssignee: MEMBER, taskAssignee: OWNER, status: 'in-review' });
+  const complete = await fieldAssignee.request(`/tasks/${TASK}/move`, 'POST', { status: 'complete' });
+  assert.equal(complete.status, 200);
+  assert.equal(fieldAssignee.rpcCalls[0].args.p_user, MEMBER);
+  assert.equal(fieldAssignee.rpcCalls[0].args.p_status, 'complete');
+  const reopened = taskRouteDatabase({ caller: MEMBER, fieldAssignee: MEMBER, taskAssignee: null, status: 'complete' });
+  assert.equal((await reopened.request(`/tasks/${TASK}/move`, 'POST', { status: 'todo' })).status, 200, 'manager may reopen completed work');
+});
+
+test('private task attachment operations authorize the task manager before accessing storage', async () => {
+  const unauthorized = taskRouteDatabase({ caller: MEMBER, fieldAssignee: OWNER, taskAssignee: MEMBER, status: 'todo' });
+  let writes = 0;
+  const form = new FormData();
+  const upload = await handleProjects(new Request(`https://persora.example/api/projects/${PROJECT}/tasks/${TASK}/attachments`, { method: 'POST', body: form }), { id: MEMBER }, {
+    ...env, VAULT_FILES: { put: async () => { writes++; } },
+  }, 'https://persora.example', { storageUsage: async () => ({ bytesUsed: 0, storageLimitBytes: 1000, storageLimitGb: 1 }) });
+  assert.equal(upload.status, 403);
+  assert.equal(writes, 0, 'unauthorized requests cannot write task objects');
+  assert.equal(unauthorized.rpcCalls.length, 0);
+
+  const nonmember = taskRouteDatabase({ caller: BYSTANDER, fieldAssignee: OWNER, taskAssignee: OWNER, status: 'todo', membership: false });
+  let reads = 0;
+  const download = await handleProjects(new Request(`https://persora.example/api/projects/${PROJECT}/tasks/${TASK}/attachments/${FIELD}/file`), { id: BYSTANDER }, {
+    ...env, VAULT_FILES: { get: async () => { reads++; return null; } },
+  }, 'https://persora.example');
+  assert.equal(download.status, 404);
+  assert.equal(reads, 0, 'nonmembers are denied before R2 reads');
+  assert.equal(nonmember.rpcCalls.length, 0);
 });
 
 test('project detail returns each person’s safe profile picture for avatars', async () => {

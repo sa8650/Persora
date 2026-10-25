@@ -1,14 +1,18 @@
 // Pure Projects helpers — status/role/folder metadata, permission predicates,
-// filtering, sorting, and formatting. Imported by ProjectsView and unit tests;
-// keep this module free of DOM/network access.
-import type { ProjectField, ProjectFieldStatus, ProjectFolderColor, ProjectMemberRole, ProjectRecord, ProjectSubtask } from "../types";
+// task-derived progress, filtering, sorting, and formatting. This module stays
+// free of DOM/network access so the same rules can be exercised in unit tests.
+import type {
+  ProjectField, ProjectFieldStatus, ProjectFolderColor, ProjectMemberRole, ProjectRecord,
+  ProjectTask, ProjectTaskStatus,
+} from "../types";
 
 export const PROJECT_STATUSES: { value: ProjectFieldStatus; label: string; tone: "muted" | "accent" | "warning" | "danger" | "success" }[] = [
   { value: "planning", label: "Planning", tone: "muted" },
   { value: "in-progress", label: "In Progress", tone: "accent" },
   { value: "in-review", label: "In Review", tone: "warning" },
-  { value: "blocked", label: "Blocked", tone: "danger" },
-  { value: "completed", label: "Completed", tone: "success" },
+  // Internal values remain stable so existing field records and APIs keep working.
+  { value: "blocked", label: "Paused", tone: "danger" },
+  { value: "completed", label: "Complete", tone: "success" },
 ];
 export const PROJECT_SORT_OPTIONS = [
   { value: "updated", label: "Last updated" },
@@ -31,63 +35,59 @@ export const PROJECT_MEMBER_ROLES: { value: ProjectMemberRole; label: string; hi
   { value: "viewer", label: "Viewer", hint: "Follows progress, pins and favourites." },
 ];
 
+export const PROJECT_TASK_STATUSES: { value: ProjectTaskStatus; label: string; tone: "purple" | "amber" | "blue" | "green" }[] = [
+  { value: "todo", label: "To Do", tone: "purple" },
+  { value: "in-progress", label: "In Progress", tone: "amber" },
+  { value: "in-review", label: "In Review", tone: "blue" },
+  { value: "complete", label: "Complete", tone: "green" },
+];
+export function taskStatusMeta(status: ProjectTaskStatus) {
+  return PROJECT_TASK_STATUSES.find((entry) => entry.value === status) || PROJECT_TASK_STATUSES[0];
+}
+
 export function statusMeta(status: ProjectFieldStatus) {
   return PROJECT_STATUSES.find((entry) => entry.value === status) || PROJECT_STATUSES[0];
 }
 
-/** Completed always means 100% — mirrors the server-side normalisation. */
-export function progressForStatus(status: ProjectFieldStatus, progress: number): number {
-  if (status === "completed") return 100;
+/** Field progress is a projection of persisted task statuses, never field workflow status. */
+export function progressForStatus(_status: ProjectFieldStatus, progress: number): number {
   return Math.max(0, Math.min(100, Math.round(progress) || 0));
 }
 
-// ---------------------------------------------------------------------------
-// Checklist-derived progress
-// ---------------------------------------------------------------------------
-/**
- * Field progress is derived from its checklist only:
- * (completed items ÷ total items) × 100, rounded; 0% when the checklist is empty.
- */
-export function checklistProgress(items: ReadonlyArray<{ completed: boolean }> | null | undefined): { total: number; completed: number; percent: number } {
-  const list = items || [];
+export function taskProgress(tasks: ReadonlyArray<Pick<ProjectTask, "status">> | null | undefined): { total: number; completed: number; percent: number } {
+  const list = tasks || [];
   const total = list.length;
-  const completed = list.filter((item) => item.completed).length;
+  const completed = list.filter((task) => task.status === "complete").length;
   return { total, completed, percent: total ? Math.round((completed / total) * 100) : 0 };
 }
-/** The single progress value shown on field cards, the view modal, tables, and sorting. */
-export function fieldProgress(field: Pick<ProjectField, "subtasks">): number {
-  return checklistProgress(field.subtasks).percent;
+
+export function taskProgressForField(tasks: ProjectTask[] | null | undefined, fieldId: string): { total: number; completed: number; percent: number } {
+  return taskProgress((tasks || []).filter((task) => task.field_id === fieldId));
 }
 
-/** A checklist row as edited inside the Create/Edit field modal. `id` is set once persisted. */
-export interface ChecklistDraftItem { key: string; id?: string; title: string; completed: boolean; assigneeId: string | null }
-
-export function checklistDraftFrom(subtasks: ProjectSubtask[] | null | undefined): ChecklistDraftItem[] {
-  return (subtasks || []).map((task) => ({ key: task.id, id: task.id, title: task.title, completed: task.completed, assigneeId: task.assignee_id || null }));
-}
-
-export interface ChecklistSyncPlan {
-  create: ChecklistDraftItem[];
-  update: { id: string; patch: { title?: string; completed?: boolean; assigneeId?: string | null } }[];
-  remove: string[];
-}
-/** Diffs the edited checklist against the saved one (pure; no network). */
-export function planChecklistSync(baseline: ProjectSubtask[] | null | undefined, draft: ChecklistDraftItem[]): ChecklistSyncPlan {
-  const saved = new Map((baseline || []).map((task) => [task.id, task]));
-  const keep = new Set(draft.filter((item) => item.id).map((item) => item.id as string));
-  const plan: ChecklistSyncPlan = { create: [], update: [], remove: [] };
-  for (const task of baseline || []) if (!keep.has(task.id)) plan.remove.push(task.id);
-  for (const item of draft) {
-    const title = item.title.trim();
-    if (!item.id) { plan.create.push({ ...item, title }); continue; }
-    const task = saved.get(item.id);
-    const patch: ChecklistSyncPlan["update"][number]["patch"] = {};
-    if (!task || task.title !== title) patch.title = title;
-    if (!task || task.completed !== item.completed) patch.completed = item.completed;
-    if (!task || (task.assignee_id || null) !== (item.assigneeId || null)) patch.assigneeId = item.assigneeId || null;
-    if (Object.keys(patch).length) plan.update.push({ id: item.id, patch });
+/** Rebuilds field progress from the current task set, useful after optimistic moves and reloads. */
+export function fieldsWithTaskProgress(fields: ProjectField[], tasks: ProjectTask[]): ProjectField[] {
+  const counts = new Map<string, { total: number; completed: number }>();
+  for (const task of tasks) {
+    const count = counts.get(task.field_id) || { total: 0, completed: 0 };
+    count.total += 1;
+    if (task.status === "complete") count.completed += 1;
+    counts.set(task.field_id, count);
   }
-  return plan;
+  return fields.map((field) => {
+    const count = counts.get(field.id) || { total: 0, completed: 0 };
+    return {
+      ...field,
+      taskCount: count.total,
+      completedTaskCount: count.completed,
+      progress: count.total ? Math.round((count.completed / count.total) * 100) : 0,
+    };
+  });
+}
+
+/** Field progress values received from the Worker are already task-derived. */
+export function fieldProgress(field: Pick<ProjectField, "progress">): number {
+  return Math.max(0, Math.min(100, Math.round(Number(field.progress) || 0)));
 }
 
 export interface ProjectAccessLike { owner: boolean; role: string; canCreateFields: boolean }
@@ -122,6 +122,35 @@ export function canEditComment(comment: { author_id: string }, userId: string): 
 export function canDeleteComment(access: ProjectAccessLike | null | undefined, comment: { author_id: string }, userId: string): boolean {
   return Boolean(access?.owner) || comment.author_id === userId;
 }
+
+/** Task CRUD belongs only to the project owner or the assignee of that task's field. */
+export function canManageTask(access: ProjectAccessLike | null | undefined, field: Pick<ProjectField, "assignee_id"> | null | undefined, userId: string): boolean {
+  if (!access || !userId || !field) return false;
+  return Boolean(access.owner || field.assignee_id === userId);
+}
+export const canCreateTaskInField = canManageTask;
+
+/**
+ * Status move rules: field assignee/project owner may manage/reopen tasks, but
+ * completion can only follow In Review. A task assignee may move active tasks
+ * among the first three statuses and cannot edit or reopen a completed task.
+ */
+export function canMoveTask(
+  access: ProjectAccessLike | null | undefined,
+  field: Pick<ProjectField, "assignee_id"> | null | undefined,
+  task: Pick<ProjectTask, "status" | "assignee_id">,
+  userId: string,
+  nextStatus: ProjectTaskStatus,
+): boolean {
+  if (!access || !userId || !field || !task) return false;
+  const manager = canManageTask(access, field, userId);
+  if (manager) {
+    if (nextStatus === "complete" && task.status !== "in-review" && task.status !== "complete") return false;
+    return true;
+  }
+  return task.assignee_id === userId && task.status !== "complete" && nextStatus !== "complete";
+}
+
 export function projectKindLabel(kind: ProjectRecord["kind"]): string {
   return kind === "shared" ? "Shared project" : "Personal project";
 }
@@ -158,6 +187,41 @@ export function filterSortFields(fields: ProjectField[], filter: FieldFilter): P
   return visible;
 }
 
+export type TaskViewMode = "all" | "mine";
+export interface TaskFilter {
+  query: string;
+  fieldId: string | "all";
+  assigneeId: string | "all" | "unassigned";
+  status: ProjectTaskStatus | "all";
+  paused: "all" | "paused" | "active";
+}
+
+/** Applies the exact authenticated user ID check before search/filter predicates. */
+export function filterProjectTasks(
+  tasks: ProjectTask[],
+  fields: ProjectField[],
+  filter: TaskFilter,
+  mode: TaskViewMode,
+  userId: string,
+): ProjectTask[] {
+  const query = filter.query.trim().toLocaleLowerCase();
+  const fieldNames = new Map(fields.map((field) => [field.id, field.title]));
+  return tasks.filter((task) => {
+    if (mode === "mine" && (!userId || task.assignee_id !== userId)) return false;
+    if (filter.fieldId !== "all" && task.field_id !== filter.fieldId) return false;
+    if (filter.assigneeId === "unassigned" && task.assignee_id) return false;
+    if (filter.assigneeId !== "all" && filter.assigneeId !== "unassigned" && task.assignee_id !== filter.assigneeId) return false;
+    if (filter.status !== "all" && task.status !== filter.status) return false;
+    if (filter.paused === "paused" && !task.paused) return false;
+    if (filter.paused === "active" && task.paused) return false;
+    if (query) {
+      const haystack = `${task.name} ${task.description || ""} ${task.fieldTitle || fieldNames.get(task.field_id) || ""}`.toLocaleLowerCase();
+      if (!haystack.includes(query)) return false;
+    }
+    return true;
+  }).sort((a, b) => a.sort_order - b.sort_order || String(a.created_at).localeCompare(String(b.created_at)));
+}
+
 export function projectStats(fields: ProjectField[], members: number) {
   return {
     active: fields.filter((field) => field.status === "in-progress" || field.status === "planning" || field.status === "blocked").length,
@@ -189,11 +253,6 @@ export function profileAvatar(avatarUrl: string | null | undefined): ProfileAvat
   if (value.length <= 80000 && /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/i.test(value)) return { kind: "photo", src: value };
   if (/^https:\/\/api\.dicebear\.com\/7\.x\/adventurer\/svg\?seed=[A-Za-z0-9_-]{1,40}$/.test(value)) return { kind: "image", src: value };
   return { kind: "initials" };
-}
-/** Field assignees and a checklist item's assignee may tick items off; editors may change everything. */
-export function canToggleChecklistItem(access: ProjectAccessLike | null | undefined, field: Pick<ProjectField, "creator_id" | "assignee_id">, task: { assignee_id: string | null }, userId: string): boolean {
-  if (!access || !userId) return false;
-  return canEditField(access, field, userId) || field.assignee_id === userId || task.assignee_id === userId;
 }
 const AVATAR_TONES = ["cyan", "purple", "pink", "blue", "orange", "green"] as const;
 export function avatarTone(name: string): (typeof AVATAR_TONES)[number] {
@@ -244,6 +303,16 @@ export function activityLabel(action: string): string {
     field_updated: "updated field",
     field_status_changed: "moved field",
     field_deleted: "deleted field",
+    task_created: "created task",
+    task_updated: "updated task",
+    task_status_changed: "moved task",
+    task_field_changed: "moved task to another field",
+    task_paused: "paused task",
+    task_resumed: "resumed task",
+    task_deleted: "deleted task",
+    task_comment_added: "commented on task",
+    task_attachment_added: "attached a file to task",
+    task_attachment_removed: "removed a task attachment",
     comment_added: "commented on",
   };
   return labels[action] || action.replace(/_/g, " ");

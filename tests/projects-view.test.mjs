@@ -73,7 +73,7 @@ function ownerFixture() {
       id: 'proj-1', owner_id: OWNER_ID, name: 'Website relaunch', description: 'Ship the new marketing site.',
       kind: 'shared', created_at: NOW, updated_at: NOW,
       access: { owner: true, role: 'owner', canCreateFields: true },
-      stats: { fields: 2, completed: 1, inReview: 0, members: 2, pendingRequests: 1 },
+      stats: { fields: 2, completed: 1, inReview: 0, members: 2, pendingRequests: 1, tasksTotal: 2, tasksCompleted: 1 },
     }],
   };
   fixtures['GET /api/projects/proj-1'] = {
@@ -83,8 +83,12 @@ function ownerFixture() {
     members: [{ userId: MEMBER_ID, role: 'editor', canCreateFields: false, invitedBy: OWNER_ID, createdAt: NOW, name: 'Kris Ray', email: 'kris@example.com', loginId: '1000002' }],
     folders: [{ id: 'fold-1', project_id: 'proj-1', name: 'Design', color: 'purple', created_by: OWNER_ID, created_at: NOW, updated_at: NOW, fieldCount: 1 }],
     fields: [
-      { id: 'fld-1', project_id: 'proj-1', folder_id: 'fold-1', title: 'Hero illustration', description: 'Main landing art.', status: 'in-progress', progress: 45, creator_id: MEMBER_ID, creator_name: 'Kris Ray', assignee_id: OWNER_ID, due_date: '2026-11-05', created_at: NOW, updated_at: NOW, assigneeName: 'Amina Rahman', mine: { pinned: false, favourite: false }, commentCount: 1, comments: [{ id: 'cmt-1', field_id: 'fld-1', author_id: MEMBER_ID, author_name: 'Kris Ray', body: 'First pass is up.', created_at: NOW, updated_at: NOW }] },
-      { id: 'fld-2', project_id: 'proj-1', folder_id: null, title: 'Copy deck', description: '', status: 'completed', progress: 100, creator_id: OWNER_ID, creator_name: 'Amina Rahman', assignee_id: null, due_date: null, created_at: NOW, updated_at: NOW, assigneeName: null, mine: { pinned: false, favourite: false }, commentCount: 0, comments: [] },
+      { id: 'fld-1', project_id: 'proj-1', folder_id: 'fold-1', title: 'Hero illustration', description: 'Main landing art.', status: 'in-progress', progress: 50, creator_id: MEMBER_ID, creator_name: 'Kris Ray', assignee_id: OWNER_ID, due_date: '2026-11-05', created_at: NOW, updated_at: NOW, assigneeName: 'Amina Rahman', mine: { pinned: false, favourite: false }, commentCount: 1, taskCount: 2, completedTaskCount: 1, comments: [{ id: 'cmt-1', field_id: 'fld-1', author_id: MEMBER_ID, author_name: 'Kris Ray', body: 'First pass is up.', created_at: NOW, updated_at: NOW }] },
+      { id: 'fld-2', project_id: 'proj-1', folder_id: null, title: 'Copy deck', description: '', status: 'completed', progress: 0, creator_id: OWNER_ID, creator_name: 'Amina Rahman', assignee_id: null, due_date: null, created_at: NOW, updated_at: NOW, assigneeName: null, mine: { pinned: false, favourite: false }, commentCount: 0, taskCount: 0, completedTaskCount: 0, comments: [] },
+    ],
+    tasks: [
+      { id: 'task-1', project_id: 'proj-1', field_id: 'fld-1', name: 'Draft campaign brief', description: 'Check the product launch copy.', status: 'complete', assignee_id: OWNER_ID, paused: false, created_by: MEMBER_ID, updated_by: OWNER_ID, sort_order: 10, created_at: NOW, updated_at: NOW, assigneeName: 'Amina Rahman', creatorName: 'Kris Ray', fieldTitle: 'Hero illustration' },
+      { id: 'task-2', project_id: 'proj-1', field_id: 'fld-1', name: 'Create mockups', description: '', status: 'in-progress', assignee_id: MEMBER_ID, paused: false, created_by: OWNER_ID, updated_by: OWNER_ID, sort_order: 20, created_at: NOW, updated_at: NOW, assigneeName: 'Kris Ray', creatorName: 'Amina Rahman', fieldTitle: 'Hero illustration' },
     ],
     requests: [{ id: 'req-1', project_id: 'proj-1', requester_id: MEMBER_ID, requester_name: 'Kris Ray', note: 'Need this tracked', payload: { title: 'Landing SEO meta' }, status: 'pending', resolution_note: '', field_id: null, created_at: NOW, resolved_at: null }],
     activity: [{ id: 'act-1', actor_id: OWNER_ID, actor_name: 'Amina Rahman', action: 'field_created', target: 'Copy deck', created_at: NOW }],
@@ -96,7 +100,7 @@ function memberFixture() {
     projects: [{
       id: 'proj-1', owner_id: OWNER_ID, name: 'Website relaunch', description: '', kind: 'shared', created_at: NOW, updated_at: NOW,
       access: { owner: false, role: 'commenter', canCreateFields: false },
-      stats: { fields: 1, completed: 0, inReview: 0, members: 2, pendingRequests: 0 },
+      stats: { fields: 1, completed: 0, inReview: 0, members: 2, pendingRequests: 0, tasksTotal: 1, tasksCompleted: 0 },
     }],
   };
   fixtures['GET /api/projects/proj-1'] = {
@@ -105,7 +109,8 @@ function memberFixture() {
     owner: { id: OWNER_ID, name: 'Amina Rahman', email: 'amina@example.com', loginId: '1000001' },
     members: [{ userId: MEMBER_ID, role: 'commenter', canCreateFields: false, invitedBy: OWNER_ID, createdAt: NOW, name: 'Kris Ray', email: 'kris@example.com', loginId: '1000002' }],
     folders: [],
-    fields: [{ id: 'fld-1', project_id: 'proj-1', folder_id: null, title: 'Hero illustration', description: '', status: 'in-progress', progress: 45, creator_id: OWNER_ID, creator_name: 'Amina Rahman', assignee_id: null, due_date: null, created_at: NOW, updated_at: NOW, assigneeName: null, mine: { pinned: false, favourite: false }, commentCount: 0, comments: [] }],
+    fields: [{ id: 'fld-1', project_id: 'proj-1', folder_id: null, title: 'Hero illustration', description: '', status: 'in-progress', progress: 0, creator_id: OWNER_ID, creator_name: 'Amina Rahman', assignee_id: null, due_date: null, created_at: NOW, updated_at: NOW, assigneeName: null, mine: { pinned: false, favourite: false }, commentCount: 0, taskCount: 1, completedTaskCount: 0, comments: [] }],
+    tasks: [{ id: 'task-mine', project_id: 'proj-1', field_id: 'fld-1', name: 'Write product summary', description: '', status: 'todo', assignee_id: MEMBER_ID, paused: false, created_by: OWNER_ID, updated_by: OWNER_ID, sort_order: 10, created_at: NOW, updated_at: NOW, assigneeName: 'Kris Ray', creatorName: 'Amina Rahman', fieldTitle: 'Hero illustration' }],
     requests: [],
     activity: [],
   };
@@ -164,6 +169,12 @@ async function openFieldsTab(container) {
   assert.ok(fieldsTab, 'fields nav tab present');
   await act(async () => { fieldsTab.dispatchEvent(new window.MouseEvent('click', { bubbles: true })); await new Promise((resolve) => setTimeout(resolve, 20)); });
 }
+async function openTaskTab(container) {
+  await click('.pj-project-card .magic-card-content', container);
+  const taskTab = [...container.querySelectorAll('.pj-section-nav button')].find((button) => button.textContent === 'Task List');
+  assert.ok(taskTab, 'Task List nav tab present');
+  await act(async () => { taskTab.dispatchEvent(new window.MouseEvent('click', { bubbles: true })); await new Promise((resolve) => setTimeout(resolve, 20)); });
+}
 async function setValue(el, value, eventName = 'input') {
   await act(async () => {
     const proto = el.tagName === 'SELECT' ? window.HTMLSelectElement.prototype : el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
@@ -206,6 +217,7 @@ test('folders render in a Documents-style shelf row with field cards underneath'
   assert.ok(text().includes('Copy deck'), 'All fields restores every card');
   await press(container.querySelector('.vault-folder-create-tile'));
   assert.ok(document.querySelector('.pj-modal[aria-label="New folder"]'), 'the create tile opens the folder form');
+  await press(document.querySelector('.pj-modal [aria-label="Close dialog"]'));
   await unmount();
 });
 
@@ -231,8 +243,8 @@ test('fields tab renders cards, and pin toggles fire the react endpoint', async 
 test('saving a field refreshes detail, the project summary, and derived Overview progress', async () => {
   ownerFixture();
   const original = fixtures['GET /api/projects/proj-1'];
-  const updatedFields = original.fields.map((field) => field.id === 'fld-1' ? { ...field, status: 'completed', progress: 100, updated_at: '2026-10-22T09:00:00.000Z' } : field);
-  fixtures['PATCH /api/projects/proj-1/fields/fld-1'] = ({ init }) => { assert.equal(JSON.parse(init.body).progress, 0, 'no checklist means 0% progress is saved'); return { field: updatedFields[0] }; };
+  const updatedFields = original.fields.map((field) => field.id === 'fld-1' ? { ...field, status: 'completed', progress: 50, updated_at: '2026-10-22T09:00:00.000Z' } : field);
+  fixtures['PATCH /api/projects/proj-1/fields/fld-1'] = ({ init }) => { assert.equal(Object.hasOwn(JSON.parse(init.body), 'progress'), false, 'field workflow edits never send a progress value'); return { field: updatedFields[0] }; };
   fixtures['GET /api/projects/proj-1'] = { ...original, fields: updatedFields };
   fixtures['GET /api/projects'] = { projects: [{ ...fixtures['GET /api/projects'].projects[0], stats: { ...fixtures['GET /api/projects'].projects[0].stats, completed: 2 } }] };
   const { container, unmount } = await mount(userRecord(OWNER_ID, 'Amina Rahman'));
@@ -250,8 +262,8 @@ test('saving a field refreshes detail, the project summary, and derived Overview
   assert.ok(apiCalls.some((call) => call.method === 'GET' && call.target === '/api/projects'), 'project summaries are refreshed after the mutation');
   const patch = apiCalls.find((call) => call.method === 'PATCH' && call.target === '/api/projects/proj-1/fields/fld-1');
   assert.ok(patch);
-  assert.ok(text().includes('Completed'), 'refetched field status is shown');
-  assert.equal(document.querySelector('.pj-field-card [aria-label="Field progress"]')?.getAttribute('aria-valuenow'), '0', 'progress stays checklist-derived (empty checklist = 0%) regardless of status');
+  assert.ok(text().includes('Complete'), 'refetched field status is shown');
+  assert.equal(document.querySelector('.pj-field-card [aria-label="Field task progress"]')?.getAttribute('aria-valuenow'), '50', 'field progress remains task-derived even when workflow status is Complete');
   const overview = [...container.querySelectorAll('.pj-section-nav button')].find((button) => button.textContent === 'Overview');
   await act(async () => { overview.dispatchEvent(new window.MouseEvent('click', { bubbles: true })); await new Promise((resolve) => setTimeout(resolve, 5)); });
   assert.ok(text().includes('100% of all fields'), 'Overview KPI progress follows the saved field data');
@@ -271,7 +283,7 @@ test('field detail modal shows comments with author actions', async () => {
   });
   assert.ok(text().includes('First pass is up.'), 'comment body visible');
   const sectionTitles = [...document.querySelectorAll('.pj-modal .pj-detail-section > header h3')].map((heading) => heading.textContent);
-  assert.deepEqual(sectionTitles, ['Information', 'Description', 'Status & progress', 'Private attachments'], 'Folder, Members & permissions, Dates, and Owner & assignee are no longer separate sections');
+  assert.deepEqual(sectionTitles, ['Information', 'Description', 'Status & task progress', 'Private attachments'], 'field details retain information, description, task-derived progress, and private attachments without checklist UI');
   const info = [...document.querySelectorAll('.pj-modal .pj-detail-info-grid > div')].map((cell) => cell.textContent.replace(/\s+/g, ' ').trim());
   for (const label of ['Project', 'Project access', 'Comments', 'Created by', 'Assigned to', 'Due', 'Created', 'Last updated']) assert.ok(info.some((cell) => cell.startsWith(label)), `${label} lives in the Information grid`);
   assert.ok(info.some((cell) => cell.startsWith('Created by') && cell.includes('Kris Ray')), 'field creator shown in Information');
@@ -337,123 +349,152 @@ test('creating a project opens its returned database UUID immediately and refres
   window.history.replaceState({}, '', '/');
 });
 
-test('checklist items are completed in Edit field, saved through the API, and progress syncs to cards and the view modal', async () => {
+test('project sections are ordered and the Task List uses minimal equal-column cards with combined filters', async () => {
   ownerFixture();
-  let completed = false;
+  const { container, unmount } = await mount(userRecord(OWNER_ID, 'Amina Rahman'));
+  await click('.pj-project-card .magic-card-content', container);
+  assert.deepEqual([...container.querySelectorAll('.pj-section-nav button')].map((button) => button.textContent), ['Overview', 'Fields', 'Task List', 'Activity']);
+  const taskTab = [...container.querySelectorAll('.pj-section-nav button')].find((button) => button.textContent === 'Task List');
+  await press(taskTab);
+  assert.deepEqual([...container.querySelectorAll('.pj-task-column-head h3')].map((heading) => heading.textContent), ['To Do', 'In Progress', 'In Review', 'Complete']);
+  const cards = [...container.querySelectorAll('.pj-task-card')];
+  assert.equal(cards.length, 2, 'All Tasks shows tasks across all four statuses');
+  for (const card of cards) {
+    assert.equal(card.children.length, 2, 'a task card contains only its name and the three-dot menu');
+    assert.ok(card.querySelector('.pj-task-title'));
+    assert.ok(card.querySelector('.pj-task-actions .tiny-action'));
+    assert.ok(!card.textContent.includes('Check the product launch copy'), 'descriptions are not shown on cards');
+  }
+  await press([...container.querySelectorAll('.pj-task-mode button')].find((button) => button.textContent === 'My Tasks'));
+  assert.deepEqual([...container.querySelectorAll('.pj-task-card .pj-task-title')].map((title) => title.textContent), ['Draft campaign brief'], 'My Tasks matches only the signed-in user ID in task.assignee_id');
+  await press([...container.querySelectorAll('.pj-task-mode button')].find((button) => button.textContent === 'All Tasks'));
+  await setValue(container.querySelector('.pj-task-search input'), 'product launch');
+  assert.deepEqual([...container.querySelectorAll('.pj-task-card .pj-task-title')].map((title) => title.textContent), ['Draft campaign brief'], 'search also inspects descriptions without displaying them');
+  await setValue(container.querySelector('.pj-task-search input'), '');
+  await press(container.querySelector('.pj-task-filter-button'));
+  const selects = [...container.querySelectorAll('.pj-task-filter-popover select')];
+  assert.equal(selects.length, 4, 'field, assignee, status, and paused filters are available together');
+  await setValue(selects[2], 'in-progress', 'change');
+  assert.deepEqual([...container.querySelectorAll('.pj-task-card .pj-task-title')].map((title) => title.textContent), ['Create mockups']);
+  assert.ok(readFileSync(new URL('../src/components/projects.css', import.meta.url), 'utf8').includes('grid-template-columns: repeat(4,minmax(0,1fr))'), 'board columns share equal width and remain horizontally scrollable on narrow workspaces');
+  await unmount();
+});
+
+test('task menu does not open Task View, while card activation opens read-focused details', async () => {
+  ownerFixture();
+  const task = fixtures['GET /api/projects/proj-1'].tasks[0];
+  fixtures['GET /api/projects/proj-1/tasks/task-1'] = { task: { ...task, comments: [], attachments: [] } };
+  const { container, unmount } = await mount(userRecord(OWNER_ID, 'Amina Rahman'));
+  await openTaskTab(container);
+  const card = container.querySelector('.pj-task-card[aria-label="Open task Draft campaign brief"]');
+  assert.ok(card);
+  await press(card.querySelector('.pj-task-actions .tiny-action'));
+  assert.ok(document.querySelector('.card-action-menu-portal[role="menu"]'), 'three-dot menu opens independently');
+  assert.equal(document.querySelector('.pj-task-modal[aria-label="Task details"]'), null, 'menu activation does not bubble into the Task View');
+  await press(document.querySelector('.card-action-menu-portal [role="menuitem"]'));
+  assert.ok(document.querySelector('.pj-task-modal[aria-label="Edit task"]'), 'menu action opens the editor directly');
+  await press(document.querySelector('.pj-task-modal[aria-label="Edit task"] .pj-icon-button'));
+  const refreshedCard = container.querySelector('.pj-task-card[aria-label="Open task Draft campaign brief"]');
+  await press(refreshedCard);
+  assert.ok(document.querySelector('.pj-task-modal[aria-label="Task details"]'), 'card activation opens Task View');
+  assert.ok(document.querySelector('.pj-task-view-title')?.textContent.includes('Draft campaign brief'));
+  assert.ok(document.querySelector('.pj-task-view-description')?.textContent.includes('product launch copy'));
+  assert.ok(document.querySelector('.pj-task-view-info')?.textContent.includes('Amina Rahman'));
+  assert.ok(!document.querySelector('.pj-task-form'), 'Task View is read-focused until Edit is selected');
+  assert.ok(apiCalls.some((call) => call.method === 'GET' && call.target === '/api/projects/proj-1/tasks/task-1'), 'detail is fetched from the authenticated task endpoint');
+  await unmount();
+});
+
+test('creating a task persists its field, assignee, description, and status through the Task List', async () => {
+  ownerFixture();
+  const created = { ...fixtures['GET /api/projects/proj-1'].tasks[1], id: 'task-created', name: 'Publish release notes', description: 'Share the launch summary.', status: 'todo', field_id: 'fld-1', assignee_id: null };
+  let savedBody = null;
+  fixtures['POST /api/projects/proj-1/tasks'] = ({ init }) => { savedBody = JSON.parse(init.body); return { task: created }; };
+  fixtures['GET /api/projects/proj-1/tasks/task-created'] = { task: { ...created, comments: [], attachments: [] } };
+  const { container, unmount } = await mount(userRecord(OWNER_ID, 'Amina Rahman'));
+  await openTaskTab(container);
+  await press(container.querySelector('.pj-task-add'));
+  assert.ok(document.querySelector('.pj-task-modal[aria-label="Add task"]'));
+  await setValue(document.querySelector('.pj-task-form input[placeholder^="e.g."]'), 'Publish release notes');
+  await setValue(document.querySelector('.pj-task-form textarea'), 'Share the launch summary.');
+  const selects = [...document.querySelectorAll('.pj-task-form select')];
+  await setValue(selects[1], 'fld-1', 'change');
+  await setValue(selects[2], 'in-review', 'change');
+  await press(document.querySelector('.pj-task-form button[type="submit"]'));
+  assert.deepEqual(savedBody, { name: 'Publish release notes', description: 'Share the launch summary.', fieldId: 'fld-1', assigneeId: null, status: 'in-review' });
+  assert.ok(apiCalls.some((call) => call.method === 'POST' && call.target === '/api/projects/proj-1/tasks'), 'task create reaches the project-scoped worker route');
+  assert.ok(!Object.hasOwn(savedBody, 'progress'), 'field progress is derived server-side from task status');
+  assert.ok(!document.querySelector('.pj-task-form'), 'the form closes after a successful save');
+  await unmount();
+});
+
+test('My Tasks excludes creator/field-owner matches and task assignees may move only active tasks', async () => {
+  memberFixture();
   const detail = fixtures['GET /api/projects/proj-1'];
-  detail.fields[0].subtasks = [
-    { id: 'task-1', project_id: 'proj-1', field_id: 'fld-1', title: 'Draft campaign brief', completed: false, sort_order: 10, assignee_id: OWNER_ID, created_by: OWNER_ID, created_at: NOW, updated_at: NOW, assigneeName: 'Amina Rahman', creatorName: 'Amina Rahman' },
-    { id: 'task-2', project_id: 'proj-1', field_id: 'fld-1', title: 'Collect references', completed: true, sort_order: 20, assignee_id: null, created_by: OWNER_ID, created_at: NOW, updated_at: NOW, assigneeName: null, creatorName: 'Amina Rahman' },
-  ];
-  fixtures['GET /api/projects/proj-1'] = () => ({
-    ...detail,
-    fields: detail.fields.map((field) => field.id === 'fld-1' ? { ...field, subtasks: field.subtasks.map((task) => task.id === 'task-1' ? { ...task, completed } : task) } : field),
-  });
-  let fieldPatch = null;
-  fixtures['PATCH /api/projects/proj-1/fields/fld-1'] = ({ init }) => { fieldPatch = JSON.parse(init.body); return { field: detail.fields[0] }; };
-  fixtures['PATCH /api/projects/proj-1/fields/fld-1/subtasks/task-1'] = async ({ init }) => {
-    assert.deepEqual(JSON.parse(init.body), { completed: true });
-    completed = true;
-    return { subtask: { ...detail.fields[0].subtasks[0], completed: true } };
+  const task = detail.tasks[0];
+  detail.tasks.push({ ...task, id: 'created-not-assigned', name: 'Created but not assigned', assignee_id: OWNER_ID, created_by: MEMBER_ID, sort_order: 20 });
+  let savedStatus = 'todo';
+  fixtures['GET /api/projects/proj-1'] = () => ({ ...detail, tasks: detail.tasks.map((entry) => entry.id === 'task-mine' ? { ...entry, status: savedStatus } : entry) });
+  fixtures['GET /api/projects/proj-1/tasks/task-mine'] = () => ({ task: { ...task, status: savedStatus, comments: [], attachments: [] } });
+  fixtures['POST /api/projects/proj-1/tasks/task-mine/move'] = ({ init }) => {
+    const body = JSON.parse(init.body); assert.deepEqual(body, { status: 'in-progress' }); savedStatus = body.status;
+    return { task: { ...task, status: savedStatus } };
   };
-  const { container, unmount } = await mount(userRecord(OWNER_ID, 'Amina Rahman'));
-  await openFieldsTab(container);
-  const card = [...container.querySelectorAll('.pj-field-card')].find((entry) => entry.textContent.includes('Hero illustration'));
-  assert.equal(card.querySelector('[aria-label="Field progress"]').getAttribute('aria-valuenow'), '50', 'card shows 1 of 2 = 50%');
-  await press(card);
-  assert.equal(document.querySelector('.pj-modal [aria-label="Field progress"]').getAttribute('aria-valuenow'), '50', 'view modal matches the card');
-  assert.equal(document.querySelectorAll('.pj-modal input[type="checkbox"]').length, 0, 'view modal has no checklist editing controls');
-  assert.ok(!document.querySelector('.pj-modal input[aria-label="New checklist item"]'), 'view modal cannot add checklist items');
-  assert.ok(!document.querySelector('.pj-modal input[type="range"]'), 'there is no manual progress slider');
-  await press(document.querySelector('.pj-detail-actions .pj-primary-button'));
-  assert.ok(!document.querySelector('.pj-form input[type="range"]'), 'edit modal has no manual progress slider');
-  const checkbox = document.querySelector('.pj-form input[aria-label="Complete: Draft campaign brief"]');
-  assert.ok(checkbox, 'edit modal lists checklist items with completion toggles');
-  await press(checkbox);
-  assert.ok(document.querySelector('.pj-checklist-editor-head').textContent.includes('100%'), 'edit modal progress recalculates live');
-  await press(document.querySelector('.pj-form button[type="submit"]'));
-  assert.equal(fieldPatch?.progress, 100, 'field save stores the checklist-derived progress');
-  assert.ok(apiCalls.some((call) => call.method === 'PATCH' && call.target === '/api/projects/proj-1/fields/fld-1/subtasks/task-1'), 'completion is saved to the authenticated project API');
-  assert.ok(!document.querySelector('.pj-form'), 'the modal closes after a successful save');
-  const refreshed = [...container.querySelectorAll('.pj-field-card')].find((entry) => entry.textContent.includes('Hero illustration'));
-  assert.equal(refreshed.querySelector('[aria-label="Field progress"]').getAttribute('aria-valuenow'), '100', 'card progress follows the saved checklist');
-  assert.ok(apiCalls.filter((call) => call.method === 'GET' && call.target === '/api/projects').length >= 2, 'project summaries are reloaded after saving');
+  const { container, unmount } = await mount(userRecord(MEMBER_ID, 'Kris Ray'));
+  await openTaskTab(container);
+  await press([...container.querySelectorAll('.pj-task-mode button')].find((button) => button.textContent === 'My Tasks'));
+  assert.deepEqual([...container.querySelectorAll('.pj-task-card .pj-task-title')].map((title) => title.textContent), ['Write product summary'], 'being the creator or field assignee does not qualify for My Tasks');
+  await press(container.querySelector('.pj-task-card'));
+  assert.ok(document.querySelector('.pj-task-view-move select'), 'task assignee can move a non-complete task among active statuses');
+  assert.ok(![...document.querySelectorAll('.pj-task-view-actions button')].some((button) => /Edit|Pause|Delete/.test(button.textContent)), 'task assignee has no CRUD, pause, or delete privileges');
+  const statusSelect = document.querySelector('.pj-task-view-move select');
+  await setValue(statusSelect, 'in-progress', 'change');
+  await press(document.querySelector('.pj-task-view-move button'));
+  assert.equal(savedStatus, 'in-progress');
+  assert.ok(apiCalls.some((call) => call.method === 'POST' && call.target === '/api/projects/proj-1/tasks/task-mine/move'), 'move is persisted through the scoped status endpoint');
   await unmount();
 });
 
-test('creating a field saves its checklist items, completion, and derived progress', async () => {
-  ownerFixture();
-  const created = { ...fixtures['GET /api/projects/proj-1'].fields[1], id: 'fld-new', title: 'Launch checklist', status: 'planning', progress: 50, subtasks: [] };
-  let createdBody = null;
-  const subtaskBodies = [];
-  const completions = [];
-  fixtures['POST /api/projects/proj-1/fields'] = ({ init }) => { createdBody = JSON.parse(init.body); return { field: created }; };
-  fixtures['POST /api/projects/proj-1/fields/fld-new/subtasks'] = ({ init }) => {
-    const body = JSON.parse(init.body);
-    subtaskBodies.push(body);
-    return { subtask: { id: `new-task-${subtaskBodies.length}`, project_id: 'proj-1', field_id: 'fld-new', title: body.title, completed: false, sort_order: subtaskBodies.length * 10, assignee_id: body.assigneeId, created_by: OWNER_ID, created_at: NOW, updated_at: NOW } };
-  };
-  fixtures['PATCH /api/projects/proj-1/fields/fld-new/subtasks/new-task-1'] = ({ init }) => { completions.push(JSON.parse(init.body)); return { subtask: {} }; };
-  const { container, unmount } = await mount(userRecord(OWNER_ID, 'Amina Rahman'));
-  await openFieldsTab(container);
-  await press([...container.querySelectorAll('.pj-topbar-actions button')].find((button) => button.textContent.includes('New field')));
-  await setValue(document.querySelector('.pj-form input[placeholder="e.g. Draft homepage copy"]'), 'Launch checklist');
-  const add = document.querySelector('.pj-form input[aria-label="New checklist item"]');
-  await setValue(add, 'Write release notes');
-  await act(async () => { add.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await new Promise((resolve) => setTimeout(resolve, 5)); });
-  await setValue(document.querySelector('.pj-form input[aria-label="New checklist item"]'), 'Notify team');
-  await press([...document.querySelectorAll('.pj-checklist-editor-add button')].find((button) => button.textContent.includes('Add')));
-  await setValue(document.querySelector('.pj-form input[aria-label="New checklist item"]'), 'Remove me');
-  await press([...document.querySelectorAll('.pj-checklist-editor-add button')].find((button) => button.textContent.includes('Add')));
-  assert.equal(document.querySelectorAll('.pj-checklist-editor-list > li').length, 3);
-  await press(document.querySelector('.pj-form button[aria-label="Delete Remove me"]'));
-  await press(document.querySelector('.pj-form input[aria-label="Complete: Write release notes"]'));
-  assert.ok(document.querySelector('.pj-checklist-editor-head').textContent.includes('50%'));
-  await press(document.querySelector('.pj-form button[type="submit"]'));
-  assert.equal(createdBody?.progress, 50, 'create payload carries (1 ÷ 2) × 100');
-  assert.deepEqual(subtaskBodies.map((body) => body.title), ['Write release notes', 'Notify team'], 'checklist items are created in order');
-  assert.deepEqual(completions, [{ completed: true }], 'completed items are marked complete after creation');
-  assert.ok(!apiCalls.some((call) => call.target.endsWith('/reorder')), 'no reorder call when order already matches');
-  assert.ok(!document.querySelector('.pj-form'), 'the modal closes after the field and checklist save');
-  await unmount();
-});
-
-test('request mode does not expose checklist management', async () => {
+test('request mode contains no checklist UI', async () => {
   memberFixture();
   const { container, unmount } = await mount(userRecord(MEMBER_ID, 'Kris Ray'));
   await click('.pj-project-card .magic-card-content', container);
   await press([...container.querySelectorAll('.pj-topbar-actions button')].find((button) => button.textContent.includes('Request field')));
   assert.ok(document.querySelector('.pj-modal[aria-label="Request a new field"]'));
-  assert.ok(!document.querySelector('.pj-checklist-editor'), 'checklist is managed only when creating or editing a field');
+  assert.equal(document.querySelector('.pj-checklist-editor'), null);
+  assert.ok(!text().includes('Checklist'));
   assert.ok(!document.querySelector('.pj-form input[type="range"]'));
   await unmount();
 });
 
-test('project notification destinations open the authorized field and target subtask', async () => {
+test('project task notifications open the authorized Task List and the persisted target task', async () => {
   ownerFixture();
   const projectId = 'b72190d2-bcff-4d6c-8f10-1290ad3a23d1';
   const fieldId = 'd392e001-8646-4f04-91bc-602b9d54ea02';
   const taskId = 'ad5711b3-513d-4d43-bc54-b99f64372d17';
   const baseDetail = fixtures['GET /api/projects/proj-1'];
+  const routedTask = { ...baseDetail.tasks[0], id: taskId, project_id: projectId, field_id: fieldId, name: 'Review final mock', status: 'in-review', fieldTitle: 'Hero illustration' };
   const routedDetail = {
     ...baseDetail,
     project: { ...baseDetail.project, id: projectId },
-    fields: baseDetail.fields.map((field, index) => index === 0 ? {
-      ...field, id: fieldId, project_id: projectId,
-      subtasks: [{ id: taskId, project_id: projectId, field_id: fieldId, title: 'Review final mock', completed: false, sort_order: 10, assignee_id: OWNER_ID, created_by: OWNER_ID, created_at: NOW, updated_at: NOW, assigneeName: 'Amina Rahman', creatorName: 'Amina Rahman' }],
-    } : { ...field, id: '03eb4074-d9d8-4080-b2f8-b0c0d6658a8e', project_id: projectId }),
+    fields: baseDetail.fields.map((field, index) => index === 0
+      ? { ...field, id: fieldId, project_id: projectId, taskCount: 1, completedTaskCount: 0, progress: 0 }
+      : { ...field, id: '03eb4074-d9d8-4080-b2f8-b0c0d6658a8e', project_id: projectId, taskCount: 0, completedTaskCount: 0, progress: 0 }),
+    tasks: [routedTask],
   };
   fixtures['GET /api/projects'] = { projects: [{ ...fixtures['GET /api/projects'].projects[0], id: projectId }] };
   fixtures[`GET /api/projects/${projectId}`] = routedDetail;
+  fixtures[`GET /api/projects/${projectId}/tasks/${taskId}`] = { task: { ...routedTask, comments: [], attachments: [] } };
   const { container, unmount } = await mount(userRecord(OWNER_ID, 'Amina Rahman'));
   await act(async () => {
-    window.dispatchEvent(new window.CustomEvent('persora-project-notification-navigation', { detail: { projectId, fieldId, subtaskId: taskId } }));
+    window.dispatchEvent(new window.CustomEvent('persora-project-notification-navigation', { detail: { projectId, fieldId, taskId } }));
     await new Promise((resolve) => setTimeout(resolve, 40));
   });
   assert.ok(apiCalls.some((call) => call.method === 'GET' && call.target === `/api/projects/${projectId}`), 'destination fetches project through normal API authorization');
-  assert.ok(document.body.textContent.includes('Hero illustration'), 'destination resolves the field title');
-  assert.ok(document.body.textContent.includes('Review final mock'), 'destination opens field detail with the target subtask');
-  assert.ok(document.querySelector(`#project-subtask-${taskId}`), 'the destination subtask has a stable scroll target');
+  assert.ok(apiCalls.some((call) => call.method === 'GET' && call.target === `/api/projects/${projectId}/tasks/${taskId}`), 'notification resolves full task detail through the scoped API');
+  assert.ok(container.querySelector('.pj-section-nav button.active')?.textContent === 'Task List');
+  assert.ok(document.querySelector('.pj-task-modal[aria-label="Task details"]'));
+  assert.ok(document.querySelector('.pj-task-view-title')?.textContent.includes('Review final mock'));
   await unmount();
 });
 
@@ -499,54 +540,6 @@ test('Notification preferences opens straight from the project list without open
   assert.ok(!document.querySelector('.pj-modal'), 'opening a project afterwards does not resurrect a stale modal');
   await unmount();
   window.history.replaceState({}, '', '/');
-});
-
-test('assigned members check off checklist items in the view modal but cannot manage the checklist', async () => {
-  memberFixture();
-  const detail = fixtures['GET /api/projects/proj-1'];
-  const state = { mine: false };
-  detail.fields[0].subtasks = [
-    { id: 'task-mine', project_id: 'proj-1', field_id: 'fld-1', title: 'Shoot product photos', completed: false, sort_order: 10, assignee_id: MEMBER_ID, created_by: OWNER_ID, created_at: NOW, updated_at: NOW, assigneeName: 'Kris Ray', creatorName: 'Amina Rahman' },
-    { id: 'task-owner', project_id: 'proj-1', field_id: 'fld-1', title: 'Approve budget', completed: false, sort_order: 20, assignee_id: OWNER_ID, created_by: OWNER_ID, created_at: NOW, updated_at: NOW, assigneeName: 'Amina Rahman', creatorName: 'Amina Rahman' },
-  ];
-  fixtures['GET /api/projects/proj-1'] = () => ({ ...detail, fields: detail.fields.map((field) => ({ ...field, subtasks: field.subtasks.map((task) => task.id === 'task-mine' ? { ...task, completed: state.mine } : task) })) });
-  const bodies = [];
-  fixtures['PATCH /api/projects/proj-1/fields/fld-1/subtasks/task-mine'] = ({ init }) => { bodies.push(JSON.parse(init.body)); state.mine = true; return { subtask: { ...detail.fields[0].subtasks[0], completed: true } }; };
-  const { container, unmount } = await mount(userRecord(MEMBER_ID, 'Kris Ray'));
-  await openFieldsTab(container);
-  await press(container.querySelector('.pj-field-card'));
-  assert.ok(!document.querySelector('.pj-detail-actions .pj-primary-button'), 'a non-editor gets no Edit button');
-  const mine = document.querySelector('#project-subtask-task-mine [role="checkbox"]');
-  assert.ok(mine, 'the member can tick the item assigned to them');
-  assert.equal(mine.getAttribute('aria-checked'), 'false');
-  assert.equal(document.querySelector('#project-subtask-task-owner [role="checkbox"]'), null, "someone else's item stays read-only");
-  assert.ok(!document.querySelector('.pj-modal input[aria-label="New checklist item"]') && !document.querySelector('.pj-modal [aria-label^="Delete "]'), 'no add or delete controls in view mode');
-  await press(mine);
-  assert.deepEqual(bodies, [{ completed: true }], 'only the completion flag is sent');
-  assert.equal(document.querySelector('#project-subtask-task-mine [role="checkbox"]').getAttribute('aria-checked'), 'true', 'the reloaded item shows as complete');
-  assert.equal(document.querySelector('.pj-modal [aria-label="Field progress"]').getAttribute('aria-valuenow'), '50', 'progress recalculates from the checklist');
-  assert.equal(container.querySelector('.pj-field-card [aria-label="Field progress"]').getAttribute('aria-valuenow'), '50', 'the card behind the modal updates too');
-  await unmount();
-});
-
-test('the field assignee can check off every item; failed saves roll back with an error', async () => {
-  memberFixture();
-  const detail = fixtures['GET /api/projects/proj-1'];
-  detail.fields[0] = { ...detail.fields[0], assignee_id: MEMBER_ID, assigneeName: 'Kris Ray', subtasks: [
-    { id: 'task-a', project_id: 'proj-1', field_id: 'fld-1', title: 'Item A', completed: false, sort_order: 10, assignee_id: null, created_by: OWNER_ID, created_at: NOW, updated_at: NOW, assigneeName: null, creatorName: 'Amina Rahman' },
-    { id: 'task-b', project_id: 'proj-1', field_id: 'fld-1', title: 'Item B', completed: true, sort_order: 20, assignee_id: OWNER_ID, created_by: OWNER_ID, created_at: NOW, updated_at: NOW, assigneeName: 'Amina Rahman', creatorName: 'Amina Rahman' },
-  ] };
-  const errors = [];
-  delete fixtures['PATCH /api/projects/proj-1/fields/fld-1/subtasks/task-a']; // the stub API answers 404 → save fails
-  const { container, unmount } = await mount(userRecord(MEMBER_ID, 'Kris Ray'), { notify: (message, kind) => { if (kind === 'error') errors.push(message); } });
-  await openFieldsTab(container);
-  await press(container.querySelector('.pj-field-card'));
-  assert.equal(document.querySelectorAll('.pj-modal [role="checkbox"]').length, 2, 'field assignee may tick every item');
-  await press(document.querySelector('#project-subtask-task-a [role="checkbox"]'));
-  assert.equal(errors.length, 1, 'the failure is reported');
-  assert.equal(document.querySelector('#project-subtask-task-a [role="checkbox"]').getAttribute('aria-checked'), 'false', 'the optimistic tick is rolled back');
-  assert.equal(document.querySelector('.pj-modal [aria-label="Field progress"]').getAttribute('aria-valuenow'), '50');
-  await unmount();
 });
 
 test('avatars show each person’s chosen photo, emoji, or avatar and fall back to initials', async () => {

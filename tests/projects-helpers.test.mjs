@@ -11,107 +11,117 @@ const folders = [
   { id: 'f-a', name: 'Design', color: 'cyan' },
   { id: 'f-b', name: 'Build', color: 'orange' },
 ];
-const mkField = (overrides) => ({
-  id: overrides.id, title: overrides.title || 'Field', description: '', status: 'planning', progress: 0,
+const mkField = (overrides = {}) => ({
+  id: overrides.id || 'field', project_id: 'project', title: overrides.title || 'Field', description: '', status: 'planning', progress: 0,
   creator_id: 'creator', creator_name: 'Kris Ray', assignee_id: null, folder_id: null, due_date: null,
   created_at: '2026-10-01T10:00:00Z', updated_at: '2026-10-02T10:00:00Z', ...overrides,
 });
+const mkTask = (overrides = {}) => ({
+  id: overrides.id || 'task', project_id: 'project', field_id: 'field', name: 'Task', description: '', status: 'todo',
+  assignee_id: null, paused: false, created_by: 'creator', updated_by: null, sort_order: 10,
+  created_at: '2026-10-01T10:00:00Z', updated_at: '2026-10-02T10:00:00Z', ...overrides,
+});
 
-test('progressForStatus normalises and forces completed to 100', () => {
-  assert.equal(helpers.progressForStatus('completed', 20), 100);
+test('field workflow labels remain separate from task-derived progress', () => {
+  assert.equal(helpers.statusMeta('blocked').label, 'Paused');
+  assert.equal(helpers.statusMeta('in-review').label, 'In Review');
+  assert.equal(helpers.statusMeta('completed').label, 'Complete');
+  assert.equal(helpers.progressForStatus('completed', 20), 20, 'workflow status does not force field task progress');
   assert.equal(helpers.progressForStatus('blocked', 140), 100);
   assert.equal(helpers.progressForStatus('planning', -5), 0);
+  assert.equal(helpers.fieldProgress(mkField({ status: 'completed', progress: 0 })), 0);
 });
 
-test('permission predicates mirror the server-side matrix', () => {
+test('task progress is completed linked tasks divided by all linked tasks, with zero tasks at zero percent', () => {
+  assert.deepEqual(helpers.taskProgress([]), { total: 0, completed: 0, percent: 0 });
+  assert.deepEqual(helpers.taskProgress(undefined), { total: 0, completed: 0, percent: 0 });
+  assert.deepEqual(helpers.taskProgress([{ status: 'complete' }, { status: 'in-review' }, { status: 'todo' }]), { total: 3, completed: 1, percent: 33 });
+  assert.equal(helpers.taskProgress([{ status: 'complete' }, { status: 'complete' }, { status: 'todo' }]).percent, 67);
+  const tasks = [mkTask({ id: 'a', status: 'complete' }), mkTask({ id: 'b', status: 'in-progress' }), mkTask({ id: 'c', field_id: 'other', status: 'complete' })];
+  assert.deepEqual(helpers.taskProgressForField(tasks, 'field'), { total: 2, completed: 1, percent: 50 });
+  const fields = helpers.fieldsWithTaskProgress([mkField({ id: 'field', progress: 99 }), mkField({ id: 'empty', progress: 80 })], tasks);
+  assert.deepEqual([fields[0].taskCount, fields[0].completedTaskCount, fields[0].progress], [2, 1, 50]);
+  assert.deepEqual([fields[1].taskCount, fields[1].completedTaskCount, fields[1].progress], [0, 0, 0]);
+});
+
+test('task CRUD belongs only to project owner or current field assignee', () => {
   const owner = { owner: true, role: 'owner', canCreateFields: true };
-  const granted = { owner: false, role: 'editor', canCreateFields: true };
-  const editor = { owner: false, role: 'editor', canCreateFields: false };
-  const commenter = { owner: false, role: 'commenter', canCreateFields: false };
-  const viewer = { owner: false, role: 'viewer', canCreateFields: false };
-  const field = mkField({ id: '1', creator_id: 'member-2' });
-
-  assert.equal(helpers.canCreateField(owner), true);
-  assert.equal(helpers.canCreateField(granted), true);
-  assert.equal(helpers.canCreateField(editor), false);
-  assert.equal(helpers.canCreateField(commenter), false);
-  assert.equal(helpers.canRequestField(commenter), true);
-  assert.equal(helpers.canRequestField(granted), false);
-  assert.equal(helpers.canManageMembers(viewer), false);
-  assert.equal(helpers.canManageFolder(granted), false);
-
-  assert.equal(helpers.canEditField(owner, field, 'anyone'), true);
-  assert.equal(helpers.canEditField(granted, field, 'member-2'), true);
-  assert.equal(helpers.canEditField(granted, field, 'member-3'), false);
-  assert.equal(helpers.canEditField(viewer, field, 'member-2'), true); // creators keep editing their own field
-  assert.equal(helpers.canEditComment({ author_id: 'a' }, 'a'), true);
-  assert.equal(helpers.canEditComment({ author_id: 'a' }, 'b'), false);
-  assert.equal(helpers.canDeleteComment(viewer, { author_id: 'a' }, 'b'), false);
-  assert.equal(helpers.canDeleteComment(owner, { author_id: 'a' }, 'b'), true);
+  const member = { owner: false, role: 'editor', canCreateFields: true };
+  const field = { assignee_id: 'field-assignee', creator_id: 'field-creator' };
+  assert.equal(helpers.canManageTask(owner, field, 'owner'), true);
+  assert.equal(helpers.canManageTask(member, field, 'field-assignee'), true);
+  assert.equal(helpers.canManageTask(member, field, 'field-creator'), false, 'field creator alone is not task manager');
+  assert.equal(helpers.canManageTask(member, field, 'task-assignee'), false, 'task assignee alone has no task CRUD rights');
+  assert.equal(helpers.canManageTask(null, field, 'field-assignee'), false);
+  assert.equal(helpers.canCreateTaskInField(member, field, 'field-assignee'), true);
 });
 
-const checklist = (done, total) => Array.from({ length: total }, (_, index) => ({ id: `t-${index}`, title: `Task ${index}`, completed: index < done, assignee_id: null }));
-
-test('checklistProgress derives (completed ÷ total) × 100 and is 0% when empty', () => {
-  assert.deepEqual(helpers.checklistProgress([]), { total: 0, completed: 0, percent: 0 });
-  assert.deepEqual(helpers.checklistProgress(undefined), { total: 0, completed: 0, percent: 0 });
-  assert.equal(helpers.checklistProgress(checklist(1, 3)).percent, 33);
-  assert.equal(helpers.checklistProgress(checklist(2, 3)).percent, 67);
-  assert.equal(helpers.checklistProgress(checklist(4, 4)).percent, 100);
-  // The stored/manual progress value and status never override the checklist.
-  assert.equal(helpers.fieldProgress(mkField({ id: 'x', status: 'completed', progress: 100 })), 0);
-  assert.equal(helpers.fieldProgress(mkField({ id: 'y', progress: 90, subtasks: checklist(1, 4) })), 25);
+test('task status permissions enforce the review gate and exact assignee move rules', () => {
+  const owner = { owner: true, role: 'owner', canCreateFields: true };
+  const member = { owner: false, role: 'viewer', canCreateFields: false };
+  const field = { assignee_id: 'field-assignee' };
+  const activeTask = { status: 'todo', assignee_id: 'task-assignee' };
+  assert.equal(helpers.canMoveTask(owner, field, activeTask, 'owner', 'complete'), false, 'owner cannot bypass In Review');
+  assert.equal(helpers.canMoveTask(owner, field, { ...activeTask, status: 'in-review' }, 'owner', 'complete'), true);
+  assert.equal(helpers.canMoveTask(owner, field, { status: 'complete', assignee_id: null }, 'owner', 'todo'), true, 'owner can reopen completed tasks');
+  assert.equal(helpers.canMoveTask(member, field, activeTask, 'field-assignee', 'complete'), false, 'field assignee also follows review gate');
+  for (const next of ['todo', 'in-progress', 'in-review']) assert.equal(helpers.canMoveTask(member, field, activeTask, 'task-assignee', next), true);
+  assert.equal(helpers.canMoveTask(member, field, activeTask, 'task-assignee', 'complete'), false);
+  assert.equal(helpers.canMoveTask(member, field, { ...activeTask, status: 'complete' }, 'task-assignee', 'in-progress'), false, 'task assignee cannot reopen a completed task');
+  assert.equal(helpers.canMoveTask(member, field, activeTask, 'creator', 'in-progress'), false, 'creator/owner/name is not a substitute for the assigned user ID');
 });
 
-test('planChecklistSync diffs edited checklist rows against the saved checklist', () => {
-  const saved = [
-    { id: 's1', title: 'Keep', completed: false, assignee_id: null },
-    { id: 's2', title: 'Rename me', completed: false, assignee_id: 'u1' },
-    { id: 's3', title: 'Remove me', completed: true, assignee_id: null },
+test('My Tasks requires task.assignee_id to exactly match the authenticated user ID', () => {
+  const tasks = [
+    mkTask({ id: 'assigned', name: 'Assigned to me', assignee_id: 'me', created_by: 'other' }),
+    mkTask({ id: 'creator-only', name: 'I created it', assignee_id: 'other', created_by: 'me' }),
+    mkTask({ id: 'field-only', name: 'I own the field', assignee_id: 'other', field_id: 'my-field' }),
+    mkTask({ id: 'unassigned', name: 'Unassigned', assignee_id: null }),
   ];
-  const draft = [
-    { key: 's1', id: 's1', title: 'Keep', completed: true, assigneeId: null },
-    { key: 's2', id: 's2', title: '  Renamed  ', completed: false, assigneeId: null },
-    { key: 'new', title: ' Brand new ', completed: true, assigneeId: 'u2' },
+  const fields = [mkField({ id: 'field' }), mkField({ id: 'my-field', assignee_id: 'me' })];
+  const all = { query: '', fieldId: 'all', assigneeId: 'all', status: 'all', paused: 'all' };
+  assert.deepEqual(helpers.filterProjectTasks(tasks, fields, all, 'mine', 'me').map((task) => task.id), ['assigned']);
+  assert.deepEqual(helpers.filterProjectTasks(tasks, fields, all, 'mine', '').map((task) => task.id), []);
+  assert.deepEqual(helpers.filterProjectTasks(tasks, fields, { ...all, assigneeId: 'unassigned' }, 'all', 'me').map((task) => task.id), ['unassigned']);
+});
+
+test('task search and filters combine field, assignee, status, paused state, and descriptions', () => {
+  const tasks = [
+    mkTask({ id: 'one', name: 'Launch note', description: 'Final copy review', field_id: 'f1', assignee_id: 'u1', status: 'in-review', paused: true, sort_order: 10 }),
+    mkTask({ id: 'two', name: 'Design handoff', description: 'Assets ready', field_id: 'f2', assignee_id: 'u1', status: 'todo', paused: false, sort_order: 20 }),
+    mkTask({ id: 'three', name: 'Launch follow-up', field_id: 'f1', assignee_id: 'u2', status: 'complete', sort_order: 30 }),
   ];
-  const plan = helpers.planChecklistSync(saved, draft);
-  assert.deepEqual(plan.remove, ['s3']);
-  assert.deepEqual(plan.update, [
-    { id: 's1', patch: { completed: true } },
-    { id: 's2', patch: { title: 'Renamed', assigneeId: null } },
-  ]);
-  assert.equal(plan.create.length, 1);
-  assert.equal(plan.create[0].title, 'Brand new');
-  assert.equal(plan.create[0].completed, true);
-  assert.deepEqual(helpers.planChecklistSync(saved, helpers.checklistDraftFrom(saved)), { create: [], update: [], remove: [] }, 'an untouched checklist needs no writes');
+  const fields = [mkField({ id: 'f1', title: 'Marketing' }), mkField({ id: 'f2', title: 'Design' })];
+  const filter = { query: 'final copy', fieldId: 'f1', assigneeId: 'u1', status: 'in-review', paused: 'paused' };
+  assert.deepEqual(helpers.filterProjectTasks(tasks, fields, filter, 'all', 'u1').map((task) => task.id), ['one']);
+  assert.deepEqual(helpers.filterProjectTasks(tasks, fields, { ...filter, query: 'marketing' }, 'all', 'u1').map((task) => task.id), ['one']);
+  assert.deepEqual(helpers.filterProjectTasks(tasks, fields, { ...filter, status: 'todo' }, 'all', 'u1'), []);
 });
 
 test('filterSortFields pins first, then applies sort + filters', () => {
   const fields = [
-    mkField({ id: 'a', title: 'Alpha task', status: 'in-progress', progress: 20, subtasks: checklist(1, 5), updated_at: '2026-10-10T09:00:00Z', mine: { pinned: false, favourite: false } }),
-    mkField({ id: 'b', title: 'Beta task', status: 'completed', progress: 100, subtasks: checklist(5, 5), updated_at: '2026-10-11T09:00:00Z', folder_id: 'f-a', mine: { pinned: true, favourite: true } }),
-    mkField({ id: 'c', title: 'Gamma copy', status: 'in-progress', progress: 80, subtasks: checklist(4, 5), updated_at: '2026-10-12T09:00:00Z', folder_id: 'f-b', due_date: '2026-11-20' }),
+    mkField({ id: 'a', title: 'Alpha task', status: 'in-progress', progress: 20, updated_at: '2026-10-10T09:00:00Z', mine: { pinned: false, favourite: false } }),
+    mkField({ id: 'b', title: 'Beta task', status: 'completed', progress: 100, updated_at: '2026-10-11T09:00:00Z', folder_id: 'f-a', mine: { pinned: true, favourite: true } }),
+    mkField({ id: 'c', title: 'Gamma copy', status: 'in-progress', progress: 80, updated_at: '2026-10-12T09:00:00Z', folder_id: 'f-b', due_date: '2026-11-20' }),
   ];
   const byUpdated = helpers.filterSortFields(fields, { query: '', status: 'all', folderId: 'all', sort: 'updated' });
-  assert.deepEqual(byUpdated.map((f) => f.id), ['b', 'c', 'a'], 'pinned field must lead');
+  assert.deepEqual(byUpdated.map((field) => field.id), ['b', 'c', 'a'], 'pinned field must lead');
   const byProgress = helpers.filterSortFields(fields, { query: '', status: 'all', folderId: 'all', sort: 'progress' });
-  assert.deepEqual(byProgress.map((f) => f.id), ['b', 'c', 'a']);
+  assert.deepEqual(byProgress.map((field) => field.id), ['b', 'c', 'a']);
   const inProgress = helpers.filterSortFields(fields, { query: '', status: 'in-progress', folderId: 'all', sort: 'updated' });
-  assert.deepEqual(inProgress.map((f) => f.id), ['c', 'a']);
+  assert.deepEqual(inProgress.map((field) => field.id), ['c', 'a']);
   const inFolder = helpers.filterSortFields(fields, { query: '', status: 'all', folderId: 'f-a', sort: 'updated' });
-  assert.deepEqual(inFolder.map((f) => f.id), ['b']);
+  assert.deepEqual(inFolder.map((field) => field.id), ['b']);
   const search = helpers.filterSortFields(fields, { query: 'gamma', status: 'all', folderId: 'all', sort: 'updated' });
-  assert.deepEqual(search.map((f) => f.id), ['c']);
+  assert.deepEqual(search.map((field) => field.id), ['c']);
   const noFolder = helpers.filterSortFields(fields, { query: '', status: 'all', folderId: 'none', sort: 'updated' });
-  assert.deepEqual(noFolder.map((f) => f.id), ['a'], 'only the folder-less field remains');
+  assert.deepEqual(noFolder.map((field) => field.id), ['a']);
 });
 
-test('projectStats summarises statuses and completion', () => {
+test('projectStats summarises field workflow statuses and overall field completion', () => {
   const stats = helpers.projectStats([
-    mkField({ id: '1', status: 'planning' }),
-    mkField({ id: '2', status: 'in-progress' }),
-    mkField({ id: '3', status: 'in-review' }),
-    mkField({ id: '4', status: 'completed' }),
+    mkField({ id: '1', status: 'planning' }), mkField({ id: '2', status: 'in-progress' }),
+    mkField({ id: '3', status: 'in-review' }), mkField({ id: '4', status: 'completed' }),
   ], 3);
   assert.deepEqual(stats, { active: 2, inReview: 1, completed: 1, members: 3, completion: 25 });
   assert.deepEqual(helpers.projectStats([], 1), { active: 0, inReview: 0, completed: 0, members: 1, completion: 0 });
@@ -136,9 +146,10 @@ test('relativeTime and formatDate degrade gracefully', () => {
   assert.equal(helpers.formatDate(null), '—');
 });
 
-test('activityLabel maps known actions and cleans unknown ones', () => {
+test('activityLabel maps task actions and cleans unknown ones', () => {
   assert.equal(helpers.activityLabel('field_status_changed'), 'moved field');
-  assert.equal(helpers.activityLabel('member_removed'), 'removed a member');
+  assert.equal(helpers.activityLabel('task_status_changed'), 'moved task');
+  assert.equal(helpers.activityLabel('task_comment_added'), 'commented on task');
   assert.equal(helpers.activityLabel('totally_new_action'), 'totally new action');
 });
 
@@ -149,16 +160,4 @@ test('profileAvatar recognises photos, emojis, and DiceBear avatars and rejects 
   for (const unsafe of ['', null, undefined, 'javascript:alert(1)', 'https://evil.example/x.png', 'data:image/svg+xml;base64,PHN2Zz4=', 'emoji:', 'emoji:<b>']) {
     assert.deepEqual(helpers.profileAvatar(unsafe), { kind: 'initials' }, `${String(unsafe)} falls back to initials`);
   }
-});
-
-test('canToggleChecklistItem lets editors and assignees tick items, nobody else', () => {
-  const member = { owner: false, role: 'commenter', canCreateFields: false };
-  const owner = { owner: true, role: 'owner', canCreateFields: true };
-  const field = { creator_id: 'creator', assignee_id: 'field-assignee' };
-  assert.equal(helpers.canToggleChecklistItem(owner, field, { assignee_id: null }, 'someone'), true, 'project owner');
-  assert.equal(helpers.canToggleChecklistItem(member, field, { assignee_id: null }, 'creator'), true, 'field creator');
-  assert.equal(helpers.canToggleChecklistItem(member, field, { assignee_id: null }, 'field-assignee'), true, 'field assignee, any item');
-  assert.equal(helpers.canToggleChecklistItem(member, field, { assignee_id: 'item-assignee' }, 'item-assignee'), true, 'item assignee, own item');
-  assert.equal(helpers.canToggleChecklistItem(member, field, { assignee_id: 'item-assignee' }, 'bystander'), false, 'unrelated member');
-  assert.equal(helpers.canToggleChecklistItem(null, field, { assignee_id: 'x' }, 'x'), false, 'no access');
 });
