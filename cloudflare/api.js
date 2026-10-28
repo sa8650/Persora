@@ -9,8 +9,11 @@ import { handlePasswordVault, PASSWORD_VAULT_ROUTE_PREFIX } from "./password-vau
 import { handleCalendar, dispatchCalendarReminders, scheduleCalendarDispatch, exportCalendarData, CALENDAR_ROUTE_PREFIX } from "./calendar.js";
 import { handleHabits, dispatchHabitReminders, scheduleHabitDispatch, exportHabitData, HABITS_ROUTE_PREFIX } from "./habits.js";
 import { handleLoans, dispatchLoanReminders, scheduleLoanDispatch, exportLoanData, LOANS_ROUTE_PREFIX } from "./loans.js";
-import { handleTables, exportTableData, TABLES_ROUTE_PREFIX } from "./tables.js";
+import { handleTables, handlePublicTables, exportTableData, TABLES_ROUTE_PREFIX, PUBLIC_TABLES_ROUTE_PREFIX } from "./tables.js";
+import { handleForms, handlePublicForms, exportFormsData, FORMS_ROUTE_PREFIX, PUBLIC_FORMS_ROUTE_PREFIX } from "./forms.js";
+import { handleDocs, handlePublicDocs, exportDocsData, DOCS_ROUTE_PREFIX, PUBLIC_DOCS_ROUTE_PREFIX } from "./docs.js";
 import { handleWorkspacePreferences, exportWorkspacePreferences, WORKSPACE_PREFERENCES_PATH } from "./workspace-preferences.js";
+import { handleDashboard, exportDashboardData, DASHBOARD_ROUTE_PREFIX } from "./dashboard.js";
 import { handleConnections, handleIntegrationAdmin, CONNECTIONS_ROUTE_PREFIX, ADMIN_INTEGRATIONS_PREFIX } from "./connections.js";
 
 const DEFAULT_SETTINGS = {
@@ -159,6 +162,25 @@ export default {
       if (publicCardMatch && publicCardMatch[2] === "report" && request.method === "POST") {
         const body = await readBody(request);
         return json(await reportPublicBusinessCard(publicCardMatch[1], body, request, env), 200, origin);
+      }
+      if (url.pathname === PUBLIC_TABLES_ROUTE_PREFIX || url.pathname.startsWith(`${PUBLIC_TABLES_ROUTE_PREFIX}/`)) {
+        const optionalIdentity = await authorize(request, env).catch(() => null);
+        return await handlePublicTables(request, env, origin, optionalIdentity);
+      }
+      if (url.pathname === PUBLIC_FORMS_ROUTE_PREFIX || url.pathname.startsWith(`${PUBLIC_FORMS_ROUTE_PREFIX}/`)) {
+        const optionalIdentity = await authorize(request, env).catch(() => null);
+        if (request.method === "POST" && /^\/public\/forms\/[A-Za-z0-9_-]{24,64}\/upload$/.test(url.pathname)) {
+          const settings = await loadSettings(env);
+          return await handlePublicForms(request, env, origin, optionalIdentity, {
+            checkOwnerUploadPlan: (ownerId) => hasActivePaidUploadPlan(ownerId, env),
+            storageUsage: userStorageUsage,
+            maxUploadMb: Math.min(MAX_CONFIGURABLE_UPLOAD_MB, Number(settings.storage.maxUploadMb) || 10),
+          });
+        }
+        return await handlePublicForms(request, env, origin, optionalIdentity);
+      }
+      if (url.pathname === PUBLIC_DOCS_ROUTE_PREFIX || url.pathname.startsWith(`${PUBLIC_DOCS_ROUTE_PREFIX}/`)) {
+        return await handlePublicDocs(request, env, origin);
       }
       if (url.pathname === "/business-cards" && request.method === "GET") {
         const identity = await authorize(request, env);
@@ -675,7 +697,11 @@ export default {
         // Attaching a file to a Smart Table stores it in private storage, so it
         // follows the same rules as every other upload: an active upload plan,
         // the storage quota and the configured upload size.
-        const tableServices = { deleteFileIfUnreferenced: deleteTrashFileIfUnreferenced };
+        const tableServices = {
+          deleteFileIfUnreferenced: deleteTrashFileIfUnreferenced,
+          resolveShareRecipient,
+          writeShareNotification,
+        };
         if (request.method === "POST" && /^\/tables\/[0-9a-f-]+\/attachments$/i.test(url.pathname)) {
           if (!(await hasActivePaidUploadPlan(identity.id, env))) throw uploadPlanRequiredError();
           const settings = await loadSettings(env);
@@ -683,10 +709,38 @@ export default {
         }
         return await handleTables(request, identity, env, origin, tableServices);
       }
+      if (url.pathname === FORMS_ROUTE_PREFIX || url.pathname.startsWith(FORMS_ROUTE_PREFIX + "/")) {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in to open Persora Forms." }, 401, origin);
+        const formServices = { deleteFileIfUnreferenced: deleteTrashFileIfUnreferenced };
+        if (request.method === "POST" && /^\/forms\/[0-9a-f-]+\/assets$/i.test(url.pathname)) {
+          if (!(await hasActivePaidUploadPlan(identity.id, env))) throw uploadPlanRequiredError();
+          const settings = await loadSettings(env);
+          return await handleForms(request, identity, env, origin, {
+            ...formServices,
+            storageUsage: userStorageUsage,
+            maxUploadMb: Math.min(MAX_CONFIGURABLE_UPLOAD_MB, Number(settings.storage.maxUploadMb) || 10),
+          });
+        }
+        return await handleForms(request, identity, env, origin, formServices);
+      }
+      if (url.pathname === DOCS_ROUTE_PREFIX || url.pathname.startsWith(DOCS_ROUTE_PREFIX + "/")) {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in to open Persora Docs." }, 401, origin);
+        return await handleDocs(request, identity, env, origin, {
+          resolveShareRecipient,
+          writeShareNotification,
+        });
+      }
       if (url.pathname === WORKSPACE_PREFERENCES_PATH) {
         const identity = await authorize(request, env);
         if (!identity) return json({ error: "Sign in to save your preferences." }, 401, origin);
         return await handleWorkspacePreferences(request, identity, env, origin);
+      }
+      if (url.pathname === DASHBOARD_ROUTE_PREFIX || url.pathname.startsWith(`${DASHBOARD_ROUTE_PREFIX}/`)) {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in to access your dashboard." }, 401, origin);
+        return await handleDashboard(request, identity, env, origin);
       }
       if (url.pathname === "/internal/trash-purge" && request.method === "POST") {
         // For external schedulers (e.g. Android cron jobs): enabled only when the
@@ -729,7 +783,7 @@ export default {
       if (url.pathname === PROJECTS_ROUTE_PREFIX || url.pathname.startsWith(PROJECTS_ROUTE_PREFIX + "/")) {
         const identity = await authorize(request, env);
         if (!identity) return json({ error: "Sign in is required to open projects." }, 401, origin);
-        const projectUpload = request.method === "POST" && /^\/projects\/[0-9a-f-]+\/fields\/[0-9a-f-]+\/attachments$/i.test(url.pathname);
+        const projectUpload = request.method === "POST" && /^\/projects\/[0-9a-f-]+\/(?:fields|tasks)\/[0-9a-f-]+\/attachments$/i.test(url.pathname);
         if (projectUpload) {
           if (!(await hasActivePaidUploadPlan(identity.id, env))) throw uploadPlanRequiredError();
           const settings = await loadSettings(env);
@@ -1707,7 +1761,8 @@ async function deleteTrashFileIfUnreferenced(userId, key, env) {
   const photoStudioKey = key.startsWith(`${userId}/photo-studio/`);
   const pdfStudioKey = key.startsWith(`${userId}/pdf-studio/`);
   const tableKey = key.startsWith(`${userId}/persora-table/`);
-  const [items, medical, contacts, cardsByPhoto, cardsByLogo, otherTrash, studioPhotos, studioPdfs, tableFiles] = await Promise.all([
+  const formKey = key.startsWith(`${userId}/persora-forms/`);
+  const [items, medical, contacts, cardsByPhoto, cardsByLogo, otherTrash, studioPhotos, studioPdfs, tableFiles, formFiles] = await Promise.all([
     restRows(`vault_items?user_id=eq.${owner}&file_key=eq.${encoded}&select=id&limit=1`, env),
     restRows(`medical_records?user_id=eq.${owner}&file_key=eq.${encoded}&select=id&limit=1`, env),
     restRows(`contacts?user_id=eq.${owner}&photo_key=eq.${encoded}&select=id&limit=1`, env),
@@ -1717,8 +1772,9 @@ async function deleteTrashFileIfUnreferenced(userId, key, env) {
     photoStudioKey ? restRows(`photo_studio_photos?user_id=eq.${owner}&file_key=eq.${encoded}&select=id&limit=1`, env) : Promise.resolve([]),
     pdfStudioKey ? restRows(`pdf_studio_documents?user_id=eq.${owner}&file_key=eq.${encoded}&select=id&limit=1`, env) : Promise.resolve([]),
     tableKey ? restRows(`persora_table_attachments?user_id=eq.${owner}&file_key=eq.${encoded}&select=id&limit=1`, env) : Promise.resolve([]),
+    formKey ? restRows(`persora_form_assets?owner_id=eq.${owner}&file_key=eq.${encoded}&select=id&limit=1`, env) : Promise.resolve([]),
   ]);
-  if (items.length || medical.length || contacts.length || cardsByPhoto.length || cardsByLogo.length || otherTrash.length || studioPhotos.length || studioPdfs.length || tableFiles.length) return;
+  if (items.length || medical.length || contacts.length || cardsByPhoto.length || cardsByLogo.length || otherTrash.length || studioPhotos.length || studioPdfs.length || tableFiles.length || formFiles.length) return;
   const object = await env.VAULT_FILES.head(key);
   if (!object) return;
   if (object.customMetadata?.ownerId && object.customMetadata.ownerId !== userId) {
@@ -1770,6 +1826,7 @@ async function restoreTrashEntry(identity, id, env) {
   if (rows[0]?.kind === "photo_studio_photo") return callTrashRpc("persora_photo_studio_trash_restore", { p_owner: identity.id, p_trash_id: id }, env);
   if (rows[0]?.kind === "pdf_studio_document") return callTrashRpc("persora_pdf_studio_trash_restore", { p_owner: identity.id, p_trash_id: id }, env);
   if (rows[0]?.kind === "persora_table") return callTrashRpc("persora_table_trash_restore", { p_owner: identity.id, p_trash_id: id }, env);
+  if (rows[0]?.kind === "persora_doc") return callTrashRpc("persora_doc_trash_restore", { p_owner: identity.id, p_trash_id: id }, env);
   return callTrashRpc("persora_trash_restore", { p_owner: identity.id, p_trash_id: id }, env);
 }
 
@@ -3000,7 +3057,7 @@ async function createPaymentRequest(identity, body, env) {
     const body = await response.json().catch(() => ({}));
     const message = String(body.message || body.error || "");
     if (/billing_period|duration_count|term_months/i.test(message) && /column|schema/i.test(message)) {
-      throw new HttpError("The billing-term database migration is still pending. Apply supabase/migrations/202610030002_payment_record_billing_terms.sql, then retry.", 503);
+      throw new HttpError("The billing-term database schema is still pending. Apply supabase/schema.sql, then retry.", 503);
     }
     throw new Error(message || "Payment request could not be submitted.");
   }
@@ -3148,7 +3205,7 @@ async function reviewPayment(body, identity, env) {
 async function createAccountExport(identity, env) {
   if (!env.VAULT_FILES) throw new Error("Private file storage is unavailable for this export.");
   const owner = encodeURIComponent(identity.id);
-  const [profileRows, items, contacts, cards, medicalRecords, medicalRecordLinks, documentShares, recordShares, notifications, authoredComments, subscriptions, payments, files, timelineExport, calendarExport, workspacePreferences, habitExport, loanExport, tableExport] = await Promise.all([
+  const [profileRows, items, contacts, cards, medicalRecords, medicalRecordLinks, documentShares, recordShares, notifications, authoredComments, subscriptions, payments, files, timelineExport, calendarExport, workspacePreferences, dashboardLayout, habitExport, loanExport, tableExport, formsExport, docsExport] = await Promise.all([
     restRows(`profiles?id=eq.${owner}&select=id,login_id,email,full_name,timezone,avatar_url,created_at,updated_at`, env),
     restRowsPaged(`vault_items?user_id=eq.${owner}&select=*&order=id.asc`, env),
     restRowsPaged(`contacts?user_id=eq.${owner}&select=*&order=id.asc`, env),
@@ -3165,9 +3222,12 @@ async function createAccountExport(identity, env) {
     loadTimelineExport(identity, env),
     exportCalendarData(identity.id, env),
     exportWorkspacePreferences(identity.id, env),
+    exportDashboardData(identity.id, env),
     exportHabitData(identity.id, env),
     exportLoanData(identity.id, env),
     exportTableData(identity.id, env),
+    exportFormsData(identity.id, env),
+    exportDocsData(identity.id, env),
   ]);
   const ordinaryFiles = files.filter((file) => !file.key.startsWith(`${identity.id}/timeline/`));
   const indexedFiles = [
@@ -3181,7 +3241,7 @@ async function createAccountExport(identity, env) {
   const manifest = {
     format: "persora-complete-export-v1", exportedAt: new Date().toISOString(),
     account: profileRows[0] || { login_id: identity.login_id || "", email: identity.email || "", full_name: identity.full_name || "" },
-    data: { vaultItems: items, contacts, businessCards: cards, medicalRecords, medicalRecordLinks, documentShares, recordShares, notifications, authoredShareComments: authoredComments, subscriptions, paymentHistory: payments, timelineEvents: timelineExport.events, calendarEvents: calendarExport.events, calendarReminders: calendarExport.reminders, calendarPreferences: calendarExport.preferences, workspacePreferences, habits: habitExport.habits, habitCheckins: habitExport.checkins, habitReminders: habitExport.reminders, loans: loanExport.loans, loanInstallments: loanExport.installments, loanPayments: loanExport.payments, loanReminders: loanExport.reminders, tables: tableExport.tables, tableSheets: tableExport.sheets, tableRecords: tableExport.records, tableAttachments: tableExport.attachments },
+    data: { vaultItems: items, contacts, businessCards: cards, medicalRecords, medicalRecordLinks, documentShares, recordShares, notifications, authoredShareComments: authoredComments, subscriptions, paymentHistory: payments, timelineEvents: timelineExport.events, calendarEvents: calendarExport.events, calendarReminders: calendarExport.reminders, calendarPreferences: calendarExport.preferences, workspacePreferences, dashboardLayout, habits: habitExport.habits, habitCheckins: habitExport.checkins, habitReminders: habitExport.reminders, loans: loanExport.loans, loanInstallments: loanExport.installments, loanPayments: loanExport.payments, loanReminders: loanExport.reminders, tables: tableExport.tables, tableSheets: tableExport.sheets, tableRecords: tableExport.records, tableAttachments: tableExport.attachments, forms: formsExport.forms, formResponses: formsExport.responses, docs: docsExport.docs },
     attachments: attachmentManifest,
     note: "Private attachment bytes, including medical-record files, are included under files/. Timeline text is decrypted only for this authenticated account export; timeline attachment files are decrypted into the archive. Session tokens, password hashes, and other accounts' private records are excluded.",
   };

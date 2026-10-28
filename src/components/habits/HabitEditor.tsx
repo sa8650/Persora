@@ -14,6 +14,9 @@ import type { Habit } from "../../lib/habit-api";
 import {
   CATEGORY_LABELS, HABIT_COLOR_LABELS, HABIT_ICON_COMPONENTS, HABIT_ICON_LABELS, WEEKDAY_LETTER, WEEKDAY_LONG, formatDay,
 } from "./habit-visuals";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Spinner } from "@/components/ui/spinner";
+import { PersoraDeleteModal } from "@/design-system";
 
 type TrackingMode = "check" | "repetitions" | "measurement";
 const TRACKING_MODES: readonly (readonly [TrackingMode, string])[] = [["check", "Checkbox"], ["repetitions", "Repetitions"], ["measurement", "Measurement"]];
@@ -248,14 +251,14 @@ export default function HabitEditor({ habit, today, email, busy, error, onSave, 
 
             <fieldset className="hb-fieldset hb-reminder">
               <legend>Reminder</legend>
-              <label className="hb-switch"><input type="checkbox" checked={draft.reminderOn} onChange={(event) => update({ reminderOn: event.target.checked })}/><span>Remind me on scheduled days</span></label>
+              <label className="hb-switch"><Checkbox checked={draft.reminderOn} aria-label="Remind me on scheduled days" onCheckedChange={(checked) => update({ reminderOn: checked === true })}/><span>Remind me on scheduled days</span></label>
               {draft.reminderOn && <>
                 <label className="hb-inline-field"><span>at</span>
                   <input id="hb-field-reminderTime" type="time" value={draft.reminderTime} onChange={(event) => update({ reminderTime: event.target.value })} aria-label="Reminder time" aria-invalid={Boolean(fieldError("reminderTime"))}/>
                 </label>
                 {fieldError("reminderTime") && <span className="hb-field-error" role="alert">{fieldError("reminderTime")}</span>}
                 <label className={`hb-switch ${email.available ? "" : "is-disabled"}`}>
-                  <input type="checkbox" checked={draft.reminderEmail && email.available} disabled={!email.available} onChange={(event) => update({ reminderEmail: event.target.checked })}/>
+                  <Checkbox checked={draft.reminderEmail && email.available} disabled={!email.available} aria-label="Also send an email" onCheckedChange={(checked) => update({ reminderEmail: checked === true })}/>
                   <span>Also send an email</span>
                 </label>
                 <div className="hb-hint hb-reminder-help">
@@ -272,17 +275,7 @@ export default function HabitEditor({ habit, today, email, busy, error, onSave, 
             {generalError && <p className="hb-form-error" role="alert">{generalError}</p>}
           </div>
         </div>
-        {confirmDelete && habit ? <div className="hb-confirm" role="alertdialog" aria-labelledby="hb-confirm-title" aria-describedby="hb-confirm-text">
-          <div>
-            <b id="hb-confirm-title">Delete “{habit.name}”?</b>
-            <p id="hb-confirm-text">This permanently deletes the habit and its entire check-in history{checkinCount ? ` (${checkinCount} completed day${checkinCount === 1 ? "" : "s"})` : ""}. It can't be undone.{!archived ? " Archive it instead to hide it and keep the history." : ""}</p>
-          </div>
-          <div className="hb-confirm-actions">
-            <button type="button" className="quiet-button" onClick={() => setConfirmDelete(false)} disabled={busy} autoFocus>Cancel</button>
-            {!archived && onArchive && <button type="button" className="quiet-button" onClick={onArchive} disabled={busy}>Archive instead</button>}
-            <button type="button" className="hb-danger-button" onClick={onDelete} disabled={busy}>{busy ? <><span className="spinner"/> Deleting…</> : "Delete permanently"}</button>
-          </div>
-        </div> : <div className="editor-form-footer">
+        <div className="editor-form-footer">
           <div className="hb-footer-secondary">
             {habit && !archived && onArchive && <button type="button" className="quiet-button" onClick={onArchive} disabled={busy}><Archive size={14}/> Archive</button>}
             {habit && archived && onRestore && <button type="button" className="quiet-button" onClick={onRestore} disabled={busy}><ArchiveRestore size={14}/> Restore</button>}
@@ -290,9 +283,31 @@ export default function HabitEditor({ habit, today, email, busy, error, onSave, 
           </div>
           <div className="editor-actions">
             <button type="button" className="quiet-button" onClick={onClose} disabled={busy}>Cancel</button>
-            <button type="submit" className="editor-submit" disabled={busy}>{busy ? <><span className="spinner"/> Saving…</> : habit ? "Save Changes" : "Create Habit"}</button>
+            <button type="submit" className="editor-submit" disabled={busy}>{busy ? <><Spinner className="size-3.5"/> Saving…</> : habit ? "Save Changes" : "Create Habit"}</button>
           </div>
-        </div>}
+        </div>
+        {confirmDelete && habit && onDelete ? (
+          <PersoraDeleteModal
+            eyebrow="Habit Tracker"
+            title={`Delete “${habit.name}”?`}
+            titleId="hb-confirm-title"
+            confirmLabel={busy ? "Deleting…" : "Delete permanently"}
+            busy={busy}
+            onCancel={() => setConfirmDelete(false)}
+            onConfirm={onDelete}
+          >
+            <p id="hb-confirm-text">
+              This permanently deletes the habit and its entire check-in history{checkinCount ? ` (${checkinCount} completed day${checkinCount === 1 ? "" : "s"})` : ""}. It can't be undone.{!archived ? " Archive it instead to hide it and keep the history." : ""}
+            </p>
+            {!archived && onArchive ? (
+              <div className="mt-3">
+                <button type="button" className="quiet-button" onClick={onArchive} disabled={busy}>
+                  <Archive size={14} /> Archive instead
+                </button>
+              </div>
+            ) : null}
+          </PersoraDeleteModal>
+        ) : null}
       </form>
     </ItemModalShell>
   </ModalPortal>;

@@ -17,6 +17,9 @@ import {
 } from "../lib/password-generator";
 import { generateAiPasswordSuggestions, isPagesApiConfigured } from "../lib/cloud";
 import type { VaultEntry } from "../lib/password-vault-client";
+import { Badge } from "@/components/reui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Spinner } from "@/components/ui/spinner";
 
 const MODE_META: Record<GeneratorMode, { icon: typeof Dices; label: string }> = {
   random: { icon: Dices, label: "Random" },
@@ -220,7 +223,7 @@ export default function PasswordGeneratorPanel({
           </div>
 
           <div className="pm-gen-display" data-empty={!password || undefined}>
-            <code className="pm-gen-value" aria-live="polite">{aiBusy ? "Asking Persora AI…" : password ? (showValue ? password : "•".repeat(password.length)) : "Generating…"}</code>
+            <code className="pm-gen-value" aria-live="polite">{aiBusy ? <span className="inline-flex items-center gap-2"><Spinner className="size-3.5" /> Asking Persora AI…</span> : password ? (showValue ? password : "•".repeat(password.length)) : "Generating…"}</code>
             <div className="pm-gen-display-actions">
               <button type="button" className="tiny-action" disabled={!password || aiBusy} aria-label={showValue ? "Hide password" : "Show password"} title={showValue ? "Hide password" : "Show password"} aria-pressed={showValue} onClick={() => setShowValue((visible) => !visible)}>
                 {showValue ? <EyeOff size={14} /> : <Eye size={14} />}
@@ -246,7 +249,14 @@ export default function PasswordGeneratorPanel({
               <div className="pm-strength-head">
                 <span className="pm-strength-title">Password strength</span>
                 <span className="pm-strength-bits">{report.bits} bits</span>
-                <span className="pm-strength-badge">{report.label}</span>
+                <Badge
+                  size="xs"
+                  radius="full"
+                  variant={report.level === "weak" ? "destructive-outline" : report.level === "fair" ? "warning-outline" : report.level === "strong" ? "info-outline" : "success-outline"}
+                  className="pm-strength-badge uppercase tracking-wider font-bold"
+                >
+                  {report.label}
+                </Badge>
               </div>
               <div className="pm-meter" role="meter" aria-valuemin={0} aria-valuemax={4} aria-valuenow={report.index + 1} aria-valuetext={report.label} aria-label={`Password strength: ${report.label}, about ${report.bits} bits of entropy`}>
                 {[0, 1, 2, 3].map((segment) => <span key={segment} className={`pm-meter-seg ${segment <= report.index ? "is-on" : ""}`} />)}
@@ -266,11 +276,11 @@ export default function PasswordGeneratorPanel({
                 <span className="pm-range-value">{randomOpts.length}</span>
               </div>
               <div className="pm-check-grid">
-                <label className="pm-check"><input type="checkbox" checked={randomOpts.upper} onChange={() => setRandomOpts(toggleRandomClass(randomOpts, "upper"))} /> Uppercase <b>A–Z</b></label>
-                <label className="pm-check"><input type="checkbox" checked={randomOpts.lower} onChange={() => setRandomOpts(toggleRandomClass(randomOpts, "lower"))} /> Lowercase <b>a–z</b></label>
-                <label className="pm-check"><input type="checkbox" checked={randomOpts.digits} onChange={() => setRandomOpts(toggleRandomClass(randomOpts, "digits"))} /> Numbers <b>0–9</b></label>
-                <label className="pm-check"><input type="checkbox" checked={randomOpts.symbols} onChange={() => setRandomOpts(toggleRandomClass(randomOpts, "symbols"))} /> Symbols <b>!@#$%</b></label>
-                <label className="pm-check pm-check-wide"><input type="checkbox" checked={randomOpts.excludeAmbiguous} onChange={(event) => setRandomOpts({ ...randomOpts, excludeAmbiguous: event.target.checked })} /> Exclude ambiguous characters <b>l&nbsp;1&nbsp;I&nbsp;O&nbsp;0</b></label>
+                <label className="pm-check"><Checkbox checked={randomOpts.upper} aria-label="Uppercase A–Z" onCheckedChange={() => setRandomOpts(toggleRandomClass(randomOpts, "upper"))} /> Uppercase <b>A–Z</b></label>
+                <label className="pm-check"><Checkbox checked={randomOpts.lower} aria-label="Lowercase a–z" onCheckedChange={() => setRandomOpts(toggleRandomClass(randomOpts, "lower"))} /> Lowercase <b>a–z</b></label>
+                <label className="pm-check"><Checkbox checked={randomOpts.digits} aria-label="Numbers 0–9" onCheckedChange={() => setRandomOpts(toggleRandomClass(randomOpts, "digits"))} /> Numbers <b>0–9</b></label>
+                <label className="pm-check"><Checkbox checked={randomOpts.symbols} aria-label="Symbols" onCheckedChange={() => setRandomOpts(toggleRandomClass(randomOpts, "symbols"))} /> Symbols <b>!@#$%</b></label>
+                <label className="pm-check pm-check-wide"><Checkbox checked={randomOpts.excludeAmbiguous} aria-label="Exclude ambiguous characters" onCheckedChange={(checked) => setRandomOpts({ ...randomOpts, excludeAmbiguous: checked === true })} /> Exclude ambiguous characters <b>l&nbsp;1&nbsp;I&nbsp;O&nbsp;0</b></label>
               </div>
             </div>
           )}
@@ -302,8 +312,8 @@ export default function PasswordGeneratorPanel({
                 </label>
               </div>
               <div className="pm-check-grid">
-                <label className="pm-check"><input type="checkbox" checked={memoOpts.addNumber} onChange={(event) => setMemoOpts({ ...memoOpts, addNumber: event.target.checked })} /> Include a number <b>42</b></label>
-                <label className="pm-check"><input type="checkbox" checked={memoOpts.addSymbol} onChange={(event) => setMemoOpts({ ...memoOpts, addSymbol: event.target.checked })} /> Include a symbol <b>!</b></label>
+                <label className="pm-check"><Checkbox checked={memoOpts.addNumber} aria-label="Include a number" onCheckedChange={(checked) => setMemoOpts({ ...memoOpts, addNumber: checked === true })} /> Include a number <b>42</b></label>
+                <label className="pm-check"><Checkbox checked={memoOpts.addSymbol} aria-label="Include a symbol" onCheckedChange={(checked) => setMemoOpts({ ...memoOpts, addSymbol: checked === true })} /> Include a symbol <b>!</b></label>
               </div>
             </div>
           )}
@@ -325,9 +335,9 @@ export default function PasswordGeneratorPanel({
                 </label>
               </div>
               <div className="pm-check-grid">
-                <label className="pm-check"><input type="checkbox" checked={rhythmOpts.capitalize} onChange={(event) => setRhythmOpts({ ...rhythmOpts, capitalize: event.target.checked })} /> Capitalize the first letter</label>
-                <label className="pm-check"><input type="checkbox" checked={rhythmOpts.addNumber} onChange={(event) => setRhythmOpts({ ...rhythmOpts, addNumber: event.target.checked })} /> Include a number <b>7</b></label>
-                <label className="pm-check"><input type="checkbox" checked={rhythmOpts.addSymbol} onChange={(event) => setRhythmOpts({ ...rhythmOpts, addSymbol: event.target.checked })} /> Include a symbol <b>!</b></label>
+                <label className="pm-check"><Checkbox checked={rhythmOpts.capitalize} aria-label="Capitalize the first letter" onCheckedChange={(checked) => setRhythmOpts({ ...rhythmOpts, capitalize: checked === true })} /> Capitalize the first letter</label>
+                <label className="pm-check"><Checkbox checked={rhythmOpts.addNumber} aria-label="Include a number" onCheckedChange={(checked) => setRhythmOpts({ ...rhythmOpts, addNumber: checked === true })} /> Include a number <b>7</b></label>
+                <label className="pm-check"><Checkbox checked={rhythmOpts.addSymbol} aria-label="Include a symbol" onCheckedChange={(checked) => setRhythmOpts({ ...rhythmOpts, addSymbol: checked === true })} /> Include a symbol <b>!</b></label>
               </div>
               <p className="pm-gen-note"><Info size={13} /><span>Pronounceable passwords are easier to remember — <b>but pronounceability does not guarantee strength</b>. Rhythm passwords trade some entropy for memorability, so always check the strength meter above and prefer more length.</span></p>
             </div>
@@ -353,9 +363,9 @@ export default function PasswordGeneratorPanel({
                 <span className="pm-range-value">{aiOpts.length}</span>
               </div>
               <div className="pm-check-grid">
-                <label className="pm-check"><input type="checkbox" checked={aiOpts.capitalize} onChange={(event) => updateAiOptions({ ...aiOpts, capitalize: event.target.checked })} /> Capitalize words</label>
-                <label className="pm-check"><input type="checkbox" checked={aiOpts.addNumber} onChange={(event) => updateAiOptions({ ...aiOpts, addNumber: event.target.checked })} /> Include a number <b>7</b></label>
-                <label className="pm-check"><input type="checkbox" checked={aiOpts.addSymbol} onChange={(event) => updateAiOptions({ ...aiOpts, addSymbol: event.target.checked })} /> Include a symbol <b>!</b></label>
+                <label className="pm-check"><Checkbox checked={aiOpts.capitalize} aria-label="Capitalize words" onCheckedChange={(checked) => updateAiOptions({ ...aiOpts, capitalize: checked === true })} /> Capitalize words</label>
+                <label className="pm-check"><Checkbox checked={aiOpts.addNumber} aria-label="Include a number" onCheckedChange={(checked) => updateAiOptions({ ...aiOpts, addNumber: checked === true })} /> Include a number <b>7</b></label>
+                <label className="pm-check"><Checkbox checked={aiOpts.addSymbol} aria-label="Include a symbol" onCheckedChange={(checked) => updateAiOptions({ ...aiOpts, addSymbol: checked === true })} /> Include a symbol <b>!</b></label>
               </div>
               <p className="pm-gen-note"><Info size={13} /><span>The AI only suggests word material — it never sees your vault, existing passwords, or master password, and secure randomness on this device always picks, shuffles, and inserts the final characters. If the AI is unreachable you seamlessly get a local generation. <b>Memorable does not always mean strong</b> — check the meter above and add length when in doubt.</span></p>
             </div>
@@ -384,7 +394,7 @@ export default function PasswordGeneratorPanel({
         <div className="editor-form-footer">
           <div className="editor-footnote"><ShieldCheck size={14} /><span>Generated on this device · never shared</span></div>
           <div className="editor-actions">
-            <button type="button" className="quiet-button" onClick={regenerate} disabled={aiBusy} title="Generate a password with these settings"><RefreshCw size={14} className={aiBusy ? "pm-spin" : ""} /> {password ? "Regenerate" : "Generate"}</button>
+            <button type="button" className="quiet-button" onClick={regenerate} disabled={aiBusy} title="Generate a password with these settings">{aiBusy ? <Spinner className="size-3.5" /> : <RefreshCw size={14} />} {password ? "Regenerate" : "Generate"}</button>
             <button type="button" className={`quiet-button ${copied ? "is-copied" : ""}`} disabled={!password || aiBusy} onClick={() => void copyValue()}>{copied ? <Check size={14} /> : <Copy size={14} />} {copied ? "Copied" : "Copy"}</button>
             <button type="button" className="editor-submit" disabled={!password || aiBusy} onClick={save}><Save size={15} /> {saveTarget === "new" ? "Save as new login" : "Replace & save"}</button>
           </div>

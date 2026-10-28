@@ -280,3 +280,121 @@ test('project detail returns each person’s safe profile picture for avatars', 
   const unsafe = await (await invoke(`/projects/${PROJECT}`)).json();
   assert.equal(unsafe.owner.avatarUrl, '', 'unsupported avatar values are never forwarded');
 });
+
+test('positioned task move routes to persora_project_task_position and api.js gates task attachment uploads', async () => {
+  const TASK = '9f1e2d3c-4b5a-4678-8901-23456789abcd';
+  const FIELD = '1a2b3c4d-5e6f-4789-8012-3456789abcde';
+  const rpcCalls = [];
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(String(input));
+    if (url.pathname.endsWith('/projects')) return Response.json([record()]);
+    if (url.pathname.endsWith('/project_tasks')) return Response.json([{ id: TASK, project_id: PROJECT, field_id: FIELD, name: 'Reorder me', description: '', status: 'todo', assignee_id: OWNER, paused: false, created_by: OWNER, updated_by: OWNER, sort_order: 100, created_at: '2026-10-26T00:00:00Z', updated_at: '2026-10-26T00:00:00Z' }]);
+    if (url.pathname.endsWith('/project_fields')) return Response.json([{ id: FIELD, project_id: PROJECT, title: 'Design', assignee_id: OWNER }]);
+    if (url.pathname.includes('/rpc/')) {
+      const name = url.pathname.split('/rpc/')[1];
+      const args = JSON.parse(String(init.body || '{}'));
+      rpcCalls.push({ name, args });
+      return Response.json({ id: TASK, status: args.p_status, sort_order: args.p_sort_order ?? 110 });
+    }
+    return Response.json([]);
+  };
+
+  const positioned = await invoke(`/projects/${PROJECT}/tasks/${TASK}/move`, 'POST', { status: 'todo', sortOrder: -100 });
+  assert.equal(positioned.status, 200);
+  assert.equal(rpcCalls[0].name, 'persora_project_task_position');
+  assert.equal(rpcCalls[0].args.p_sort_order, -100);
+
+  const badOrder = await invoke(`/projects/${PROJECT}/tasks/${TASK}/move`, 'POST', { status: 'todo', sortOrder: 'not-a-number' });
+  assert.equal(badOrder.status, 400);
+
+  const { readFileSync } = await import('node:fs');
+  const apiSource = readFileSync(new URL('../cloudflare/api.js', import.meta.url), 'utf8');
+  const uploadRegexMatch = apiSource.match(/const projectUpload = request\.method === "POST" && (\/\^\\\/projects[^;]+)\.test\(url\.pathname\)/);
+  assert.ok(uploadRegexMatch, 'cloudflare/api.js defines projectUpload matcher');
+  const matcher = new RegExp('^/projects/[0-9a-f-]+/(?:fields|tasks)/[0-9a-f-]+/attachments$', 'i');
+  assert.ok(apiSource.includes('(?:fields|tasks)'), 'api.js routes both field and task attachment uploads through paid-plan and storage services');
+  assert.equal(matcher.test(`/projects/${PROJECT}/tasks/${TASK}/attachments`), true);
+  assert.equal(matcher.test(`/projects/${PROJECT}/fields/${FIELD}/attachments`), true);
+});
+
+test('project options, task priority, paused task/field HTTP 409 locks, and clean notifications SQL work end-to-end', async () => {
+  const TASK = '9f1e2d3c-4b5a-4678-8901-23456789abcd';
+  const FIELD = '1a2b3c4d-5e6f-4789-8012-3456789abcde';
+  const rpcCalls = [];
+  const selectQueries = [];
+  let currentTask = {
+    id: TASK, project_id: PROJECT, field_id: FIELD, name: 'Ship v2', description: '',
+    status: 'todo', priority: 'high', assignee_id: OWNER, paused: true,
+    created_by: OWNER, updated_by: OWNER, sort_order: 100,
+    created_at: '2026-10-26T00:00:00Z', updated_at: '2026-10-26T00:00:00Z',
+  };
+  let currentField = { id: FIELD, project_id: PROJECT, title: 'Engineering', status: 'in-progress', assignee_id: OWNER };
+
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(String(input));
+    if (url.searchParams.has('select')) selectQueries.push({ path: url.pathname, select: url.searchParams.get('select') });
+    if (url.pathname.endsWith('/projects')) return Response.json([{ ...record(), category: 'Product', tags: ['q4', 'launch'], priority: 'high', start_date: '2026-10-01', due_date: '2026-11-15', paused: false, archived: false }]);
+    if (url.pathname.endsWith('/project_tasks')) return Response.json([currentTask]);
+    if (url.pathname.endsWith('/project_fields')) return Response.json([currentField]);
+    if (url.pathname.endsWith('/project_notifications')) return Response.json([]);
+    if (url.pathname.includes('/rpc/')) {
+      const name = url.pathname.split('/rpc/')[1];
+      const args = JSON.parse(String(init.body || '{}'));
+      rpcCalls.push({ name, args });
+      if (name === 'persora_project_create' || name === 'persora_project_update') {
+        return Response.json({ ...record(), ...args.p_options, name: args.p_name, description: args.p_description, kind: args.p_kind });
+      }
+      return Response.json({ ...currentTask, status: args.p_status || currentTask.status, priority: args.p_priority || currentTask.priority });
+    }
+    return Response.json([]);
+  };
+
+  // 1. Project due_date < start_date rejected with 400; valid options forwarded in p_options.
+  const badDates = await invoke('/projects', 'POST', { name: 'Bad dates', kind: 'personal', startDate: '2026-11-10', dueDate: '2026-11-01' });
+  assert.equal(badDates.status, 400);
+
+  const created = await invoke('/projects', 'POST', {
+    name: 'Autumn Launch', description: 'Q4 push', kind: 'shared',
+    category: 'Marketing', tags: ['#Q4', 'Launch', 'q4'], startDate: '2026-10-01', dueDate: '2026-11-30',
+    priority: 'high', paused: true, archived: false,
+  });
+  assert.equal(created.status, 201);
+  const createRpc = rpcCalls.find((c) => c.name === 'persora_project_create');
+  assert.deepEqual(createRpc.args.p_options, {
+    category: 'Marketing', tags: ['Q4', 'Launch'], start_date: '2026-10-01', due_date: '2026-11-30',
+    priority: 'high', paused: true, archived: false,
+  });
+
+  // 2. Paused task cannot move to another column (HTTP 409), even for owner; intra-column reorder still allowed (HTTP 200).
+  const blockedTaskMove = await invoke(`/projects/${PROJECT}/tasks/${TASK}/move`, 'POST', { status: 'in-progress' });
+  assert.equal(blockedTaskMove.status, 409);
+  assert.match((await blockedTaskMove.json()).error, /paused task/i);
+
+  const sameColReorder = await invoke(`/projects/${PROJECT}/tasks/${TASK}/move`, 'POST', { status: 'todo', sortOrder: 50 });
+  assert.equal(sameColReorder.status, 200);
+
+  // 3. Active task inside a Paused field (status === 'blocked') is also locked from cross-column moves (HTTP 409).
+  currentTask = { ...currentTask, paused: false };
+  currentField = { ...currentField, status: 'blocked' };
+  const blockedFieldMove = await invoke(`/projects/${PROJECT}/tasks/${TASK}/move`, 'POST', { status: 'in-progress' });
+  assert.equal(blockedFieldMove.status, 409);
+  assert.match((await blockedFieldMove.json()).error, /field is paused/i);
+
+  const blockedFieldPatch = await invoke(`/projects/${PROJECT}/tasks/${TASK}`, 'PATCH', { status: 'in-progress' });
+  assert.equal(blockedFieldPatch.status, 409);
+
+  // 4. Resuming field allows task creation/update with priority forwarded cleanly, and notifications omit retired subtask_id.
+  currentField = { ...currentField, status: 'in-progress' };
+  const createdTask = await invoke(`/projects/${PROJECT}/tasks`, 'POST', {
+    name: 'Prepare deck', description: '', fieldId: FIELD, status: 'todo', priority: 'medium',
+  });
+  assert.equal(createdTask.status, 201);
+  assert.equal(rpcCalls.find((c) => c.name === 'persora_project_task_create')?.args.p_payload?.priority, 'medium');
+
+  const notifRes = await invoke('/projects/notifications');
+  assert.equal(notifRes.status, 200);
+  const notifSelect = selectQueries.find((q) => q.path.endsWith('/project_notifications'));
+  assert.ok(notifSelect && !notifSelect.select.includes('subtask_id'), 'retired subtask_id is omitted from project_notifications SQL select');
+});
+
+

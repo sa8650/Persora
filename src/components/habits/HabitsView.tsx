@@ -1,7 +1,7 @@
 // Persora Habit Tracker — the workspace page.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
-import { Archive, ArchiveRestore, ArrowDown, ArrowUp, Check, ChevronLeft, ChevronRight, ListChecks, MoreHorizontal, Pencil, Plus, Trash2, Undo2, X } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowDown, ArrowUp, Check, ChevronLeft, ChevronRight, MoreHorizontal, Pencil, Plus, Trash2, Undo2, X } from "lucide-react";
 import "./habits.css";
 import type { AppUser } from "../../types";
 import { PagesApiError, isPagesApiConfigured } from "../../lib/cloud";
@@ -16,6 +16,10 @@ import {
 import type { HabitCategory, HabitDayStatus, HabitInput, Streaks } from "../../../cloudflare/habit-rules.js";
 import { addDays, addMonths, localDateOf, safeTimeZone, startOfMonth, startOfWeek, weekdayOf } from "../../../cloudflare/calendar-rules.js";
 import HabitEditor from "./HabitEditor";
+import { Badge } from "@/components/reui/badge";
+import { PersoraEmptyState } from "@/design-system";
+import { Progress } from "@/components/ui/progress";
+import { Spinner } from "@/components/ui/spinner";
 import { CATEGORY_LABELS, HabitGlyph, WEEKDAY_SHORT, formatDay, formatNumber, scheduleLabel, streakLabel, targetLabel } from "./habit-visuals";
 
 type Mode = "today" | "week" | "month";
@@ -259,13 +263,15 @@ export default function HabitsView({ user, notify, focusRequest }: {
 
   if (disabled) {
     return <div className="hb-view">
-      <div className="hb-gate">
-        <span className="hb-empty-icon"><ListChecks size={24}/></span>
-        <h2>{user.demo ? "Habit Tracker needs a Persora account" : "Habit Tracker needs the Persora API"}</h2>
-        <p>{user.demo
+      <PersoraEmptyState
+        className="hb-gate"
+        moduleId="habits"
+        tone="emerald"
+        title={user.demo ? "Habit Tracker needs a Persora account" : "Habit Tracker needs the Persora API"}
+        description={user.demo
           ? "Demo mode keeps everything on this device. Sign in to track habits, streaks and reminders in your private, synced account."
-          : "This build isn't connected to Persora's Pages Functions API, which stores habits and delivers reminders."}</p>
-      </div>
+          : "This build isn't connected to Persora's Pages Functions API, which stores habits and delivers reminders."}
+      />
     </div>;
   }
 
@@ -283,9 +289,9 @@ export default function HabitsView({ user, notify, focusRequest }: {
           <button type="button" className="hb-icon-button" onClick={() => step(1)} aria-label={`Next ${unitLabel}`} title={`Next ${unitLabel}`}><ChevronRight size={18}/></button>
         </div>
         <h2 className="hb-date-heading" aria-live="polite">{heading}</h2>
-        {date === today && mode === "today" ? <span className="hb-today-pill">Today</span>
+        {date === today && mode === "today" ? <Badge variant="info-light" size="xs" radius="full" className="hb-today-pill">Today</Badge>
           : <button type="button" className="hb-button hb-button-small" onClick={() => setDate(today)}>Today</button>}
-        {loadState === "loading" && payload && <span className="hb-spinner" role="status" aria-label="Loading habits"/>}
+        {loadState === "loading" && payload && <Spinner className="hb-spinner size-4 text-primary" aria-label="Loading habits"/>}
       </div>
       <div className="hb-tools">
         <div className="hb-modes" role="group" aria-label="Habit view">
@@ -438,13 +444,13 @@ function DayPanel({ id, title, date, active, archived, filter, onFilter, categor
       <h2 id={id}>{title}</h2>
       {active.length > 0 && filter !== "archived" && <div className="hb-progress" aria-label={`${progress.completed} of ${progress.total} completed`}>
         <span className="hb-progress-text">{progress.total ? `${progress.completed} of ${progress.total} completed` : date > today ? "Upcoming" : "Nothing due"}</span>
-        {progress.total > 0 && <span className="hb-progress-bar" aria-hidden="true"><span style={{ width: `${percent}%` }}/></span>}
+        {progress.total > 0 && <Progress value={percent} aria-label="Daily habit completion" className="hb-progress-bar w-24 h-1.5"/>}
       </div>}
     </div>
     {showFilters && (active.length > 0 || archived.length > 0) && <div className="hb-filters">
       <div className="hb-chips" role="group" aria-label="Filter habits">
         {filters.map((entry) => <button key={entry.id} type="button" className={filter === entry.id ? "is-active" : ""} aria-pressed={filter === entry.id} onClick={() => onFilter(entry.id)}>
-          {entry.label}{entry.count ? <span className="hb-chip-count">{entry.count}</span> : null}
+          {entry.label}{entry.count ? <Badge variant={filter === entry.id ? "invert" : "secondary"} size="xs" radius="full" className="hb-chip-count">{entry.count}</Badge> : null}
         </button>)}
       </div>
       {categories.length > 0 && <label className="hb-category-filter"><span className="hb-visually-hidden">Category</span>
@@ -455,12 +461,14 @@ function DayPanel({ id, title, date, active, archived, filter, onFilter, categor
       </label>}
     </div>}
 
-    {active.length === 0 && archived.length === 0 ? <div className="hb-empty">
-      <span className="hb-empty-icon"><ListChecks size={22}/></span>
-      <h3>Build a routine, one habit at a time</h3>
-      <p>Track daily or weekly habits, see your streaks and get gentle reminders.</p>
-      <button type="button" className="hb-primary-button" onClick={onCreate}><Plus size={16}/> Create your first habit</button>
-    </div> : visible.length === 0 ? <div className="hb-empty hb-empty-small">
+    {active.length === 0 && archived.length === 0 ? <PersoraEmptyState
+      className="hb-empty"
+      moduleId="habits"
+      tone="emerald"
+      title="Build a routine, one habit at a time"
+      description="Track daily or weekly habits, see your streaks and get gentle reminders."
+      action={<button type="button" className="hb-primary-button" onClick={onCreate}><Plus size={16}/> Create your first habit</button>}
+    /> : visible.length === 0 ? <div className="hb-empty hb-empty-small">
       <p>{filter === "archived" ? "No archived habits." : filter === "completed" ? "Nothing completed yet for this day." : filter === "due" ? (scheduled.length ? "Everything due is done. Nice work." : "Nothing due on this day.") : active.length === 0 ? "All your habits are archived." : "No habits are scheduled for this day."}</p>
       {filter === "all" && active.length === 0 && <button type="button" className="hb-button" onClick={onCreate}><Plus size={14}/> New Habit</button>}
     </div> : <ul className={`hb-list ${compact ? "is-compact" : ""}`}>
@@ -523,7 +531,7 @@ function HabitRow({ habit, date, today, doneById, untilById, checkinByKey, strea
           if (habit.tracking === "numeric") void onCheckin(habit, date, { value: completed ? 0 : habit.targetValue || 0 });
           else void onCheckin(habit, date, { completed: !completed });
         }}
-      >{saving ? <span className="hb-spinner hb-spinner-small" aria-hidden="true"/> : <Check size={16} strokeWidth={3}/>}</button>}
+      >{saving ? <Spinner className="hb-spinner hb-spinner-small size-3.5" aria-hidden="true"/> : <Check size={16} strokeWidth={3}/>}</button>}
       <RowMenu habit={habit} busy={rowBusy === habit.id} canMoveUp={canMoveUp} canMoveDown={canMoveDown}
         onEdit={() => onEdit(habit)} onMove={(direction) => onMove(habit, direction)} onArchive={() => onArchive(habit)}/>
     </div>}
@@ -578,7 +586,7 @@ function RepetitionBoxes({ habit, value, disabled, disabledReason, saving, dayLa
         </button>;
       })}
     </div>
-    <span className="hb-reps-progress" aria-live="off">{done} / {target} completed{saving && <span className="hb-spinner hb-spinner-small" aria-hidden="true"/>}</span>
+    <span className="hb-reps-progress" aria-live="off">{done} / {target} completed{saving && <Spinner className="hb-spinner hb-spinner-small size-3.5" aria-hidden="true"/>}</span>
   </div>;
 }
 
@@ -626,7 +634,7 @@ function RowMenu({ habit, busy, canMoveUp, canMoveDown, onEdit, onMove, onArchiv
   const run = (action: () => void) => { setOpen(false); action(); };
   return <div className="hb-menu-wrap" ref={wrap} onKeyDown={onKey}>
     <button id={`hb-menu-${habit.id}`} type="button" className="hb-icon-button" aria-haspopup="menu" aria-expanded={open} aria-label={`More actions for ${habit.name}`} disabled={busy}
-      onClick={() => setOpen((value) => !value)}>{busy ? <span className="hb-spinner hb-spinner-small" aria-hidden="true"/> : <MoreHorizontal size={17}/>}</button>
+      onClick={() => setOpen((value) => !value)}>{busy ? <Spinner className="hb-spinner hb-spinner-small size-3.5" aria-hidden="true"/> : <MoreHorizontal size={17}/>}</button>
     {open && <div className="hb-menu" role="menu" aria-label={`${habit.name} actions`}>
       <button type="button" role="menuitem" onClick={() => run(onEdit)}><Pencil size={14}/> Edit</button>
       <button type="button" role="menuitem" onClick={() => run(() => onMove(-1))} disabled={!canMoveUp}><ArrowUp size={14}/> Move up</button>
@@ -682,7 +690,7 @@ function WeekGrid({ id, date, habits, onSelect, today, doneById, checkinByKey, p
               }
               return <td key={day}><button type="button" className={`hb-cell ${isDone ? "is-done" : ""} hb-c-${habit.color}`} aria-pressed={isDone} disabled={saving || Boolean(habit.archivedAt)}
                 aria-label={`${habit.name}, ${label}: ${isDone ? "done" : "not done"}`} onClick={() => void onCheckin(habit, day, { completed: !isDone })}>
-                {saving ? <span className="hb-spinner hb-spinner-small" aria-hidden="true"/> : isDone ? <Check size={14} strokeWidth={3}/> : null}</button></td>;
+                {saving ? <Spinner className="hb-spinner hb-spinner-small size-3.5" aria-hidden="true"/> : isDone ? <Check size={14} strokeWidth={3}/> : null}</button></td>;
             })}
             <td className="hb-week-total">{total}</td>
           </tr>;

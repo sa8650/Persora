@@ -6,9 +6,16 @@ import {
   type ImageInfo, type PhotoSizePreset, type PhotoUnit,
 } from "../../cloudflare/photo-metadata.js";
 import type { PhotoCategory, PhotoStudioPhoto } from "../types";
+import {
+  NEUTRAL_FILTER, PHOTO_FILTER_PRESETS, applyPhotoFilter, getPhotoFilterPreset, isFilterNeutral,
+  type PhotoFilterId, type PhotoFilterPreset, type PhotoFilterSelection,
+} from "./photo-filters";
 
-export { PHOTO_SIZE_PRESETS, DEFAULT_PRINT_DPI, aspectRatio, fromPixels, matchPreset, readImageInfo, toPixels };
-export type { ImageInfo, PhotoSizePreset, PhotoUnit };
+export {
+  PHOTO_SIZE_PRESETS, DEFAULT_PRINT_DPI, aspectRatio, fromPixels, matchPreset, readImageInfo, toPixels,
+  NEUTRAL_FILTER, PHOTO_FILTER_PRESETS, applyPhotoFilter, getPhotoFilterPreset, isFilterNeutral,
+};
+export type { ImageInfo, PhotoSizePreset, PhotoUnit, PhotoFilterId, PhotoFilterPreset, PhotoFilterSelection };
 
 export const PHOTO_CATEGORIES: { id: PhotoCategory; label: string; hint: string }[] = [
   { id: "passport", label: "Passport", hint: "Passport & e-passport applications" },

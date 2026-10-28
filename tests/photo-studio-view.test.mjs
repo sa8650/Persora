@@ -52,7 +52,7 @@ const renderStub = `
   export const WORKING_MAX_EDGE = 3000;
   export const decodeImage = async () => ({ naturalWidth: 413, naturalHeight: 531, width: 413, height: 531 });
   export const createCanvas = () => ({}); export const toWorkingCanvas = () => ({}); export const releaseCanvas = () => {};
-  export const renderComposite = () => {}; export const exportPhoto = async () => ({}); export const applyMask = () => ({}); export const buildCutout = () => ({});
+  export const renderComposite = () => {}; export const renderFilterThumbnails = () => ({}); export const exportPhoto = async () => ({}); export const applyMask = () => ({}); export const buildCutout = () => ({});
   export const sampleRgba = () => new Uint8ClampedArray(); export const encodeForCloud = async () => new Blob();`;
 const esbuild = await import('esbuild');
 const outDir = mkdtempSync(path.join(process.cwd(), 'node_modules', '.ps-view-'));

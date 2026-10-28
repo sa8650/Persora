@@ -5,8 +5,6 @@ import { ArrowLeft, CheckCircle2, ChevronDown, ChevronRight, FileText, HandCoins
 import "./loans.css";
 import type { AppUser, VaultItem } from "../../types";
 import { PagesApiError, isPagesApiConfigured } from "../../lib/cloud";
-import ModalPortal from "../ModalPortal";
-import ItemModalShell from "../ItemModalShell";
 import {
   LOANS_CHANGED_EVENT, LOANS_RESTORED_EVENT, correctLoanPayment, createLoan, deleteLoan, loadLoan, loadLoans, recordLoanPayment, reverseLoanPayment, setLoanStatus, updateLoan,
 } from "../../lib/loan-api";
@@ -19,6 +17,9 @@ import type { PaymentDialogMode } from "./PaymentDialog";
 import {
   DIRECTION_LABELS, DirectionGlyph, FREQUENCY_LABELS, FREQUENCY_UNITS, ProgressBar, StatusBadge, countLabel, formatDay, formatMoney, rateLabel, relativeDay,
 } from "./loan-visuals";
+import { Badge } from "@/components/reui/badge";
+import { PersoraDeleteModal, PersoraEmptyState } from "@/design-system";
+import { Spinner } from "@/components/ui/spinner";
 
 type Filter = "all" | "borrowed" | "lent" | "active" | "completed" | "overdue";
 const FILTERS: { id: Filter; label: string }[] = [
@@ -195,13 +196,15 @@ export default function LoansView({ user, items, notify, onOpenItem, focusReques
 
   if (disabled) {
     return <div className="ln-view">
-      <div className="ln-gate">
-        <span className="ln-empty-icon"><HandCoins size={24}/></span>
-        <h2>{user.demo ? "Loan Tracker needs a Persora account" : "Loan Tracker needs the Persora API"}</h2>
-        <p>{user.demo
+      <PersoraEmptyState
+        className="ln-gate"
+        moduleId="loans"
+        tone="teal"
+        title={user.demo ? "Loan Tracker needs a Persora account" : "Loan Tracker needs the Persora API"}
+        description={user.demo
           ? "Demo mode keeps everything on this device. Sign in to track loans, installments and payments in your private, synced account."
-          : "This build isn't connected to Persora's Pages Functions API, which stores loans and delivers reminders."}</p>
-      </div>
+          : "This build isn't connected to Persora's Pages Functions API, which stores loans and delivers reminders."}
+      />
     </div>;
   }
 
@@ -219,7 +222,7 @@ export default function LoansView({ user, items, notify, onOpenItem, focusReques
       <p className="ln-visually-hidden" role="status" aria-live="polite">{liveMessage}</p>
       <div className="ln-toolbar">
         <button type="button" className="ln-button ln-button-small" onClick={() => openLoan(null)}><ArrowLeft size={15}/> All loans</button>
-        {detailState === "loading" && detail && <span className="ln-spinner" role="status" aria-label="Refreshing loan"/>}
+        {detailState === "loading" && detail && <Spinner className="ln-spinner size-4 text-primary" aria-label="Refreshing loan"/>}
       </div>
       {detailState === "error" && <div className="ln-banner" role="alert">
         <span>{detailError}</span>
@@ -272,10 +275,10 @@ export default function LoansView({ user, items, notify, onOpenItem, focusReques
     <header className="ln-toolbar">
       <div className="ln-chips" role="group" aria-label="Filter loans">
         {FILTERS.map((entry) => <button key={entry.id} type="button" className={filter === entry.id ? "is-active" : ""} aria-pressed={filter === entry.id} onClick={() => setFilter(entry.id)}>
-          {entry.label}{payload && <span className="ln-chip-count">{counts[entry.id]}</span>}</button>)}
+          {entry.label}{payload && <Badge variant={filter === entry.id ? "invert" : "secondary"} size="xs" radius="full" className="ln-chip-count">{counts[entry.id]}</Badge>}</button>)}
       </div>
       <div className="ln-tools">
-        {loadState === "loading" && payload && <span className="ln-spinner" role="status" aria-label="Refreshing loans"/>}
+        {loadState === "loading" && payload && <Spinner className="ln-spinner size-4 text-primary" aria-label="Refreshing loans"/>}
         <button type="button" className="ln-primary-button" onClick={() => { setDialogError(null); setEditor({ loan: null, createId: newId() }); }}
           disabled={initialLoading || (loadState === "error" && !payload) || (payload ? payload.loans.length >= payload.limits.loans : false)}>
           <Plus size={16}/><span>New Loan</span>
@@ -325,12 +328,14 @@ export default function LoansView({ user, items, notify, onOpenItem, focusReques
       </section>}
 
       <section className="ln-panel" aria-label="Loans">
-        {loans.length === 0 ? <div className="ln-empty">
-          <span className="ln-empty-icon"><HandCoins size={24}/></span>
-          <h3>Track a loan or installment plan</h3>
-          <p>Add money you borrowed or lent. Persora builds the installment schedule, tracks each payment and shows what's next and what's overdue.</p>
-          <button type="button" className="ln-primary-button" onClick={() => { setDialogError(null); setEditor({ loan: null, createId: newId() }); }}><Plus size={16}/><span>New Loan</span></button>
-        </div> : visible.length === 0 ? <div className="ln-empty ln-empty-small">
+        {loans.length === 0 ? <PersoraEmptyState
+          className="ln-empty"
+          moduleId="loans"
+          tone="teal"
+          title="Track a loan or installment plan"
+          description="Add money you borrowed or lent. Persora builds the installment schedule, tracks each payment and shows what's next and what's overdue."
+          action={<button type="button" className="ln-primary-button" onClick={() => { setDialogError(null); setEditor({ loan: null, createId: newId() }); }}><Plus size={16}/><span>New Loan</span></button>}
+        /> : visible.length === 0 ? <div className="ln-empty ln-empty-small">
           <p>No {FILTERS.find((entry) => entry.id === filter)?.label.toLowerCase()} loans.</p>
           <button type="button" className="ln-button ln-button-small" onClick={() => setFilter("all")}>Show all loans</button>
         </div> : <ul className="ln-list">
@@ -596,30 +601,26 @@ function LoanDetails({ detail, items, busy, onEdit, onPay, onCorrect, onReverse,
 
 function DeleteDialog({ detail, busy, error, onConfirm, onClose }: { detail: LoanDetail; busy: boolean; error: { message: string } | null; onConfirm: () => void; onClose: () => void }) {
   const recorded = detail.payments.filter((payment) => payment.status === "recorded").length;
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape" && !busy) { event.stopPropagation(); onClose(); } };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [busy, onClose]);
-  return <ModalPortal>
-    <ItemModalShell labelledBy="ln-delete-title" className="ln-editor ln-pay" backdropClassName="ln-editor-backdrop" icon={<Trash2 size={18}/>} iconClassName="ln-modal-icon is-danger"
-      eyebrow="Loan Tracker" title={`Delete “${detail.loan.name}”?`} onClose={onClose} closeDisabled={busy} dismissable={!busy}>
-      <div className="vault-modal-scroll">
-        <div className="ln-form">
-          <p className="ln-confirm-text">This permanently deletes the loan, its {detail.installments.length} installments{recorded ? ` and ${recorded} recorded payment${recorded === 1 ? "" : "s"}` : ""}. It can't be undone.
-            {detail.loan.status === "active" && detail.loan.summary.outstanding > 0 ? " To keep the record, close it with a settlement note instead." : ""}</p>
-          {error && <p className="ln-form-error" role="alert">{error.message}</p>}
-        </div>
-      </div>
-      <div className="editor-form-footer">
-        <div/>
-        <div className="editor-actions">
-          <button type="button" className="quiet-button" onClick={onClose} disabled={busy} autoFocus>Cancel</button>
-          <button type="button" className="ln-danger-button" onClick={onConfirm} disabled={busy}>{busy ? <><span className="spinner"/> Deleting…</> : "Delete permanently"}</button>
-        </div>
-      </div>
-    </ItemModalShell>
-  </ModalPortal>;
+  return (
+    <PersoraDeleteModal
+      eyebrow="Loan Tracker"
+      title={`Delete “${detail.loan.name}”?`}
+      titleId="ln-delete-title"
+      confirmLabel={busy ? "Deleting…" : "Delete permanently"}
+      busy={busy}
+      onCancel={onClose}
+      onConfirm={onConfirm}
+    >
+      <p>
+        This permanently deletes the loan, its {detail.installments.length} installments
+        {recorded ? ` and ${recorded} recorded payment${recorded === 1 ? "" : "s"}` : ""}. It can't be undone.
+        {detail.loan.status === "active" && detail.loan.summary.outstanding > 0
+          ? " To keep the record, close it with a settlement note instead."
+          : ""}
+      </p>
+      {error && <p className="ln-form-error mt-2" role="alert">{error.message}</p>}
+    </PersoraDeleteModal>
+  );
 }
 
 /** Reminder emails deep-link to ?view=loans&loan=<id>; App strips both when leaving the page. */

@@ -22,8 +22,6 @@
 // Persora session (identity.session_id). No route accepts a user id from the
 // client. Request bodies and master passwords are never logged.
 
-import { migrateLegacyVaults, legacyMigrationConfigured } from "./password-vault-legacy-migration.js";
-
 export const PASSWORD_VAULT_ROUTE_PREFIX = "/password-vault";
 export const VAULT_TOKEN_HEADER = "X-Persora-Vault-Token";
 export const VAULT_ITEM_LIMIT = 5000;
@@ -223,13 +221,7 @@ export async function handlePasswordVault(request, identity, env, origin, servic
     if (!isUuid(userId) || !isUuid(sessionId)) throw new PasswordVaultError("Sign in to open your password vault.", 401);
 
     if (path === "/" && method === "GET") {
-      // Converts this member's records left over from the encrypted release, if
-      // the one-time migration hasn't reached them yet (no-op once migrated).
-      const before = firstRow(await rpcCall(rpc, "persora_vault_status", { p_user_id: userId }));
-      if (Number(before.pending) > 0 && legacyMigrationConfigured(env)) {
-        await migrateLegacyVaults({ rpc: (fn, args) => rpcCall(rpc, fn, args), env, userId }).catch(() => undefined);
-      }
-      const status = Number(before.pending) > 0 ? firstRow(await rpcCall(rpc, "persora_vault_status", { p_user_id: userId })) : before;
+      const status = firstRow(await rpcCall(rpc, "persora_vault_status", { p_user_id: userId }));
       return json({ hasVault: status.hasVault === true, records: Number(status.records) || 0, pending: Number(status.pending) || 0, recoveryAvailable: Boolean(identity.email) }, 200, origin);
     }
     if (path === "/setup" && method === "POST") {
@@ -359,14 +351,6 @@ export async function handlePasswordVault(request, identity, env, origin, servic
       throw outcomeError(result?.outcome);
     }
 
-    // ── One-time conversion of the retired encrypted format (admins only) ──
-    if (path === "/admin/migrate-legacy" && method === "POST") {
-      if (identity.role !== "admin") throw new PasswordVaultError("Not found.", 404);
-      if (!legacyMigrationConfigured(env)) throw new PasswordVaultError("PASSWORD_VAULT_ESCROW_PRIVATE_KEY is not configured, so legacy records can't be converted.", 503);
-      const body = await readJson(request);
-      const report = await migrateLegacyVaults({ rpc: (fn, args) => rpcCall(rpc, fn, args), env, limit: 50, dryRun: body.dryRun === true });
-      return json(report, 200, origin);
-    }
     throw new PasswordVaultError("Not found.", 404);
   } catch (error) {
     if (error instanceof PasswordVaultError) return json({ error: error.message, ...error.extra }, error.status, origin);

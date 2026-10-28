@@ -184,14 +184,15 @@ test('meta explains email availability', async () => {
 
 test('dispatcher: email once when allowed, skip when unverified/late, record failures, roll series forward', async () => {
   const now = Date.now();
+  const alignedStart = Math.ceil(now / 60000) * 60000 + 15 * 60000;
   const due = (overrides = {}) => ({
-    id: crypto.randomUUID(), event_id: SERIES, root_id: SERIES, occurrence_key: new Date(now + 15 * 60000).toISOString(), occurrence_start: new Date(now + 15 * 60000).toISOString(), occurrence_date: null,
+    id: crypto.randomUUID(), event_id: SERIES, root_id: SERIES, occurrence_key: new Date(alignedStart).toISOString(), occurrence_start: new Date(alignedStart).toISOString(), occurrence_date: null,
     all_day: false, remind_at: new Date(now - 1000).toISOString(), minutes_before: 15, title: 'Standup <b>', location: 'Room 1', email_status: 'sending',
     claimed_at: '2026-11-16T02:45:00.123456+00:00', ...overrides,
   });
   const verified = { email: 'me@example.test', full_name: 'Me', timezone: 'Asia/Dhaka', email_verified: true, active: true };
   const rows = [
-    { reminder: due(), event: seriesRow({ start_at: new Date(now + 15 * 60000).toISOString(), end_at: new Date(now + 30 * 60000).toISOString() }), owner: verified },
+    { reminder: due(), event: seriesRow({ start_at: new Date(alignedStart).toISOString(), end_at: new Date(alignedStart + 15 * 60000).toISOString() }), owner: verified },
     { reminder: due(), event: seriesRow({ recurrence_freq: null, recurrence_count: null }), owner: { ...verified, email_verified: false } },
     { reminder: due({ remind_at: new Date(now - 60 * 60000).toISOString(), occurrence_start: new Date(now - 45 * 60000).toISOString() }), event: seriesRow({ recurrence_freq: null, recurrence_count: null }), owner: verified },
     { reminder: due({ email_status: 'not_requested' }), event: seriesRow({ recurrence_freq: null, recurrence_count: null }), owner: verified },

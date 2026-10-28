@@ -37,8 +37,15 @@ function run(args, opts = {}) { const [cmd, rest] = asPostgres(args); return exe
 export function psql(sql) {
   return run([join(PG_BIN, 'psql'), '-X', '-q', '-v', 'ON_ERROR_STOP=1', '-h', '127.0.0.1', '-p', String(PG_PORT), '-U', 'postgres', '-d', 'postgres', '-At'], { input: sql });
 }
-export const migrations = () => readdirSync(join(repo, 'supabase/migrations')).filter((name) => name.endsWith('.sql')).sort();
-export function applyMigration(name) { psql(readFileSync(join(repo, 'supabase/migrations', name), 'utf8')); psql("notify pgrst, 'reload schema';"); }
+export const migrations = () => {
+  const dir = join(repo, 'supabase/migrations');
+  return existsSync(dir) ? readdirSync(dir).filter((name) => name.endsWith('.sql')).sort() : [];
+};
+export function applyMigration(name) {
+  const sql = name ? readFileSync(join(repo, 'supabase/migrations', name), 'utf8') : readFileSync(join(repo, 'supabase/schema.sql'), 'utf8');
+  psql(sql);
+  psql("notify pgrst, 'reload schema';");
+}
 
 const PRELUDE = `
 create schema if not exists extensions;
@@ -67,7 +74,10 @@ export async function startDatabase({ stopBefore } = {}) {
   psql(PRELUDE);
   psql(readFileSync(join(repo, 'supabase/schema.sql'), 'utf8'));
   const pending = [];
-  for (const name of migrations()) { if (stopBefore && name >= stopBefore) pending.push(name); else psql(readFileSync(join(repo, 'supabase/migrations', name), 'utf8')); }
+  for (const name of migrations()) {
+    if (stopBefore && name.includes(stopBefore)) { pending.push(name); continue; }
+    psql(readFileSync(join(repo, 'supabase/migrations', name), 'utf8'));
+  }
   const conf = join(DATA, '..', 'persora-e2e-postgrest.conf');
   writeFileSync(conf, [
     `db-uri = "postgres://authenticator:authenticator@127.0.0.1:${PG_PORT}/postgres"`,

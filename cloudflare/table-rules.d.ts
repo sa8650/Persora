@@ -2,11 +2,49 @@ import type { CellResult } from "./table-formula.js";
 
 export type TableKind = "spreadsheet" | "smart";
 export type NumberFormat = "general" | "number" | "currency" | "percent" | "date" | "text";
-export interface CellStyle { b?: 1; i?: 1; a?: "l" | "c" | "r"; c?: string; bg?: string; fs?: number; bd?: string; nf?: NumberFormat; dp?: number; cur?: string }
+export type FontFamilyId = "sans" | "serif" | "mono" | "humanist" | "rounded";
+export type VerticalAlign = "t" | "m" | "b";
+export type WrapMode = "overflow" | "wrap" | "clip";
+export type BorderLineStyle = "thin" | "medium" | "thick" | "dashed" | "dotted" | "double";
+export type BorderMode = "none" | "all" | "inner" | "horiz" | "vert" | "outer" | "top" | "bottom" | "left" | "right";
+export interface MergeRect { r1: number; c1: number; r2: number; c2: number }
+export type SheetChartType = "bar" | "line" | "pie" | "doughnut";
+export interface SheetComment {
+  id: string;
+  text: string;
+  author: string;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface SheetChart {
+  id: string;
+  type: SheetChartType;
+  title: string;
+  range: MergeRect;
+  hasHeaders: boolean;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+export interface CellStyle {
+  b?: 1; i?: 1; u?: 1; st?: 1;
+  ff?: FontFamilyId;
+  a?: "l" | "c" | "r";
+  va?: "t" | "b";
+  w?: "wrap" | "clip";
+  c?: string; bg?: string; fs?: number;
+  bd?: string; bs?: BorderLineStyle; bc?: string;
+  nf?: NumberFormat; dp?: number; cur?: string;
+}
 export interface SheetCell { v?: string | number | boolean; f?: string; s?: CellStyle }
 export interface SheetData {
   rowCount: number; colCount: number; cells: Record<string, SheetCell>;
-  colWidths: Record<number, number>; rowHeights: Record<number, number>; frozenRows: number;
+  colWidths: Record<number, number>; rowHeights: Record<number, number>;
+  frozenRows: number; frozenCols?: number; merges?: MergeRect[];
+  comments?: Record<string, SheetComment>;
+  charts?: SheetChart[];
+  hideGridlines?: boolean;
 }
 export interface Sheet { id: string; name: string; position: number; data: SheetData }
 export interface Workbook { sheets: Sheet[] }
@@ -32,6 +70,7 @@ export const TABLE_KINDS: readonly TableKind[];
 export const TABLE_CURRENCIES: readonly string[];
 export const TABLE_LIMITS: Readonly<{
   tables: number; nameLength: number; labelLength: number; sheets: number; sheetNameLength: number; rows: number; cols: number; cellsPerSheet: number; cellText: number;
+  commentsPerSheet: number; commentText: number; chartsPerSheet: number;
   fields: number; fieldNameLength: number; choices: number; choiceLength: number; records: number; recordBytes: number; views: number; viewFilters: number;
   attachmentsPerCell: number; attachmentsPerTable: number; saveBytes: number; tableBytes: number; importBytes: number; importRows: number; importCols: number;
 }>;
@@ -45,11 +84,16 @@ export function isIsoDate(value: unknown): value is string;
 
 export const TEXT_COLORS: ReadonlyArray<{ id: string; label: string; hex: string }>;
 export const FILL_COLORS: ReadonlyArray<{ id: string; label: string; hex: string }>;
+export const BORDER_COLORS: ReadonlyArray<{ id: string; label: string; hex: string }>;
+export const FONT_FAMILIES: ReadonlyArray<{ id: FontFamilyId; label: string; stack: string }>;
 export const CHOICE_COLORS: readonly ChoiceColor[];
 export const FONT_SIZES: readonly number[];
 export const DEFAULT_FONT_SIZE: number;
 export const NUMBER_FORMATS: readonly NumberFormat[];
-export const BORDER_STYLES: readonly string[];
+export const BORDER_STYLES: readonly BorderMode[];
+export const BORDER_LINE_STYLES: readonly BorderLineStyle[];
+export const DEFAULT_BORDER_COLOR: string;
+export function fontStackOf(id?: string | null): string;
 export function normalizeBorderEdges(value: unknown): string;
 export function sanitizeStyle(style: unknown): CellStyle | undefined;
 
@@ -64,7 +108,12 @@ export function formatCellValue(value: CellResult | undefined, style?: CellStyle
 export const DEFAULT_SHEET_SIZE: Readonly<{ rows: number; cols: number }>;
 export const COLUMN_WIDTH: Readonly<{ min: number; max: number; default: number }>;
 export const ROW_HEIGHT: Readonly<{ min: number; max: number; default: number }>;
+export const MAX_MERGES_PER_SHEET: number;
+export const SHEET_CHART_TYPES: readonly SheetChartType[];
 export function emptySheetData(rows?: number, cols?: number): SheetData;
+export function normalizeMerges(rawMerges: unknown, rowCount: number, colCount: number): MergeRect[];
+export function normalizeSheetComments(rawComments: unknown, rowCount: number, colCount: number): Record<string, SheetComment>;
+export function normalizeSheetCharts(rawCharts: unknown, rowCount: number, colCount: number): SheetChart[];
 export function validateSheetName(name: unknown, others?: string[]): string;
 export function uniqueSheetName(base: string, existing: string[]): string;
 export function normalizeSheetData(data: unknown): SheetData;

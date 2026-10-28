@@ -1,0 +1,1920 @@
+/* ==========================================================================
+   Persora UI/UX Design System — Canonical Component & Surface Styles
+   (src/design-system/system.css)
+   Governs App Shell, Sidebar/Page separation, Cards, Drawers/Modals/Popovers,
+   Icon-safe Inputs, Empty States, Section Headers, and Light/Dark parity.
+   ========================================================================== */
+
+/* 1. Semantic IconTile & IconStack Tones (Light + Dark) */
+.ds-tone-blue,
+.tag-blue,
+.tag-sky {
+  color: var(--ds-primary) !important;
+  --icon-tile-bg: var(--ds-primary-soft);
+}
+.ds-tone-emerald,
+.tag-green {
+  color: var(--ds-emerald) !important;
+  --icon-tile-bg: var(--ds-emerald-soft);
+}
+.ds-tone-amber,
+.tag-orange,
+.tag-yellow {
+  color: var(--ds-amber) !important;
+  --icon-tile-bg: var(--ds-amber-soft);
+}
+.ds-tone-rose,
+.tag-rose {
+  color: var(--ds-rose) !important;
+  --icon-tile-bg: var(--ds-rose-soft);
+}
+.ds-tone-violet,
+.tag-violet,
+.tag-indigo,
+.tag-project {
+  color: var(--ds-violet) !important;
+  --icon-tile-bg: var(--ds-violet-soft);
+}
+.ds-tone-cyan,
+.tag-cyan,
+.tag-teal {
+  color: var(--ds-cyan) !important;
+  --icon-tile-bg: var(--ds-cyan-soft);
+}
+.ds-tone-slate,
+.tag-slate {
+  color: var(--ds-text-muted) !important;
+  --icon-tile-bg: var(--ds-subtle-bg);
+}
+
+/* Ensure non-IconTile legacy pill fallbacks never force light backgrounds in dark mode */
+:not([data-slot="icon-tile"]):is(.tag-blue, .tag-sky) { background-color: var(--ds-primary-soft) !important; }
+:not([data-slot="icon-tile"]).tag-green { background-color: var(--ds-emerald-soft) !important; }
+:not([data-slot="icon-tile"]):is(.tag-orange, .tag-yellow) { background-color: var(--ds-amber-soft) !important; }
+:not([data-slot="icon-tile"]).tag-rose { background-color: var(--ds-rose-soft) !important; }
+:not([data-slot="icon-tile"]):is(.tag-violet, .tag-indigo, .tag-project) { background-color: var(--ds-violet-soft) !important; }
+:not([data-slot="icon-tile"]):is(.tag-cyan, .tag-teal) { background-color: var(--ds-cyan-soft) !important; }
+:not([data-slot="icon-tile"]).tag-slate { background-color: var(--ds-subtle-bg) !important; }
+
+[data-slot="icon-stack"].ds-icon-stack [data-slot="icon-stack-content"] {
+  color: currentColor;
+}
+
+/* 2. Workspace App Shell — Distinct Sidebar Surface, Crisp Divider & Page Canvas */
+.workspace-shell {
+  background: var(--ds-canvas-bg);
+  color: var(--ds-text);
+}
+
+.workspace-sidebar {
+  display: flex;
+  flex-direction: column;
+  width: 256px;
+  min-width: 256px;
+  flex: 0 0 256px;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--ds-sidebar-bg);
+  border-right: 1px solid var(--ds-divider);
+  box-shadow: 1px 0 0 rgba(15, 23, 42, 0.03);
+}
+
+.sidebar-header {
+  flex: 0 0 70px;
+  height: 70px;
+  min-height: 70px;
+  padding: 0 20px;
+  background: var(--ds-sidebar-bg);
+  border-bottom: 1px solid var(--ds-divider);
+  backdrop-filter: none;
+}
+
+.workspace-brand {
+  color: var(--ds-text);
+}
+
+.sidebar-nav {
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 10px 12px 18px;
+  background: var(--ds-sidebar-bg);
+  scrollbar-width: thin;
+  scrollbar-color: var(--ds-border-strong) transparent;
+}
+
+.nav-group-label {
+  margin: 16px 10px 6px;
+  color: var(--ds-text-soft);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.sidebar-link {
+  min-height: 37px;
+  border-radius: 9px;
+  padding: 0 10px;
+  gap: 10px;
+  color: var(--ds-text-secondary);
+  font-size: 12.5px;
+  font-weight: 520;
+}
+
+.sidebar-link > svg {
+  color: var(--ds-text-muted);
+}
+
+.sidebar-link:hover {
+  color: var(--ds-text);
+  background: var(--ds-sidebar-hover);
+}
+
+.sidebar-link:hover > svg {
+  color: var(--ds-primary);
+}
+
+.sidebar-link.active {
+  color: var(--ds-sidebar-active-text);
+  background: var(--ds-sidebar-active);
+  font-weight: 640;
+}
+
+.sidebar-link.active > svg {
+  color: var(--ds-primary);
+}
+
+.nav-count {
+  color: var(--ds-text-muted);
+  background: var(--ds-card-bg);
+  border: 1px solid var(--ds-border);
+}
+
+.sidebar-link.active .nav-count {
+  color: var(--ds-sidebar-active-text);
+  background: var(--ds-primary-soft);
+  border-color: var(--ds-primary-border);
+}
+
+.sidebar-bottom {
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 2;
+  padding: 12px 12px 14px;
+  background: var(--ds-sidebar-bg);
+  border-top: 1px solid var(--ds-divider);
+}
+
+.sidebar-secure-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  border-radius: 12px;
+  border: 1px solid var(--ds-border);
+  background: var(--ds-card-bg);
+  box-shadow: var(--ds-shadow-xs);
+}
+
+.sidebar-secure-card b {
+  color: var(--ds-text);
+  font-size: 11px;
+}
+
+.sidebar-secure-card small {
+  color: var(--ds-text-muted);
+  font-size: 10px;
+}
+
+.sidebar-profile {
+  border-radius: 11px;
+  padding: 7px 8px;
+}
+
+.sidebar-profile:hover {
+  border-color: var(--ds-border);
+  background: var(--ds-sidebar-hover);
+}
+
+.profile-copy b {
+  color: var(--ds-text);
+  font-size: 12px;
+}
+
+.profile-copy small {
+  color: var(--ds-text-muted);
+  font-size: 10px;
+}
+
+.workspace-main {
+  background: var(--ds-canvas-bg);
+  scrollbar-color: var(--ds-border-strong) transparent;
+}
+
+.workspace-topbar {
+  flex: 0 0 70px;
+  height: 70px;
+  min-height: 70px;
+  background: var(--ds-topbar-bg);
+  border-bottom: 1px solid var(--ds-divider);
+  backdrop-filter: blur(10px);
+}
+
+.breadcrumb-overline {
+  color: var(--ds-text-muted);
+}
+
+.breadcrumb-title h1 {
+  color: var(--ds-text);
+}
+
+.live-pill {
+  color: var(--ds-sidebar-active-text);
+  background: var(--ds-primary-soft);
+  border-color: var(--ds-primary-border);
+}
+
+.topbar-actions {
+  gap: 9px;
+}
+
+.workspace-add-document {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--ds-primary-border);
+  background: var(--ds-primary-soft);
+  color: var(--ds-sidebar-active-text);
+  font-size: 12.5px;
+  font-weight: 630;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.workspace-add-document:hover {
+  background: var(--ds-primary);
+  border-color: var(--ds-primary);
+  color: var(--ds-primary-fg);
+}
+
+.icon-button,
+.notification-button,
+.ds-theme-toggle {
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  border: 1px solid var(--ds-border);
+  background: var(--ds-card-bg);
+  color: var(--ds-text-secondary);
+}
+
+.icon-button:hover,
+.notification-button:hover,
+.ds-theme-toggle:hover {
+  border-color: var(--ds-primary-border);
+  background: var(--ds-primary-soft);
+  color: var(--ds-sidebar-active-text);
+}
+
+.plain-icon {
+  color: var(--ds-text-muted);
+}
+
+.plain-icon:hover {
+  background: var(--ds-subtle-bg);
+  color: var(--ds-text);
+}
+
+.quiet-button {
+  border-color: var(--ds-border-strong);
+  background: var(--ds-card-bg);
+  color: var(--ds-text-secondary);
+}
+
+.quiet-button:hover:not(:disabled) {
+  border-color: var(--ds-primary-border);
+  background: var(--ds-primary-soft);
+  color: var(--ds-sidebar-active-text);
+}
+
+.workspace-footer {
+  background: var(--ds-footer-bg);
+  border-top: 1px solid var(--ds-divider);
+  color: var(--ds-text-muted);
+}
+
+.workspace-footer-brand {
+  color: var(--ds-text);
+}
+
+.workspace-footer-security,
+.workspace-footer nav button {
+  color: var(--ds-text-muted);
+}
+
+.workspace-footer nav button:hover {
+  color: var(--ds-primary);
+}
+
+/* 3. Workspace Typography & Form Controls (Tokenized, No Destructive !important) */
+.workspace-content {
+  color: var(--ds-text);
+}
+
+:where(.workspace-content p) {
+  color: var(--ds-text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+:where(.workspace-content small) {
+  color: var(--ds-text-soft);
+  font-size: 11.5px;
+}
+
+.workspace-content input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]),
+.workspace-content select,
+.workspace-content textarea,
+.vault-modal input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]),
+.vault-modal select,
+.vault-modal textarea,
+.add-document-drawer select,
+.billing-checkout-drawer input:not([type="checkbox"]):not([type="radio"]),
+.billing-checkout-drawer select {
+  color: var(--ds-text);
+  background-color: var(--ds-input-bg);
+  border-color: var(--ds-border-strong);
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.workspace-content :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea):focus,
+.vault-modal :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea):focus {
+  border-color: var(--ds-primary);
+  box-shadow: 0 0 0 3px var(--ds-focus-ring);
+  outline: 0;
+}
+
+/* 4. Icon-Safe Search & Input Group Architecture (Zero Text/Icon Overlap) */
+.ds-search-field,
+.contacts-search,
+.timeline-search,
+.timeline-record-search,
+.medical-search,
+.medical-link-search,
+.pm-search,
+.ps-search,
+.pdfs-search,
+.pj-search,
+.pj-task-search,
+.cal-search,
+.cn-search,
+.tb-search,
+.finance-record-search,
+.finance-link-search,
+.admin-users-search,
+.admin-table-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--ds-border-strong);
+  border-radius: 999px;
+  background: var(--ds-input-bg);
+  color: var(--ds-text-muted);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+.timeline-record-search,
+.medical-link-search,
+.finance-record-search,
+.finance-link-search,
+.pj-task-search,
+.cn-search {
+  border-radius: 10px;
+}
+
+:is(
+  .ds-search-field,
+  .contacts-search,
+  .timeline-search,
+  .timeline-record-search,
+  .medical-search,
+  .medical-link-search,
+  .pm-search,
+  .ps-search,
+  .pdfs-search,
+  .pj-search,
+  .pj-task-search,
+  .cal-search,
+  .cn-search,
+  .tb-search,
+  .finance-record-search,
+  .finance-link-search,
+  .admin-users-search,
+  .admin-table-search
+):focus-within {
+  border-color: var(--ds-primary);
+  box-shadow: 0 0 0 3px var(--ds-focus-ring);
+  background: var(--ds-card-bg);
+}
+
+:is(
+  .ds-search-field,
+  .contacts-search,
+  .timeline-search,
+  .timeline-record-search,
+  .medical-search,
+  .medical-link-search,
+  .pm-search,
+  .ps-search,
+  .pdfs-search,
+  .pj-search,
+  .pj-task-search,
+  .cal-search,
+  .cn-search,
+  .tb-search,
+  .finance-record-search,
+  .finance-link-search,
+  .admin-users-search,
+  .admin-table-search
+) > svg {
+  flex: 0 0 auto;
+  color: var(--ds-text-muted);
+  pointer-events: none;
+}
+
+:is(
+  .ds-search-field,
+  .contacts-search,
+  .timeline-search,
+  .timeline-record-search,
+  .medical-search,
+  .medical-link-search,
+  .pm-search,
+  .ps-search,
+  .pdfs-search,
+  .pj-search,
+  .pj-task-search,
+  .cal-search,
+  .cn-search,
+  .tb-search,
+  .finance-record-search,
+  .finance-link-search,
+  .admin-users-search,
+  .admin-table-search
+) input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  border: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
+  color: var(--ds-text) !important;
+  font-size: 13px !important;
+  line-height: 1.35;
+}
+
+:is(
+  .ds-search-field,
+  .contacts-search,
+  .timeline-search,
+  .timeline-record-search,
+  .medical-search,
+  .medical-link-search,
+  .pm-search,
+  .ps-search,
+  .pdfs-search,
+  .pj-search,
+  .pj-task-search,
+  .cal-search,
+  .cn-search,
+  .tb-search,
+  .finance-record-search,
+  .finance-link-search,
+  .admin-users-search,
+  .admin-table-search
+) input::placeholder {
+  color: var(--ds-text-soft);
+}
+
+.ds-search-clear {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ds-subtle-bg);
+  color: var(--ds-text-muted);
+  cursor: pointer;
+}
+
+.ds-search-clear:hover {
+  background: var(--ds-primary-soft);
+  color: var(--ds-primary);
+}
+
+/* Global Search Trigger in Topbar */
+.global-search-trigger {
+  border-color: var(--ds-border-strong);
+  background: var(--ds-card-bg);
+  color: var(--ds-text-muted);
+}
+
+.global-search-trigger:hover,
+.global-search-trigger:focus-visible {
+  border-color: var(--ds-primary-border);
+  background: var(--ds-card-hover-bg);
+  box-shadow: 0 0 0 3px var(--ds-focus-ring);
+}
+
+.global-search-trigger > span {
+  color: var(--ds-text-muted);
+}
+
+.global-search-trigger kbd {
+  border-color: var(--ds-border);
+  background: var(--ds-subtle-bg);
+  color: var(--ds-text-muted);
+}
+
+/* Absolute-positioned icon inputs safety net */
+.ln-doc-search input {
+  padding-inline-start: 34px !important;
+}
+.password-wrap input {
+  padding-inline-end: 40px !important;
+}
+.cn-select select {
+  padding-inline-end: 30px !important;
+}
+
+/* Medical filter select parity */
+.medical-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--ds-border-strong);
+  border-radius: 999px;
+  background: var(--ds-input-bg);
+  color: var(--ds-text-secondary);
+}
+
+.medical-filter select {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
+  padding: 0 4px 0 0 !important;
+  font-size: 13px !important;
+  color: var(--ds-text) !important;
+}
+
+/* 5. Section Page Headers & Non-Overlapping Aside Stat Tile */
+.section-page-heading,
+.contacts-hero,
+.business-cards-hero,
+.medical-page-heading,
+.timeline-page-heading,
+.shared-page-hero,
+.finance-page-heading,
+.settings-intro,
+.billing-heading {
+  background: var(--ds-card-bg) !important;
+  border: 1px solid var(--ds-border) !important;
+  border-radius: var(--ds-radius-lg) !important;
+  box-shadow: var(--ds-shadow-card) !important;
+  color: var(--ds-text);
+}
+
+.section-page-heading h2,
+.contacts-hero h2,
+.business-cards-hero h2,
+.medical-page-heading h2,
+.timeline-page-heading h2,
+.shared-page-hero h2,
+.finance-page-copy h2,
+.settings-intro h2,
+.billing-heading h2,
+.dashboard-welcome-row h2 {
+  color: var(--ds-text) !important;
+}
+
+.section-page-eyebrow,
+.section-eyebrow,
+.finance-eyebrow,
+.welcome-overline {
+  color: var(--ds-text-muted);
+}
+
+.section-aside-art.ds-aside-stat {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  width: auto;
+  min-width: 144px;
+  height: auto;
+  min-height: 58px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--ds-border);
+  background: var(--ds-subtle-bg);
+  color: var(--ds-text);
+  overflow: visible;
+}
+
+.ds-aside-stat-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ds-aside-stat-copy > span {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ds-text-muted);
+  line-height: 1.1;
+}
+
+.ds-aside-stat-copy > strong {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--ds-text);
+  line-height: 1.1;
+}
+
+.aside-note {
+  color: var(--ds-text-muted);
+  font-size: 11px;
+  margin-top: 6px;
+}
+
+/* Digital Business Cards Subheading Fix */
+.business-cards-list-header > div > span:first-child,
+.business-cards-section-head > div > .section-eyebrow {
+  display: block;
+  margin-bottom: 3px;
+}
+
+/* 6. Standardized Empty States (Zero Icon/Heading Collision) */
+.section-empty,
+.ds-empty-state,
+.finance-empty-state,
+.shared-empty,
+.contacts-empty,
+.business-cards-empty,
+.medical-empty,
+.timeline-empty,
+.billing-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 260px;
+  padding: 32px 24px;
+  border: 1px dashed var(--ds-border-strong);
+  border-radius: var(--ds-radius-lg);
+  background: var(--ds-card-bg);
+  text-align: center;
+  color: var(--ds-text);
+}
+
+.ds-empty-visual {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 10px;
+  position: relative;
+}
+
+.section-empty h3,
+.ds-empty-state h3,
+.finance-empty-state h3,
+.shared-empty h3,
+.contacts-empty h3,
+.business-cards-empty h3,
+.medical-empty h3,
+.timeline-empty h3,
+.billing-empty h2,
+.billing-empty h3 {
+  margin: 4px 0 2px;
+  color: var(--ds-text) !important;
+  font-size: 17px;
+  font-weight: 640;
+  letter-spacing: -0.02em;
+}
+
+.section-empty p,
+.ds-empty-state p,
+.finance-empty-state p,
+.shared-empty p,
+.contacts-empty p,
+.business-cards-empty p,
+.medical-empty p,
+.timeline-empty p,
+.billing-empty p {
+  max-width: 430px;
+  margin: 0 0 12px;
+  color: var(--ds-text-muted) !important;
+  font-size: 13px !important;
+  line-height: 1.55;
+}
+
+.ds-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.ds-empty-state-compact {
+  min-height: 180px;
+  padding: 22px 18px;
+}
+
+/* 7. Unified Card Surface Theme Across Every Module (Light & Dark) */
+.metric-card,
+.dashboard-panel,
+.vault-item-card,
+.todo-task-card,
+.schedule-card,
+.settings-card,
+.settings-side-card,
+.settings-help-card,
+.finance-metric,
+.finance-panel,
+.finance-records-toolbar,
+.contact-card,
+.business-card-tile,
+.medical-card,
+.timeline-toolbar,
+.timeline-card,
+.billing-current-card,
+.billing-plan-card,
+.billing-payment-card,
+.billing-payment-history,
+.shared-record,
+.trash-card-shell {
+  background: var(--ds-card-bg) !important;
+  border-color: var(--ds-border) !important;
+  box-shadow: var(--ds-shadow-card);
+  color: var(--ds-text);
+}
+
+.vault-item-card:hover,
+.metric-card:hover,
+.contact-card:hover,
+.business-card-tile:hover,
+.medical-card:hover {
+  border-color: var(--ds-border-hover) !important;
+  box-shadow: var(--ds-shadow-card-hover);
+}
+
+/* Typography inside cards */
+.metric-card-value,
+.metric-label,
+.panel-heading h3,
+.upcoming-main b,
+.recent-info b,
+.favorite-dashboard-open b,
+.space-tile-copy b,
+.dashboard-quick-action b,
+.vault-card-copy h3,
+.todo-task-copy b,
+.schedule-card-copy > b,
+.settings-card-header h3,
+.settings-side-card h3,
+.settings-help-card b,
+.security-row b,
+.data-action-row b,
+.finance-summary-heading h3,
+.finance-metric-value,
+.finance-panel-heading h3,
+.finance-upcoming-copy b,
+.finance-record-main b,
+.finance-records-toolbar h3,
+.contact-card h3,
+.business-card-tile h3,
+.medical-card h3,
+.timeline-card h3,
+.billing-current-main h3,
+.billing-section-heading h3,
+.billing-plan-card h4,
+.billing-payment-row b,
+.shared-record-title-row > b,
+.shared-person > b,
+.trash-row-copy h3 button {
+  color: var(--ds-text) !important;
+}
+
+.vault-card-bottom,
+.security-row + .security-row,
+.data-action-row + .data-action-row,
+.finance-record-row,
+.finance-upcoming-row,
+.billing-payment-row,
+.shared-record-controls {
+  border-color: var(--ds-border) !important;
+}
+
+/* Nested subtle surfaces inside cards */
+.space-tile,
+.dashboard-quick-action,
+.empty-upcoming,
+.dashboard-favorites-empty,
+.dashboard-empty-state,
+.settings-readonly,
+.settings-profile-photo,
+.account-security-note,
+.shared-record-meta,
+.share-backend-notice,
+.trash-footnote,
+.timeline-offline-note,
+.finance-linked-spaces > button,
+.finance-link-picker {
+  background: var(--ds-subtle-bg) !important;
+  border-color: var(--ds-border) !important;
+  color: var(--ds-text-secondary);
+}
+
+.space-tile:hover,
+.dashboard-quick-action:hover,
+.upcoming-row:hover,
+.recent-row:hover,
+.favorite-dashboard-row:hover,
+.finance-linked-spaces > button:hover {
+  background: var(--ds-card-hover-bg) !important;
+  border-color: var(--ds-primary-border) !important;
+}
+
+/* Folder Shelf Tiles */
+.vault-folder-tile {
+  background: var(--ds-card-bg) !important;
+  border: 1px solid var(--ds-border) !important;
+  color: var(--ds-text) !important;
+  box-shadow: var(--ds-shadow-xs);
+}
+
+.vault-folder-tile:hover {
+  border-color: var(--ds-primary-border) !important;
+  background: var(--ds-card-hover-bg) !important;
+}
+
+.vault-folder-tile.is-selected {
+  border-color: var(--ds-primary) !important;
+  background: var(--ds-primary-soft) !important;
+}
+
+.vault-folder-card-copy b {
+  color: var(--ds-text) !important;
+}
+
+.vault-folder-card-copy small {
+  color: var(--ds-text-muted) !important;
+}
+
+.vault-folder-create-tile {
+  border-style: dashed !important;
+}
+
+/* View Mode Toggle & Filter Tabs */
+.view-mode-toggle {
+  background: var(--ds-card-bg);
+  border-color: var(--ds-border-strong);
+}
+
+.view-mode-toggle button {
+  color: var(--ds-text-muted);
+}
+
+.view-mode-toggle button.is-active {
+  background: var(--ds-primary-soft);
+  color: var(--ds-sidebar-active-text);
+}
+
+.filter-tabs button,
+.notes-section-tabs button,
+.accounts-section-tabs button,
+.finance-tabs button,
+.shared-tabs button {
+  color: var(--ds-text-muted);
+}
+
+.filter-tabs button:hover,
+.notes-section-tabs button:hover,
+.accounts-section-tabs button:hover,
+.finance-tabs button:hover,
+.shared-tabs button:hover {
+  color: var(--ds-text);
+  background: var(--ds-subtle-bg);
+}
+
+.filter-tabs button.filter-active,
+.shared-tabs button.active {
+  background: var(--ds-primary-soft) !important;
+  border-color: var(--ds-primary-border) !important;
+  color: var(--ds-sidebar-active-text) !important;
+}
+
+/* Settings Appearance Selector */
+.ds-theme-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.ds-theme-choice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 58px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--ds-border);
+  background: var(--ds-subtle-bg);
+  color: var(--ds-text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.ds-theme-choice:hover {
+  border-color: var(--ds-primary-border);
+  background: var(--ds-card-hover-bg);
+}
+
+.ds-theme-choice.is-active {
+  border-color: var(--ds-primary);
+  background: var(--ds-primary-soft);
+  box-shadow: 0 0 0 2px var(--ds-focus-ring);
+}
+
+.ds-theme-choice-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ds-theme-choice-copy b {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--ds-text);
+}
+
+.ds-theme-choice-copy small {
+  font-size: 11px !important;
+  color: var(--ds-text-muted);
+  line-height: 1.3;
+}
+
+@media (max-width: 640px) {
+  .ds-theme-options {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 8. Unified Drawers, Sheets, Modals & Popovers Theme (Light & Dark) */
+.modal-backdrop,
+.add-document-drawer-backdrop,
+.billing-drawer-backdrop,
+.vault-folder-modal-backdrop,
+.medical-modal-backdrop,
+.timeline-modal-backdrop,
+.pj-modal-backdrop {
+  background: var(--ds-scrim) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Right-side Drawers / Sheets */
+.add-document-drawer,
+.billing-checkout-drawer,
+.todo-editor-drawer,
+.notes-editor-drawer,
+.tb-record-panel {
+  background: var(--ds-overlay-bg) !important;
+  color: var(--ds-text) !important;
+  border-left: 1px solid var(--ds-border-strong) !important;
+  box-shadow: var(--ds-shadow-drawer) !important;
+}
+
+.add-document-drawer-header,
+.billing-drawer-header {
+  background: var(--ds-overlay-header-bg) !important;
+  border-bottom: 1px solid var(--ds-border) !important;
+}
+
+.add-document-drawer-header h2,
+.billing-drawer-header h2 {
+  color: var(--ds-text) !important;
+}
+
+.add-document-drawer-body,
+.billing-drawer-content {
+  background: var(--ds-overlay-bg) !important;
+  color: var(--ds-text);
+}
+
+.add-document-drawer-footer,
+.billing-drawer-footer {
+  background: var(--ds-overlay-footer-bg) !important;
+  border-top: 1px solid var(--ds-border) !important;
+}
+
+.add-document-method-card,
+.add-document-space-preview,
+.add-document-file-meta,
+.billing-drawer-section,
+.billing-plan-choice {
+  background: var(--ds-subtle-bg) !important;
+  border-color: var(--ds-border) !important;
+  color: var(--ds-text) !important;
+}
+
+.add-document-method-card.is-primary,
+.billing-plan-choice.selected {
+  background: var(--ds-primary-soft) !important;
+  border-color: var(--ds-primary) !important;
+}
+
+.add-document-method-card b,
+.add-document-space-preview b,
+.billing-drawer-section-title,
+.billing-plan-choice b {
+  color: var(--ds-text) !important;
+}
+
+.add-document-method-card small,
+.add-document-drawer-intro,
+.add-document-footer-hint,
+.add-document-private-note {
+  color: var(--ds-text-muted) !important;
+}
+
+/* Centered Modals & Dialogs */
+.vault-modal,
+.confirm-dialog,
+.contact-detail-dialog,
+.contact-editor-dialog,
+.contacts-duplicate-dialog,
+.contacts-feedback-dialog,
+.business-card-editor,
+.business-card-confirm,
+.medical-modal,
+.medical-detail-dialog,
+.medical-delete-dialog,
+.timeline-modal,
+.vault-folder-modal,
+.record-share-details,
+.auth-dialog,
+.pj-modal,
+.modal-card {
+  background: var(--ds-overlay-bg) !important;
+  color: var(--ds-text) !important;
+  border: 1px solid var(--ds-border-strong) !important;
+  box-shadow: var(--ds-shadow-modal) !important;
+}
+
+.modal-card {
+  width: 100%;
+  max-height: min(88vh, 840px);
+  border-radius: var(--ds-radius-xl);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.125rem 1.375rem;
+  background: var(--ds-overlay-header-bg);
+  border-bottom: 1px solid var(--ds-border);
+}
+
+.modal-head h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--ds-text);
+}
+
+.modal-head p {
+  margin: 0.15rem 0 0;
+  font-size: 0.78rem;
+  color: var(--ds-text-muted);
+}
+
+.modal-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 1.25rem 1.375rem;
+  background: var(--ds-overlay-bg);
+  color: var(--ds-text);
+}
+
+.modal-foot,
+.modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.875rem 1.375rem;
+  background: var(--ds-overlay-footer-bg);
+  border-top: 1px solid var(--ds-border);
+}
+
+.vault-modal-header,
+.contact-detail-hero,
+.vault-folder-modal > header {
+  background: var(--ds-overlay-header-bg) !important;
+  border-bottom: 1px solid var(--ds-border) !important;
+}
+
+.vault-modal-title h2,
+.contact-detail-hero h2,
+.confirm-dialog h2,
+.vault-folder-modal h2,
+.record-share-details h2 {
+  color: var(--ds-text) !important;
+}
+
+.vault-modal-close,
+.contact-detail-close,
+.billing-drawer-close {
+  color: var(--ds-text-muted) !important;
+  background: var(--ds-card-bg) !important;
+  border: 1px solid var(--ds-border) !important;
+}
+
+.vault-modal-close:hover,
+.contact-detail-close:hover,
+.billing-drawer-close:hover {
+  color: var(--ds-text) !important;
+  background: var(--ds-subtle-bg) !important;
+  border-color: var(--ds-border-strong) !important;
+}
+
+.editor-form-footer,
+.detail-footer,
+.contact-detail-footer,
+.business-card-editor-footer,
+.vault-folder-modal footer {
+  background: var(--ds-overlay-footer-bg) !important;
+  border-top: 1px solid var(--ds-border) !important;
+}
+
+.contact-detail-body {
+  background: var(--ds-overlay-bg) !important;
+}
+
+.contact-detail-section,
+.contact-detail-notes,
+.detail-notes,
+.detail-qr-card {
+  background: var(--ds-subtle-bg) !important;
+  border-color: var(--ds-border) !important;
+}
+
+.contact-detail-info-grid .contact-detail-row {
+  background: var(--ds-card-bg) !important;
+  border-color: var(--ds-border) !important;
+}
+
+.contact-detail-row > span:nth-child(2) b,
+.detail-field > b {
+  color: var(--ds-text) !important;
+}
+
+/* Contacts Multi-Select Bar & Upload Feedback Modal Theme */
+.contacts-selection-bar {
+  background: var(--ds-card-bg) !important;
+  border: 1px solid var(--ds-primary-border) !important;
+  box-shadow: var(--ds-shadow-card);
+  color: var(--ds-text);
+}
+
+.contact-card.is-selected {
+  border-color: var(--ds-primary) !important;
+  box-shadow: 0 0 0 2px var(--ds-focus-ring);
+}
+
+/* Popovers & Dropdown Menus */
+.notification-popover,
+.user-popover,
+.more-options-menu,
+.card-action-menu {
+  background: var(--ds-overlay-bg) !important;
+  color: var(--ds-text) !important;
+  border: 1px solid var(--ds-border-strong) !important;
+  box-shadow: var(--ds-shadow-popover) !important;
+}
+
+.notification-popover {
+  right: 0;
+  top: calc(100% + 10px);
+  width: min(372px, calc(100vw - 24px));
+  max-width: calc(100vw - 24px);
+  box-sizing: border-box;
+  overflow: hidden;
+  padding: 12px;
+  border-radius: 16px;
+}
+
+.notification-head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-bottom: 1px solid var(--ds-border);
+  padding: 2px 2px 10px;
+  min-width: 0;
+}
+
+.notification-head-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.notification-head-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.notification-head-copy b {
+  display: block;
+  color: var(--ds-text);
+  font-size: 13.5px;
+  font-weight: 650;
+}
+
+.notification-head-copy span {
+  display: block;
+  margin-top: 3px;
+  color: var(--ds-text-muted);
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.notification-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.notification-enable,
+.notification-mark-all {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  min-height: 27px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--ds-primary-border);
+  background: var(--ds-primary-soft);
+  color: var(--ds-sidebar-active-text);
+  font-size: 11px;
+  font-weight: 620;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.notification-enable:hover,
+.notification-mark-all:hover {
+  background: var(--ds-primary);
+  border-color: var(--ds-primary);
+  color: var(--ds-primary-fg);
+}
+
+.notification-row:hover {
+  background: var(--ds-subtle-bg);
+}
+
+.notification-row b {
+  color: var(--ds-text);
+  font-size: 12px;
+}
+
+.notification-row small {
+  color: var(--ds-text-muted);
+  font-size: 11px;
+}
+
+.notification-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 22px 12px;
+  color: var(--ds-text-muted);
+  font-size: 12.5px;
+  font-style: normal;
+}
+
+.user-popover-header {
+  border-bottom-color: var(--ds-border);
+}
+
+.user-popover-header strong {
+  color: var(--ds-text);
+}
+
+.user-popover > button {
+  color: var(--ds-text-secondary);
+}
+
+.user-popover > button:hover {
+  background: var(--ds-subtle-bg);
+  color: var(--ds-text);
+}
+
+.toast-notice {
+  background: var(--ds-overlay-bg) !important;
+  color: var(--ds-text) !important;
+  border-color: var(--ds-border-strong) !important;
+  box-shadow: var(--ds-shadow-popover) !important;
+}
+
+/* 9. Customizable Dashboard Grid & Shared Widget Shell (Persora Design System) */
+.ds-dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-auto-flow: row dense;
+  gap: 16px;
+  align-items: start;
+  width: 100%;
+  min-width: 0;
+}
+
+.ds-dashboard-cell {
+  min-width: 0;
+  max-width: 100%;
+  grid-column: span 6;
+  transition: transform 160ms var(--p-ease), opacity 160ms var(--p-ease);
+}
+
+.ds-dashboard-cell[data-width="compact"] { grid-column: span 4; }
+.ds-dashboard-cell[data-width="half"] { grid-column: span 6; }
+.ds-dashboard-cell[data-width="two-thirds"] { grid-column: span 8; }
+.ds-dashboard-cell[data-width="full"] { grid-column: span 12; }
+
+@media (max-width: 1179px) {
+  .ds-dashboard-grid {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+    gap: 14px;
+  }
+  .ds-dashboard-cell[data-width="compact"],
+  .ds-dashboard-cell[data-width="half"] {
+    grid-column: span 4;
+  }
+  .ds-dashboard-cell[data-width="two-thirds"],
+  .ds-dashboard-cell[data-width="full"] {
+    grid-column: span 8;
+  }
+}
+
+@media (max-width: 767px) {
+  .ds-dashboard-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-auto-flow: row;
+    gap: 12px;
+  }
+  .ds-dashboard-cell,
+  .ds-dashboard-cell[data-width="compact"],
+  .ds-dashboard-cell[data-width="half"],
+  .ds-dashboard-cell[data-width="two-thirds"],
+  .ds-dashboard-cell[data-width="full"] {
+    grid-column: 1 / -1;
+  }
+}
+
+.ds-widget-card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  border-radius: var(--ds-radius-lg);
+  border: 1px solid var(--ds-border);
+  background: var(--ds-card-bg);
+  color: var(--ds-text);
+  box-shadow: var(--ds-shadow-card);
+  overflow: visible;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.ds-widget-card:hover {
+  border-color: var(--ds-border-strong);
+}
+
+.ds-widget-card[data-editing="true"] {
+  border-style: dashed;
+  border-color: var(--ds-primary-border);
+}
+
+.ds-widget-card[data-dragging="true"] {
+  opacity: 0.62;
+  border-style: solid;
+  border-color: var(--ds-primary);
+  box-shadow: var(--ds-shadow-card-hover);
+}
+
+.ds-widget-card[data-drop-target="true"] {
+  border-style: solid;
+  border-color: var(--ds-primary);
+  box-shadow: 0 0 0 2px var(--ds-focus-ring), var(--ds-shadow-card-hover);
+}
+
+.ds-widget-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--ds-border);
+  min-width: 0;
+}
+
+.ds-widget-card[data-collapsed="true"] .ds-widget-header {
+  border-bottom-color: transparent;
+  padding-bottom: 14px;
+}
+
+.ds-widget-body {
+  padding: 12px 16px 14px;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ds-border-strong) transparent;
+}
+
+.ds-widget-card[data-height="compact"] .ds-widget-body {
+  max-height: 230px;
+}
+.ds-widget-card[data-height="standard"] .ds-widget-body {
+  max-height: 330px;
+}
+.ds-widget-card[data-height="expanded"] .ds-widget-body {
+  max-height: 470px;
+}
+
+.ds-widget-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 16px 11px;
+  border-top: 1px solid var(--ds-border);
+  background: var(--ds-subtle-bg);
+  border-bottom-left-radius: calc(var(--ds-radius-lg) - 1px);
+  border-bottom-right-radius: calc(var(--ds-radius-lg) - 1px);
+}
+
+.ds-widget-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--ds-radius-sm);
+  border: 1px solid var(--ds-border);
+  background: var(--ds-subtle-bg);
+  color: var(--ds-text-muted);
+  cursor: grab;
+  touch-action: none;
+  flex-shrink: 0;
+}
+
+.ds-widget-drag-handle:hover,
+.ds-widget-drag-handle:focus-visible {
+  color: var(--ds-primary);
+  border-color: var(--ds-primary-border);
+  background: var(--ds-primary-soft);
+}
+
+.ds-widget-drag-handle:active {
+  cursor: grabbing;
+}
+
+.ds-widget-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: var(--ds-radius-md);
+  border: 1px solid var(--ds-border);
+  background: var(--ds-subtle-bg);
+  color: var(--ds-text);
+  text-align: left;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+
+.ds-widget-row:hover {
+  background: var(--ds-card-hover-bg);
+  border-color: var(--ds-border-hover);
+}
+
+.ds-widget-menu-popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 45;
+  min-width: 208px;
+  padding: 6px;
+  border-radius: var(--ds-radius-md);
+  border: 1px solid var(--ds-border-strong);
+  background: var(--ds-overlay-bg);
+  color: var(--ds-text);
+  box-shadow: var(--ds-shadow-popover);
+}
+
+.ds-dashboard-edit-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: var(--ds-radius-lg);
+  border: 1px solid var(--ds-primary-border);
+  background: var(--ds-card-bg);
+  box-shadow: var(--ds-shadow-card);
+}
+
+/* 9. Global Portaled Delete Confirmation Modal & ReUI Menubar / ContextMenu */
+.modal-backdrop.ds-delete-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 220;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: var(--ds-scrim);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.confirm-dialog.ds-delete-modal {
+  position: relative;
+  width: min(100%, 440px);
+  max-height: calc(100dvh - 40px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  border-radius: var(--ds-radius-xl);
+  border: 1px solid var(--ds-border-strong);
+  background: var(--ds-overlay-bg);
+  color: var(--ds-text);
+  box-shadow: var(--ds-shadow-modal);
+}
+
+.ds-delete-modal-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 18px 14px;
+  border-bottom: 1px solid var(--ds-border);
+  background: var(--ds-overlay-header-bg);
+}
+
+.ds-delete-modal-title-wrap {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ds-delete-modal-eyebrow {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ds-text-muted);
+}
+
+.confirm-dialog.ds-delete-modal h2 {
+  margin: 0;
+  font-size: 16.5px;
+  font-weight: 650;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+  color: var(--ds-text);
+}
+
+.ds-delete-modal-close {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ds-text-muted);
+  cursor: pointer;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.ds-delete-modal-close:hover:not(:disabled) {
+  background: var(--ds-subtle-bg);
+  color: var(--ds-text);
+}
+
+.confirm-copy.ds-delete-modal-body {
+  padding: 16px 18px;
+  overflow-y: auto;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ds-text-secondary);
+}
+
+.confirm-copy.ds-delete-modal-body p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ds-text-secondary);
+}
+
+.confirm-copy.ds-delete-modal-body p + p {
+  margin-top: 8px;
+}
+
+.confirm-copy.ds-delete-modal-body b,
+.confirm-copy.ds-delete-modal-body strong {
+  color: var(--ds-text);
+  font-weight: 600;
+}
+
+.confirm-actions.ds-delete-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 0;
+  padding: 12px 18px;
+  border-top: 1px solid var(--ds-border);
+  background: var(--ds-overlay-footer-bg);
+}
+
+.ds-delete-cancel-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--ds-border-strong);
+  border-radius: var(--ds-radius-sm);
+  background: var(--ds-card-bg);
+  color: var(--ds-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ds-delete-cancel-btn:hover:not(:disabled) {
+  background: var(--ds-subtle-bg);
+  color: var(--ds-text);
+}
+
+.ds-delete-confirm-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 15px;
+  border: 1px solid var(--ds-danger);
+  border-radius: var(--ds-radius-sm);
+  background: var(--ds-danger);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ds-delete-confirm-btn:hover:not(:disabled) {
+  filter: brightness(0.94);
+}
+
+.ds-delete-confirm-btn:disabled,
+.ds-delete-cancel-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.workspace-topbar .workspace-title-stack {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* Full-bleed edge-to-edge workspace layout when Persora Table or Persora Docs editor is open */
+.workspace-main:has(.tb-editor),
+.workspace-main:has(.pd-editor) {
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+}
+
+.workspace-main:has(.tb-editor) > .workspace-footer,
+.workspace-main:has(.pd-editor) > .workspace-footer {
+  display: none;
+}
+
+.workspace-content:has(.tb-editor),
+.workspace-content:has(.pd-editor) {
+  flex: 1 1 0%;
+  min-height: 0;
+  width: 100%;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Shared member + public-link Share dialog card primitives (Persora Table & Persora Docs) */
+.tb-share-unified-dialog {
+  width: min(560px, 100%);
+}
+
+.tb-share-unified-dialog .record-share-submit:disabled {
+  background: var(--ds-subtle-bg);
+  border-color: var(--ds-border);
+  color: var(--ds-text-muted);
+  box-shadow: none;
+  opacity: 1;
+}
+
+.tb-share-unified-dialog .tb-share-link-card {
+  margin-top: 12px;
+}
+
+.tb-share-link-card {
+  padding: 14px;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-md);
+  background: var(--ds-subtle-bg);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tb-share-link-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.tb-share-link-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  flex: 1 1 220px;
+}
+
+.tb-share-link-copy {
+  min-width: 0;
+}
+
+.tb-share-link-title {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 650;
+  color: var(--ds-text);
+}
+
+.tb-share-link-desc {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ds-text-muted);
+  max-width: 320px;
+}
+
+.tb-share-link-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tb-share-link-url-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tb-share-link-url-box input {
+  flex: 1 1 200px;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--ds-border-strong);
+  border-radius: var(--ds-radius-xs);
+  background: var(--ds-card-bg);
+  color: var(--ds-text-secondary);
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.tb-share-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tb-share-open-link {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.tb-share-link-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-top: 8px;
+  border-top: 1px solid var(--ds-border);
+}
+
+.tb-link-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--ds-radius-xs);
+  background: transparent;
+  color: var(--ds-text-secondary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tb-link-action-btn:hover:not(:disabled) {
+  background: var(--ds-card-bg);
+  border-color: var(--ds-border);
+  color: var(--ds-text);
+}
+
+.tb-link-action-btn.is-danger {
+  color: var(--ds-rose);
+}
+
+.tb-link-action-btn.is-danger:hover:not(:disabled) {
+  background: var(--ds-rose-soft);
+  border-color: var(--ds-rose-border);
+}
+
+

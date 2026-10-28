@@ -39,7 +39,7 @@ async function eventually(read, expected, message, timeout = 8000) {
 
 // Module labels exactly as the sidebar shows them.
 const LABELS = {
-  dashboard: 'Overview', calendar: 'Calendar', habits: 'Habit Tracker', loans: 'Loan Tracker', tables: 'Persora Table', timeline: 'Life Timeline', 'medical-records': 'Medical Records', contacts: 'Contacts',
+  dashboard: 'Overview', calendar: 'Calendar', habits: 'Habit Tracker', loans: 'Loan Tracker', tables: 'Persora Table', forms: 'Persora Forms', timeline: 'Life Timeline', 'medical-records': 'Medical Records', contacts: 'Contacts',
   shared: 'Shared documents', 'personal-finance': 'Personal Finance', documents: 'Documents', academics: 'Academics', family: 'Family',
   'photo-studio': 'Photo Studio', subscriptions: 'Subscriptions', purchases: 'Purchases & warranty', accounts: 'Accounts',
   memberships: 'Membership wallet', 'wallet-cards': 'Wallet Cards', 'password-manager': 'Password Manager', projects: 'Projects',

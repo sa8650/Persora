@@ -303,9 +303,9 @@ export async function deleteTimelineEvent(id: string): Promise<void> {
   await pagesApiRequest(`/timeline?id=${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
-export async function uploadTimelineAttachment(file: File): Promise<TimelineAttachment> {
+export async function uploadTimelineAttachment(file: File, onProgress?: (progress: TransferProgress) => void): Promise<TimelineAttachment> {
   const form = new FormData(); form.append("file", file, file.name);
-  const result = await uploadMultipart<TimelineAttachment>("/timeline/attachment", form);
+  const result = await uploadMultipart<TimelineAttachment>("/timeline/attachment", form, onProgress);
   return result;
 }
 
@@ -381,12 +381,20 @@ export async function downloadMedicalRecordFile(recordId: string): Promise<void>
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
 }
 
-function uploadMultipart<T>(path: string, form: FormData, onProgress?: (progress: TransferProgress) => void, method: "POST" | "PUT" = "POST"): Promise<T> {
+export function uploadMultipart<T>(path: string, form: FormData, onProgress?: (progress: TransferProgress) => void, method: "POST" | "PUT" = "POST"): Promise<T> {
   if (!apiBase) return Promise.reject(new Error("Persora's Pages Functions API is not enabled. Set VITE_USE_PAGES_FUNCTIONS=true in Cloudflare Pages settings."));
+  const fileValue = form.get("file");
+  const fileSize = fileValue instanceof Blob ? fileValue.size : 0;
+  if (typeof XMLHttpRequest === "undefined" || (typeof window !== "undefined" && "happyDOM" in window)) {
+    onProgress?.({ loaded: 0, total: fileSize, percent: 0, remainingSeconds: null });
+    return pagesApiRequest(path, { method, body: form }).then(async (response) => {
+      const payload = await response.json() as T;
+      onProgress?.({ loaded: fileSize, total: fileSize, percent: 100, remainingSeconds: 0 });
+      return payload;
+    });
+  }
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    const fileValue = form.get("file");
-    const fileSize = fileValue instanceof File ? fileValue.size : 0;
     const start = performance.now();
     xhr.open(method, `${apiBase}${path}`);
     xhr.withCredentials = true;
@@ -411,7 +419,7 @@ function uploadMultipart<T>(path: string, form: FormData, onProgress?: (progress
         reject(new PagesApiError(message, xhr.status));
         return;
       }
-      onProgress?.({ loaded: Number(form.get("file") instanceof File ? (form.get("file") as File).size : 0), total: Number(form.get("file") instanceof File ? (form.get("file") as File).size : 0), percent: 100, remainingSeconds: 0 });
+      onProgress?.({ loaded: fileSize, total: fileSize, percent: 100, remainingSeconds: 0 });
       resolve(payload as T);
     };
     xhr.send(form);
@@ -527,7 +535,7 @@ async function azureCompatibleScanFile(file: File): Promise<File> {
   }
 }
 
-export async function smartScanDocument(file: File, section: string, fields: SmartScanFieldDefinition[], retry = false): Promise<SmartScanResult> {
+export async function smartScanDocument(file: File, section: string, fields: SmartScanFieldDefinition[], retry = false, onProgress?: (progress: TransferProgress) => void): Promise<SmartScanResult> {
   const scanFile = await azureCompatibleScanFile(file);
   if (scanFile.size > SMART_SCAN_MAX_FILE_BYTES) throw new Error("Smart Scan supports files up to 7 MB.");
   const form = new FormData();
@@ -535,7 +543,7 @@ export async function smartScanDocument(file: File, section: string, fields: Sma
   form.append("section", section);
   form.append("fields", JSON.stringify(fields));
   form.append("retry", retry ? "true" : "false");
-  return uploadMultipart<SmartScanResult>("/smart-scan", form);
+  return uploadMultipart<SmartScanResult>("/smart-scan", form, onProgress);
 }
 
 export async function deleteVaultFile(key: string): Promise<void> {
@@ -571,11 +579,11 @@ export function alarmRingtoneAudioPath(id: string): string {
   return `${apiBase}/alarm-ringtones/${encodeURIComponent(id)}/audio`;
 }
 
-export async function uploadAlarmRingtone(name: string, file: File): Promise<AlarmRingtone> {
+export async function uploadAlarmRingtone(name: string, file: File, onProgress?: (progress: TransferProgress) => void): Promise<AlarmRingtone> {
   const form = new FormData();
   form.append("name", name);
   form.append("file", file, file.name);
-  return uploadMultipart<AlarmRingtone>("/admin/alarm-ringtones", form);
+  return uploadMultipart<AlarmRingtone>("/admin/alarm-ringtones", form, onProgress);
 }
 
 export async function deleteAlarmRingtone(id: string): Promise<void> {
@@ -755,7 +763,19 @@ export async function listProjects(): Promise<ProjectSummary[]> {
   const data = await pagesApiJson<{ projects: ProjectSummary[] }>("/projects");
   return data.projects;
 }
-export async function createProject(input: { name: string; description?: string; kind?: ProjectKind }): Promise<ProjectRecord> {
+export interface ProjectUpsertInput {
+  name: string;
+  description?: string;
+  kind?: ProjectKind;
+  category?: string;
+  tags?: string[];
+  startDate?: string | null;
+  dueDate?: string | null;
+  priority?: import("../types").ProjectPriority;
+  paused?: boolean;
+  archived?: boolean;
+}
+export async function createProject(input: ProjectUpsertInput): Promise<ProjectRecord> {
   const data = await postJson<{ project: ProjectRecord }>("/projects", input);
   return data.project;
 }
@@ -765,7 +785,7 @@ export async function loadProjectDetail(projectId: string): Promise<ProjectDetai
 export async function loadProjectActivityStats(projectId: string, range: ProjectActivityRange): Promise<ProjectActivityStats> {
   return pagesApiJson<ProjectActivityStats>(`/projects/${encodeURIComponent(projectId)}/activity-stats?range=${range}`);
 }
-export async function updateProject(projectId: string, patch: { name?: string; description?: string; kind?: ProjectKind }): Promise<ProjectRecord> {
+export async function updateProject(projectId: string, patch: Partial<ProjectUpsertInput>): Promise<ProjectRecord> {
   const data = await patchJson<{ project: ProjectRecord }>(`/projects/${encodeURIComponent(projectId)}`, patch);
   return data.project;
 }
@@ -803,8 +823,15 @@ export async function updateProjectField(projectId: string, fieldId: string, inp
 export async function deleteProjectField(projectId: string, fieldId: string): Promise<void> {
   await deleteJson(`/projects/${encodeURIComponent(projectId)}/fields/${encodeURIComponent(fieldId)}`);
 }
-export interface ProjectTaskInput { name: string; description?: string; fieldId: string; assigneeId?: string | null; status?: ProjectTaskStatus }
-export type ProjectTaskPatch = Partial<Pick<ProjectTaskInput, "name" | "description" | "fieldId" | "assigneeId" | "status">>;
+export interface ProjectTaskInput {
+  name: string;
+  description?: string;
+  fieldId: string;
+  assigneeId?: string | null;
+  status?: ProjectTaskStatus;
+  priority?: import("../types").ProjectPriority;
+}
+export type ProjectTaskPatch = Partial<Pick<ProjectTaskInput, "name" | "description" | "fieldId" | "assigneeId" | "status" | "priority">>;
 export async function createProjectTask(projectId: string, input: ProjectTaskInput): Promise<ProjectTask> {
   const data = await postJson<{ task: ProjectTask }>(`/projects/${encodeURIComponent(projectId)}/tasks`, input);
   return data.task;
@@ -817,8 +844,9 @@ export async function loadProjectTask(projectId: string, taskId: string): Promis
   const data = await pagesApiJson<{ task: ProjectTask }>(`/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}`);
   return data.task;
 }
-export async function moveProjectTask(projectId: string, taskId: string, status: ProjectTaskStatus): Promise<ProjectTask> {
-  const data = await postJson<{ task: ProjectTask }>(`/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/move`, { status });
+export async function moveProjectTask(projectId: string, taskId: string, status: ProjectTaskStatus, sortOrder?: number): Promise<ProjectTask> {
+  const body = typeof sortOrder === "number" && Number.isFinite(sortOrder) ? { status, sortOrder: Math.trunc(sortOrder) } : { status };
+  const data = await postJson<{ task: ProjectTask }>(`/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/move`, body);
   return data.task;
 }
 export async function pauseProjectTask(projectId: string, taskId: string, paused: boolean): Promise<ProjectTask> {
@@ -839,10 +867,9 @@ export async function updateProjectTaskComment(projectId: string, taskId: string
 export async function deleteProjectTaskComment(projectId: string, taskId: string, commentId: string): Promise<void> {
   await deleteJson(`/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/comments/${encodeURIComponent(commentId)}`);
 }
-export async function uploadProjectTaskAttachment(projectId: string, taskId: string, file: File): Promise<ProjectTaskAttachment> {
+export async function uploadProjectTaskAttachment(projectId: string, taskId: string, file: File, onProgress?: (progress: TransferProgress) => void): Promise<ProjectTaskAttachment> {
   const form = new FormData(); form.append("file", file, file.name);
-  const response = await pagesApiRequest(`/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/attachments`, { method: "POST", body: form });
-  const data = await response.json() as { attachment: ProjectTaskAttachment };
+  const data = await uploadMultipart<{ attachment: ProjectTaskAttachment }>(`/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/attachments`, form, onProgress);
   return data.attachment;
 }
 export async function deleteProjectTaskAttachment(projectId: string, taskId: string, attachmentId: string): Promise<void> {
@@ -853,10 +880,9 @@ export async function loadProjectTaskAttachment(projectId: string, taskId: strin
   return (await pagesApiRequest(url)).blob();
 }
 
-export async function uploadProjectFieldAttachment(projectId: string, fieldId: string, file: File): Promise<ProjectFieldAttachment> {
+export async function uploadProjectFieldAttachment(projectId: string, fieldId: string, file: File, onProgress?: (progress: TransferProgress) => void): Promise<ProjectFieldAttachment> {
   const form = new FormData(); form.append("file", file, file.name);
-  const response = await pagesApiRequest(`/projects/${encodeURIComponent(projectId)}/fields/${encodeURIComponent(fieldId)}/attachments`, { method: "POST", body: form });
-  const data = await response.json() as { attachment: ProjectFieldAttachment };
+  const data = await uploadMultipart<{ attachment: ProjectFieldAttachment }>(`/projects/${encodeURIComponent(projectId)}/fields/${encodeURIComponent(fieldId)}/attachments`, form, onProgress);
   return data.attachment;
 }
 export async function deleteProjectFieldAttachment(projectId: string, fieldId: string, attachmentId: string): Promise<void> {
@@ -958,12 +984,11 @@ export async function listPhotoStudioPhotos(): Promise<PhotoStudioPhoto[]> {
   return Array.isArray(data.photos) ? data.photos.map(photoFromRow) : [];
 }
 
-export async function savePhotoStudioPhoto(file: Blob, fileName: string, input: PhotoStudioSaveInput): Promise<{ photo: PhotoStudioPhoto; folder: VaultFolder | null; createdFolder: boolean }> {
+export async function savePhotoStudioPhoto(file: Blob, fileName: string, input: PhotoStudioSaveInput, onProgress?: (progress: TransferProgress) => void): Promise<{ photo: PhotoStudioPhoto; folder: VaultFolder | null; createdFolder: boolean }> {
   const form = new FormData();
   form.append("file", file, fileName);
   form.append("meta", JSON.stringify(input));
-  const response = await pagesApiRequest("/photo-studio/photos", { method: "POST", body: form });
-  const data = await response.json() as { photo: Record<string, unknown>; folder?: Record<string, unknown> | null; createdFolder?: boolean };
+  const data = await uploadMultipart<{ photo: Record<string, unknown>; folder?: Record<string, unknown> | null; createdFolder?: boolean }>("/photo-studio/photos", form, onProgress);
   return { photo: photoFromRow(data.photo), folder: data.folder ? folderFromRow(data.folder) : null, createdFolder: Boolean(data.createdFolder) };
 }
 

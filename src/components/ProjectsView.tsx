@@ -1,30 +1,38 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import {
-  Activity, Bell, Check, CheckCircle2, ChevronLeft, CircleAlert, Clock3, Download, Eye, FileText, Folder, FolderKanban, FolderPlus, FolderOpen, Info, LayoutGrid, List, Loader2,
-  MessageSquare, Paperclip, Pencil, Pin, Plus, RefreshCw, Search, Send, ShieldCheck, Star, Trash2, UserPlus, UsersRound, X,
+  Activity, Archive, Bell, CalendarDays, Check, CheckCircle2, ChevronLeft, CircleAlert, Clock3, Download, Eye, FileText, Folder, FolderPlus, FolderOpen, Info, LayoutGrid, List,
+  MessageSquare, Paperclip, Pause, Pencil, Pin, Play, Plus, RefreshCw, Search, Send, ShieldCheck, Star, Tag, Trash2, UserPlus, UsersRound, X,
 } from "lucide-react";
+import { PersoraEmptyState } from "@/design-system";
 import type {
   AppUser, ProjectDetail, ProjectField, ProjectFieldAttachment, ProjectFieldComment, ProjectFieldRequest, ProjectFieldStatus,
-  ProjectFolder, ProjectFolderColor, ProjectKind, ProjectMemberRole, ProjectNotificationPreferences, ProjectPerson, ProjectSummary,
+  ProjectFolder, ProjectFolderColor, ProjectKind, ProjectMemberRole, ProjectNotificationPreferences, ProjectPerson, ProjectPriority, ProjectSummary, TransferProgress,
 } from "../types";
 import {
   addProjectComment, addProjectMember, cancelProjectFieldRequest, createProject, createProjectField, createProjectFolder,
   deleteProject, deleteProjectComment, deleteProjectField, deleteProjectFolder, deleteProjectFieldAttachment, listProjects, loadProjectDetail,
   loadProjectFieldAttachment, loadProjectNotificationPreferences, reactToProjectField, removeProjectMember, requestProjectField, resolveProjectFieldRequest, updateProject,
-  updateProjectComment, updateProjectField, updateProjectFolder, updateProjectMember, uploadProjectFieldAttachment, saveProjectNotificationPreferences, type ProjectFieldInput,
+  updateProjectComment, updateProjectField, updateProjectFolder, updateProjectMember, uploadProjectFieldAttachment, saveProjectNotificationPreferences, type ProjectFieldInput, type ProjectUpsertInput,
 } from "../lib/cloud";
 import {
   activityLabel, avatarTone, canCreateField, fieldProgress, fieldsWithTaskProgress, canCreateFolder, canDeleteComment, canEditComment,
-  canEditField, canManageFolder, canManageMembers, canRequestField, filterSortFields, formatDate, initialsFor, profileAvatar,
-  projectKindLabel, projectStats, relativeTime, statusMeta, FOLDER_COLORS, PROJECT_MEMBER_ROLES,
+  canEditField, canManageFolder, canManageMembers, canRequestField, filterSortFields, formatDate, formatProjectFileSize, initialsFor, isFieldPaused, parseProjectTags, priorityMeta, profileAvatar,
+  PROJECT_ATTACHMENT_ACCEPT, PROJECT_PRIORITIES, projectKindLabel, projectStats, relativeTime, statusMeta, validateProjectAttachmentFile, FOLDER_COLORS, PROJECT_MEMBER_ROLES,
   PROJECT_SORT_OPTIONS, PROJECT_STATUSES, type FieldFilter, type ProjectSortKey,
 } from "../lib/projects";
-import ModalPortal from "./ModalPortal";
 import MoreOptionsMenu from "./MoreOptionsMenu";
 import { MagicCard } from "./magic-ui";
 import "./projects.css";
 import { ProjectActivityChart } from "./project-charts/ProjectActivityChart";
-import ProjectTaskList from "./ProjectTaskList";
+import ProjectTaskList, { ProjectModal } from "./ProjectTaskList";
+import { TransferProgressIndicator } from "./ProgressIndicator";
+import { Attachment, AttachmentAction, AttachmentActions, AttachmentContent, AttachmentDescription, AttachmentMedia, AttachmentTitle } from "./ui/attachment";
+import { Checkbox } from "./ui/checkbox";
+import { Progress } from "./ui/progress";
+import { Spinner } from "./ui/spinner";
+import { Badge } from "./reui/badge";
+import { FileType, getFileType } from "./reui/file-type";
+import { IconTile } from "./reui/icon-tile";
 
 interface Props { user: AppUser; maxUploadMb?: number; notify: (message: string, kind?: "success" | "error") => void }
 type DetailTab = "overview" | "fields" | "task-list" | "activity";
@@ -270,11 +278,13 @@ export default function ProjectsView({ user, maxUploadMb = 25, notify }: Props) 
   if (demo) {
     return (
       <div className="pj-view">
-        <div className="pj-gate">
-          <span className="pj-gate-icon"><FolderKanban size={26} /></span>
-          <h2>Projects need a Persora account</h2>
-          <p>Demo mode keeps everything on this device. Sign in to create personal projects, share them with teammates, and keep field work, comments, and requests in sync.</p>
-        </div>
+        <PersoraEmptyState
+          className="pj-gate"
+          moduleId="projects"
+          tone="indigo"
+          title="Projects need a Persora account"
+          description="Demo mode keeps everything on this device. Sign in to create personal projects, share them with teammates, and keep field work, comments, and requests in sync."
+        />
       </div>
     );
   }
@@ -292,43 +302,58 @@ export default function ProjectsView({ user, maxUploadMb = 25, notify }: Props) 
           </div>
         </div>
         {listError && <div className="pj-alert" role="alert"><CircleAlert size={15} /> {listError}<button type="button" onClick={() => void refreshList()}>Retry</button></div>}
-        {!projects && !listError && <div className="pj-loading"><Loader2 className="pj-spin" size={22} /> Loading projects…</div>}
+        {!projects && !listError && <div className="pj-loading"><Spinner className="size-5 text-primary" /> Loading projects…</div>}
         {projects && !projects.length && (
-          <div className="pj-empty">
-            <span className="pj-empty-icon"><FolderKanban size={26} /></span>
-            <h2>No projects yet</h2>
-            <p>Create a personal project to organise field work, or a shared one to bring the team in.</p>
-            <button type="button" className="pj-primary-button" onClick={() => setModal({ kind: "project", editing: null })}><Plus size={15} /> Create your first project</button>
-          </div>
+          <PersoraEmptyState
+            className="pj-empty"
+            moduleId="projects"
+            tone="indigo"
+            title="No projects yet"
+            description="Create a personal project to organise field work, or a shared one to bring the team in."
+            action={<button type="button" className="pj-primary-button" onClick={() => setModal({ kind: "project", editing: null })}><Plus size={15} /> Create your first project</button>}
+          />
         )}
         {projects && projects.length > 0 && (
           <div className="pj-project-grid">
-            {projects.map((project) => (
-              <MagicCard key={project.id} className="pj-project-card" onClick={() => void openProject(project.id)} role="button" tabIndex={0}
-                onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); void openProject(project.id); } }}>
-                <div className="pj-project-card-content">
-                  <header>
-                    <span className={`pj-chip pj-chip-${project.kind === "shared" ? "accent" : "muted"}`}>{projectKindLabel(project.kind)}</span>
-                    {project.access.owner ? <span className="pj-chip pj-chip-soft">Owner</span> : <span className="pj-chip pj-chip-soft">{project.access.role}</span>}
-                    {project.stats.pendingRequests > 0 && <span className="pj-chip pj-chip-warning">{project.stats.pendingRequests} request{project.stats.pendingRequests === 1 ? "" : "s"}</span>}
-                  </header>
-                  <h3>{project.name}</h3>
-                  {project.description && <p>{project.description}</p>}
-                  <div className="pj-project-card-stats">
-                    <span><FileText size={13} /> {project.stats.fields} field{project.stats.fields === 1 ? "" : "s"}</span>
-                    <span><CheckCircle2 size={13} /> {project.stats.completed} done</span>
-                    {(project.stats.tasksTotal || 0) > 0 && <span><CheckCircle2 size={13} /> {project.stats.tasksCompleted || 0}/{project.stats.tasksTotal} tasks complete</span>}
-                    {project.kind === "shared" && <span><UsersRound size={13} /> {project.stats.members}</span>}
-                  </div>
-                  {project.stats.fields > 0 && (
-                    <div className="pj-progress-track" aria-label={`${Math.round((project.stats.completed / project.stats.fields) * 100)}% of fields complete`}>
-                      <span style={{ width: `${Math.round((project.stats.completed / project.stats.fields) * 100)}%` }} />
+            {projects.map((project) => {
+              const priority = priorityMeta(project.priority);
+              const tags = Array.isArray(project.tags) ? project.tags.filter(Boolean) : [];
+              return (
+                <MagicCard key={project.id} className={`pj-project-card${project.archived ? " is-archived" : ""}${project.paused ? " is-paused" : ""}`} onClick={() => void openProject(project.id)} role="button" tabIndex={0}
+                  onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); void openProject(project.id); } }}>
+                  <div className="pj-project-card-content">
+                    <header>
+                      <Badge variant={project.kind === "shared" ? "primary-light" : "secondary"} size="xs" radius="full">{projectKindLabel(project.kind)}</Badge>
+                      {project.access.owner ? <Badge variant="outline" size="xs" radius="full">Owner</Badge> : <Badge variant="outline" size="xs" radius="full">{project.access.role}</Badge>}
+                      {project.priority && project.priority !== "normal" && <Badge variant={priority.tone === "high" ? "destructive-light" : priority.tone === "medium" ? "warning-light" : "info-light"} size="xs" radius="full" className={`pj-task-priority-tag pj-priority-${priority.tone}`}>{priority.label}</Badge>}
+                      {project.category && <Badge variant="secondary" size="xs" radius="full">{project.category}</Badge>}
+                      {project.paused && <Badge variant="warning-light" size="xs" radius="full"><Pause size={10} /> Paused</Badge>}
+                      {project.archived && <Badge variant="secondary" size="xs" radius="full"><Archive size={10} /> Archived</Badge>}
+                      {project.stats.pendingRequests > 0 && <Badge variant="warning-light" size="xs" radius="full">{project.stats.pendingRequests} request{project.stats.pendingRequests === 1 ? "" : "s"}</Badge>}
+                    </header>
+                    <h3>{project.name}</h3>
+                    {project.description && <p>{project.description}</p>}
+                    {tags.length > 0 && (
+                      <div className="pj-project-card-tags">
+                        {tags.slice(0, 4).map((tag) => <Badge key={tag} variant="outline" size="xs" radius="full">#{tag}</Badge>)}
+                        {tags.length > 4 && <Badge variant="outline" size="xs" radius="full">+{tags.length - 4}</Badge>}
+                      </div>
+                    )}
+                    <div className="pj-project-card-stats">
+                      <span><FileText size={13} /> {project.stats.fields} field{project.stats.fields === 1 ? "" : "s"}</span>
+                      <span><CheckCircle2 size={13} /> {project.stats.completed} done</span>
+                      {project.due_date && <span><CalendarDays size={13} /> Due {formatDate(project.due_date)}</span>}
+                      {(project.stats.tasksTotal || 0) > 0 && <span><CheckCircle2 size={13} /> {project.stats.tasksCompleted || 0}/{project.stats.tasksTotal} tasks complete</span>}
+                      {project.kind === "shared" && <span><UsersRound size={13} /> {project.stats.members}</span>}
                     </div>
-                  )}
-                  {(project.stats.tasksTotal || 0) > 0 && <div className="pj-project-task-progress" aria-label={`${project.stats.tasksCompleted || 0} of ${project.stats.tasksTotal} tasks complete`}><span>Task progress</span><b>{project.stats.tasksCompleted || 0}/{project.stats.tasksTotal}</b><div className="pj-progress-track"><span style={{ width: `${Math.round(((project.stats.tasksCompleted || 0) / (project.stats.tasksTotal || 1)) * 100)}%` }} /></div></div>}
-                </div>
-              </MagicCard>
-            ))}
+                    {project.stats.fields > 0 && (
+                      <Progress value={Math.round((project.stats.completed / project.stats.fields) * 100)} aria-label={`${Math.round((project.stats.completed / project.stats.fields) * 100)}% of fields complete`} className="h-1.5" />
+                    )}
+                    {(project.stats.tasksTotal || 0) > 0 && <div className="pj-project-task-progress" aria-label={`${project.stats.tasksCompleted || 0} of ${project.stats.tasksTotal} tasks complete`}><span>Task progress</span><b>{project.stats.tasksCompleted || 0}/{project.stats.tasksTotal}</b><Progress value={Math.round(((project.stats.tasksCompleted || 0) / (project.stats.tasksTotal || 1)) * 100)} aria-label="Project task completion" className="h-1.5" /></div>}
+                  </div>
+                </MagicCard>
+              );
+            })}
           </div>
         )}
         {modal?.kind === "project" && <ProjectFormModal busy={busy} editing={null} onClose={() => setModal(null)} onSubmit={async (input) => {
@@ -365,7 +390,15 @@ export default function ProjectsView({ user, maxUploadMb = 25, notify }: Props) 
           <button type="button" className="pj-crumb-back" onClick={backToList} aria-label="Back to projects"><ChevronLeft size={16} /> Projects</button>
           <span className="pj-crumb-sep">/</span>
           <strong>{detail?.project.name || "…"}</strong>
-          {detail && <span className={`pj-chip pj-chip-${detail.project.kind === "shared" ? "accent" : "muted"}`}>{projectKindLabel(detail.project.kind)}</span>}
+          {detail && <Badge variant={detail.project.kind === "shared" ? "primary-light" : "secondary"} size="xs" radius="full">{projectKindLabel(detail.project.kind)}</Badge>}
+          {detail?.project.priority && detail.project.priority !== "normal" && (
+            <Badge variant={priorityMeta(detail.project.priority).tone === "high" ? "destructive-light" : priorityMeta(detail.project.priority).tone === "medium" ? "warning-light" : "info-light"} size="xs" radius="full" className={`pj-task-priority-tag pj-priority-${priorityMeta(detail.project.priority).tone}`}>
+              {priorityMeta(detail.project.priority).label}
+            </Badge>
+          )}
+          {detail?.project.category && <Badge variant="secondary" size="xs" radius="full">{detail.project.category}</Badge>}
+          {detail?.project.paused && <Badge variant="warning-light" size="xs" radius="full"><Pause size={10} /> Paused</Badge>}
+          {detail?.project.archived && <Badge variant="secondary" size="xs" radius="full"><Archive size={10} /> Archived</Badge>}
         </div>
         {detail && access && (
           <div className="pj-topbar-actions">
@@ -375,11 +408,11 @@ export default function ProjectsView({ user, maxUploadMb = 25, notify }: Props) 
             <button type="button" className="pj-ghost-button" onClick={() => setModal({ kind: "members" })}><UsersRound size={15} /> Team</button>
             {access.owner && (
               <button type="button" className="pj-ghost-button" onClick={() => setModal({ kind: "requests" })}>
-                <Clock3 size={15} /> Requests{ownerPendingCount > 0 && <span className="pj-badge">{ownerPendingCount}</span>}
+                <Clock3 size={15} /> Requests{ownerPendingCount > 0 && <Badge variant="warning" size="xs" radius="full" className="ml-1">{ownerPendingCount}</Badge>}
               </button>
             )}
             {!access.owner && (
-              <button type="button" className="pj-ghost-button" onClick={() => setModal({ kind: "requests" })}><Clock3 size={15} /> My requests{myPendingRequestCount > 0 && <span className="pj-badge">{myPendingRequestCount}</span>}</button>
+              <button type="button" className="pj-ghost-button" onClick={() => setModal({ kind: "requests" })}><Clock3 size={15} /> My requests{myPendingRequestCount > 0 && <Badge variant="warning" size="xs" radius="full" className="ml-1">{myPendingRequestCount}</Badge>}</button>
             )}
             {access.owner && <button type="button" className="pj-ghost-button" onClick={() => setModal({ kind: "project", editing: detail })}><Pencil size={15} /> Project settings</button>}
             {!access.owner && <button type="button" className="pj-ghost-button" onClick={() => setModal({ kind: "project", editing: detail })}><ShieldCheck size={15} /> About</button>}
@@ -387,7 +420,7 @@ export default function ProjectsView({ user, maxUploadMb = 25, notify }: Props) 
         )}
       </div>
 
-      {detailLoading && <div className="pj-loading"><Loader2 className="pj-spin" size={22} /> Opening project…</div>}
+      {detailLoading && <div className="pj-loading"><Spinner className="size-5 text-primary" /> Opening project…</div>}
       {detailError && <div className="pj-alert" role="alert"><CircleAlert size={15} /> {detailError}<button type="button" onClick={() => void reloadDetail(selectedId)}>Retry</button></div>}
       {listError && <div className="pj-alert" role="alert"><CircleAlert size={15} /> Project summary could not refresh. {listError}<button type="button" onClick={() => void refreshList()}>Retry</button></div>}
 
@@ -416,7 +449,7 @@ export default function ProjectsView({ user, maxUploadMb = 25, notify }: Props) 
             <section className="pj-panel">
               <div className="pj-stats-grid">
                 {[
-                  { label: "Active fields", value: stats.active, note: "Planning, in progress, or blocked", icon: Activity, tone: "blue" },
+                  { label: "Active fields", value: stats.active, note: "Planning, in progress, or paused", icon: Activity, tone: "blue" },
                   { label: "In review", value: stats.inReview, note: "Waiting for sign-off", icon: Clock3, tone: "amber" },
                   { label: "Completed", value: stats.completed, note: `${stats.completion}% of all fields`, icon: CheckCircle2, tone: "green" },
                   { label: "Team members", value: stats.members, note: "Including the owner", icon: UsersRound, tone: "purple" },
@@ -513,11 +546,14 @@ export default function ProjectsView({ user, maxUploadMb = 25, notify }: Props) 
                 </div>
               </div>
               {!visibleFields.length && (
-                <div className="pj-empty pj-empty-small">
-                  <span className="pj-empty-icon"><FolderKanban size={24} /></span>
-                  <h2>{!detail.fields.length ? "No fields yet" : filter.folderId !== "all" && !filter.query.trim() && filter.status === "all" ? "This folder is empty" : "Nothing matches these filters"}</h2>
-                  <p>{!detail.fields.length ? (canCreateField(access) ? "Create the first field to start tracking work." : "When the owner approves field requests they show up here.") : filter.folderId !== "all" && !filter.query.trim() && filter.status === "all" ? "Add or edit a field to place it in this folder." : "Adjust the search or filters to see more."}</p>
-                </div>
+                <PersoraEmptyState
+                  className="pj-empty pj-empty-small"
+                  moduleId="projects"
+                  tone="indigo"
+                  compact
+                  title={!detail.fields.length ? "No fields yet" : filter.folderId !== "all" && !filter.query.trim() && filter.status === "all" ? "This folder is empty" : "Nothing matches these filters"}
+                  description={!detail.fields.length ? (canCreateField(access) ? "Create the first field to start tracking work." : "When the owner approves field requests they show up here.") : filter.folderId !== "all" && !filter.query.trim() && filter.status === "all" ? "Add or edit a field to place it in this folder." : "Adjust the search or filters to see more."}
+                />
               )}
               {visibleFields.length > 0 && (
                 <div className={layout === "grid" ? "pj-card-grid pj-field-cards" : "pj-row-list pj-field-cards"}>
@@ -634,9 +670,10 @@ export default function ProjectsView({ user, maxUploadMb = 25, notify }: Props) 
         />
       )}
       {modal?.kind === "field" && detail && access && (
-        <FieldFormModal busy={busy} mode={modal.mode} field={modal.field} detail={detail}
+        <FieldFormModal busy={busy} mode={modal.mode} field={modal.field ? detail.fields.find((entry) => entry.id === modal.field?.id) || modal.field : undefined} detail={detail} user={user} maxUploadMb={maxUploadMb} notify={notify}
+          onChanged={async () => { await Promise.all([reloadDetail(selectedId), refreshList()]); }}
           onClose={() => setModal(null)}
-          onSubmit={async (input, note) => {
+          onSubmit={async (input, note, queuedFiles) => {
             const ok = await act(async () => {
               if (modal.mode === "request") { await requestProjectField(selectedId, { ...input, note }); return "Request sent — the project owner will review it."; }
               if (modal.mode === "edit" && modal.field) {
@@ -644,6 +681,16 @@ export default function ProjectsView({ user, maxUploadMb = 25, notify }: Props) 
                 return "Field saved.";
               }
               const created = await createProjectField(selectedId, input);
+              if (queuedFiles.length && created?.id) {
+                const failed: string[] = [];
+                for (const file of queuedFiles) {
+                  try { await uploadProjectFieldAttachment(selectedId, created.id, file); }
+                  catch { failed.push(file.name); }
+                }
+                if (failed.length) {
+                  notify(`Field created, though ${failed.length} attachment${failed.length === 1 ? "" : "s"} could not be uploaded.`, "error");
+                }
+              }
               return `“${created.title || input.title}” added to the project.`;
             });
             if (ok) setModal(null);
@@ -716,27 +763,6 @@ export default function ProjectsView({ user, maxUploadMb = 25, notify }: Props) 
 // ============================================================================
 // Field card
 // ============================================================================
-const PROJECT_ATTACHMENT_MIMES: Record<string, string> = {
-  pdf: "application/pdf", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif", webp: "image/webp",
-  txt: "text/plain", csv: "text/csv", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-};
-function validateProjectAttachmentClient(file: File, maxUploadMb: number): string {
-  const extension = file.name.split(".").pop()?.toLowerCase() || "";
-  const expected = PROJECT_ATTACHMENT_MIMES[extension];
-  if (!expected) return "Choose a PDF, image, text/CSV, Word, Excel or PowerPoint file.";
-  if (!file.size) return "The selected file is empty.";
-  const limit = Math.max(1, Math.min(150, Number(maxUploadMb) || 25)) * 1024 * 1024;
-  if (file.size > limit) return `Choose a file no larger than ${Math.floor(limit / 1024 / 1024)} MB.`;
-  if (file.type && file.type !== expected && file.type !== "application/octet-stream" && !(extension === "csv" && file.type === "application/vnd.ms-excel")) return "The file extension and content type do not match.";
-  return "";
-}
-function formatFileSize(size: number): string {
-  if (!Number.isFinite(size) || size < 0) return "—";
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-}
 function FieldCard({ field, layout, folders, onOpen, onToggleReaction }: {
   field: ProjectField;
   layout: "grid" | "list";
@@ -767,8 +793,8 @@ function FieldCard({ field, layout, folders, onOpen, onToggleReaction }: {
       <h3>{field.title}</h3>
       {field.description && <p className="pj-field-card-desc">{field.description}</p>}
       <div className="pj-field-card-progress">
-        <span className="pj-progress-track" role="progressbar" aria-label="Field task progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><span style={{ width: `${progress}%` }} /></span>
-        <span className={`pj-chip pj-chip-${meta.tone}`}>{meta.label}</span>
+        <Progress value={progress} aria-label="Field task progress" className="h-1.5 flex-1" />
+        <Badge variant={meta.tone === "success" ? "success-light" : meta.tone === "warning" ? "warning-light" : meta.tone === "accent" ? "primary-light" : "secondary"} size="xs" radius="full">{meta.label}</Badge>
         <b>{progress}%</b>
       </div>
       <div className="pj-field-card-task-count"><CheckCircle2 size={12} /> {taskCount ? `${completedTaskCount}/${taskCount} tasks complete` : "No tasks"}</div>
@@ -792,34 +818,19 @@ function FieldCard({ field, layout, folders, onOpen, onToggleReaction }: {
 }
 
 // ============================================================================
-// Modals
+// Modals & Shared Field Attachments
 // ============================================================================
-function ModalShell({ title, wide, onClose, children }: { title: string; wide?: boolean; onClose: () => void; children: React.ReactNode }) {
-  // Portal keeps the fixed backdrop out of the workspace's transformed/scrolled
-  // containers so modals always sit above the sidebar and content.
-  return (
-    <ModalPortal>
-      <div className="pj-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-        <div className={`pj-modal ${wide ? "pj-modal-wide" : ""}`} role="dialog" aria-modal="true" aria-label={title}>
-          <header className="pj-modal-head"><h2>{title}</h2><button type="button" className="pj-icon-button" onClick={onClose} aria-label="Close dialog"><X size={16} /></button></header>
-          <div className="pj-modal-body">{children}</div>
-        </div>
-      </div>
-    </ModalPortal>
-  );
-}
-
 function ConfirmModal({ title, body, confirmLabel, busy, danger, onClose, onConfirm }: {
   title: string; body: string; confirmLabel: string; busy: boolean; danger?: boolean; onClose: () => void; onConfirm: () => void;
 }) {
   return (
-    <ModalShell title={title} onClose={onClose}>
+    <ProjectModal title={title} onClose={onClose}>
       <p className="pj-modal-copy">{body}</p>
       <div className="pj-modal-actions">
         <button type="button" className="pj-ghost-button" onClick={onClose} disabled={busy}>Cancel</button>
-        <button type="button" className={danger ? "pj-danger-button" : "pj-primary-button"} onClick={onConfirm} disabled={busy}>{busy ? <Loader2 size={15} className="pj-spin" /> : null}{confirmLabel}</button>
+        <button type="button" className={danger ? "pj-danger-button" : "pj-primary-button"} onClick={onConfirm} disabled={busy}>{busy ? <Spinner className="size-3.5" /> : null}{confirmLabel}</button>
       </div>
-    </ModalShell>
+    </ProjectModal>
   );
 }
 
@@ -827,24 +838,123 @@ function ProjectFormModal({ busy, editing, onClose, onSubmit, onDelete }: {
   busy: boolean;
   editing: ProjectDetail | null;
   onClose: () => void;
-  onSubmit: (input: { name: string; description: string; kind: ProjectKind }) => Promise<void>;
+  onSubmit: (input: ProjectUpsertInput) => Promise<void>;
   onDelete?: () => void;
 }) {
   const [name, setName] = useState(editing?.project.name || "");
   const [description, setDescription] = useState(editing?.project.description || "");
   const [kind, setKind] = useState<ProjectKind>(editing?.project.kind || "personal");
+  const [category, setCategory] = useState(editing?.project.category || "");
+  const [priority, setPriority] = useState<ProjectPriority>(editing?.project.priority || "normal");
+  const [startDate, setStartDate] = useState(editing?.project.start_date ? String(editing.project.start_date).slice(0, 10) : "");
+  const [dueDate, setDueDate] = useState(editing?.project.due_date ? String(editing.project.due_date).slice(0, 10) : "");
+  const [tags, setTags] = useState<string[]>(() => Array.isArray(editing?.project.tags) ? editing!.project.tags!.filter(Boolean) : []);
+  const [tagDraft, setTagDraft] = useState("");
+  const [paused, setPaused] = useState(Boolean(editing?.project.paused));
+  const [archived, setArchived] = useState(Boolean(editing?.project.archived));
+  const [formError, setFormError] = useState("");
   const readOnly = Boolean(editing && onDelete === undefined);
   const memberCount = editing ? editing.members.length : 0;
+
+  const commitDraftTags = (raw: string) => {
+    const incoming = parseProjectTags(raw);
+    if (!incoming.length) return tags;
+    const merged = parseProjectTags([...tags, ...incoming].join(", "));
+    setTags(merged);
+    setTagDraft("");
+    return merged;
+  };
+
+  const removeTag = (target: string) => {
+    setTags((current) => current.filter((entry) => entry !== target));
+  };
+
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (readOnly) { onClose(); return; }
-    void onSubmit({ name: name.trim(), description: description.trim(), kind });
+    if (startDate && dueDate && dueDate < startDate) {
+      setFormError("Target due date cannot be earlier than the start date.");
+      return;
+    }
+    setFormError("");
+    const finalTags = tagDraft.trim() ? parseProjectTags([...tags, ...parseProjectTags(tagDraft)].join(", ")) : tags;
+    void onSubmit({
+      name: name.trim(),
+      description: description.trim(),
+      kind,
+      category: category.trim(),
+      tags: finalTags,
+      startDate: startDate || null,
+      dueDate: dueDate || null,
+      priority,
+      paused,
+      archived,
+    });
   };
   return (
-    <ModalShell title={editing ? (readOnly ? "About this project" : "Project settings") : "New project"} onClose={onClose}>
+    <ProjectModal title={editing ? (readOnly ? "About this project" : "Project settings") : "New project"} wide onClose={onClose}>
       <form className="pj-form" onSubmit={submit}>
         <label>Project name<input value={name} maxLength={120} onChange={(event) => setName(event.target.value)} placeholder="e.g. Website relaunch" required disabled={readOnly} /></label>
         <label>Description <small>(optional)</small><textarea rows={3} maxLength={2000} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What is this project about?" disabled={readOnly} /></label>
+        <div className="pj-form-grid">
+          <label>
+            Category <small>(optional)</small>
+            <input value={category} maxLength={80} onChange={(event) => setCategory(event.target.value)} placeholder="e.g. Product Launch, Marketing" disabled={readOnly} />
+          </label>
+          <label>
+            Priority
+            <select value={priority} onChange={(event) => setPriority(event.target.value as ProjectPriority)} disabled={readOnly}>
+              {PROJECT_PRIORITIES.map((entry) => <option key={entry.value} value={entry.value}>{entry.label}</option>)}
+            </select>
+          </label>
+        </div>
+        <div className="pj-form-grid">
+          <label>
+            Start date <small>(optional)</small>
+            <input type="date" value={startDate} onChange={(event) => { setStartDate(event.target.value); setFormError(""); }} disabled={readOnly} />
+          </label>
+          <label>
+            Target due date <small>(optional)</small>
+            <input type="date" value={dueDate} min={startDate || undefined} onChange={(event) => { setDueDate(event.target.value); setFormError(""); }} disabled={readOnly} />
+          </label>
+        </div>
+        <label>
+          Tags <small>(optional — separate with commas or press Enter)</small>
+          <div className="pj-tag-editor">
+            {tags.map((tag) => (
+              <span key={tag} className="pj-tag-pill">
+                <Tag size={11} />
+                {tag}
+                {!readOnly && (
+                  <button type="button" onClick={() => removeTag(tag)} aria-label={`Remove tag ${tag}`}>
+                    <X size={11} />
+                  </button>
+                )}
+              </span>
+            ))}
+            {!readOnly && tags.length < 12 && (
+              <input
+                value={tagDraft}
+                maxLength={80}
+                onChange={(event) => {
+                  const val = event.target.value;
+                  if (val.includes(",")) commitDraftTags(val);
+                  else setTagDraft(val);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && tagDraft.trim()) {
+                    event.preventDefault();
+                    commitDraftTags(tagDraft);
+                  } else if (event.key === "Backspace" && !tagDraft && tags.length > 0) {
+                    setTags((current) => current.slice(0, -1));
+                  }
+                }}
+                placeholder={tags.length ? "Add another tag…" : "e.g. Q4, Design, Launch"}
+              />
+            )}
+            {readOnly && !tags.length && <small className="pj-muted">No tags added.</small>}
+          </div>
+        </label>
         {!readOnly && (
           <div className="pj-kind-picker" role="group" aria-label="Project type">
             <button type="button" className={kind === "personal" ? "active" : ""} onClick={() => setKind("personal")}>
@@ -855,26 +965,206 @@ function ProjectFormModal({ busy, editing, onClose, onSubmit, onDelete }: {
             </button>
           </div>
         )}
+        <div className="pj-project-toggles" role="group" aria-label="Project state">
+          <label className={`pj-project-toggle${paused ? " active" : ""}`}>
+            <Checkbox checked={paused} onCheckedChange={(next) => setPaused(next === true)} disabled={readOnly} aria-label="Pause project" />
+            <div>
+              <strong><Pause size={13} /> Pause project</strong>
+              <small>Mark this project as on hold while keeping its fields and tasks readable.</small>
+            </div>
+          </label>
+          <label className={`pj-project-toggle${archived ? " active" : ""}`}>
+            <Checkbox checked={archived} onCheckedChange={(next) => setArchived(next === true)} disabled={readOnly} aria-label="Archive project" />
+            <div>
+              <strong><Archive size={13} /> Archive project</strong>
+              <small>Mark completed or retired work as archived at the bottom of your project list.</small>
+            </div>
+          </label>
+        </div>
+        {formError && <p className="pj-form-hint" role="alert"><CircleAlert size={14} /> {formError}</p>}
         {editing && kind === "personal" && memberCount > 0 && <p className="pj-form-hint"><CircleAlert size={14} /> Remove all {memberCount} member{memberCount === 1 ? "" : "s"} before converting this project back to Personal.</p>}
         <div className="pj-modal-actions pj-modal-actions-split">
           {onDelete ? <button type="button" className="pj-danger-button" onClick={onDelete} disabled={busy}><Trash2 size={14} /> Delete project</button> : <span />}
           <div>
             <button type="button" className="pj-ghost-button" onClick={onClose} disabled={busy}>Cancel</button>
-            <button type="submit" className="pj-primary-button" disabled={busy || readOnly}>{busy ? <Loader2 size={15} className="pj-spin" /> : null}{readOnly ? "Close" : editing ? "Save project" : "Create project"}</button>
+            <button type="submit" className="pj-primary-button" disabled={busy || readOnly}>{busy ? <Spinner className="size-3.5" /> : null}{readOnly ? "Close" : editing ? "Save project" : "Create project"}</button>
           </div>
         </div>
       </form>
-    </ModalShell>
+    </ProjectModal>
   );
 }
 
-function FieldFormModal({ busy, mode, field, detail, onClose, onSubmit }: {
+function FieldAttachmentsSection({
+  projectId, field, detail, user, maxUploadMb, canManage, showNote = false, disabled = false,
+  queuedFiles = [], setQueuedFiles, onBusyChange, onChanged, notify,
+}: {
+  projectId: string;
+  field?: ProjectField;
+  detail: ProjectDetail;
+  user: AppUser;
+  maxUploadMb: number;
+  canManage: boolean;
+  showNote?: boolean;
+  disabled?: boolean;
+  queuedFiles?: File[];
+  setQueuedFiles?: (updater: (current: File[]) => File[]) => void;
+  onBusyChange?: (busy: boolean) => void;
+  onChanged: (() => Promise<void>) | (() => void);
+  notify: (message: string, kind?: "success" | "error") => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<TransferProgress | null>(null);
+  const [preview, setPreview] = useState<{ url: string; type: string; name: string } | null>(null);
+  const attachments = field?.attachments || [];
+
+  useEffect(() => () => { if (preview?.url) URL.revokeObjectURL(preview.url); }, [preview?.url]);
+
+  const updateBusy = (next: boolean) => { setBusy(next); onBusyChange?.(next); };
+
+  const handleFiles = async (files: File[]) => {
+    if (!files.length || !canManage || busy) return;
+    for (const candidate of files) {
+      const validation = validateProjectAttachmentFile(candidate, maxUploadMb);
+      if (validation) { notify(validation, "error"); return; }
+    }
+    if (!field) {
+      setQueuedFiles?.((current) => [...current, ...files]);
+      return;
+    }
+    updateBusy(true);
+    try {
+      for (const candidate of files) {
+        setUploadProgress({ loaded: 0, total: candidate.size, percent: 0, remainingSeconds: null });
+        await uploadProjectFieldAttachment(projectId, field.id, candidate, setUploadProgress);
+      }
+      await onChanged();
+      notify(files.length === 1 ? "Private attachment uploaded." : `${files.length} private attachments uploaded.`, "success");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "The attachment could not be uploaded.", "error");
+    } finally {
+      updateBusy(false);
+      setUploadProgress(null);
+    }
+  };
+
+  const openPreview = async (attachment: ProjectFieldAttachment) => {
+    if (!field || !(attachment.file_type.startsWith("image/") || attachment.file_type === "application/pdf")) return;
+    updateBusy(true);
+    try {
+      const blob = await loadProjectFieldAttachment(projectId, field.id, attachment.id, true);
+      setPreview({ url: URL.createObjectURL(blob), type: attachment.file_type, name: attachment.file_name });
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "The attachment preview could not be opened.", "error");
+    } finally {
+      updateBusy(false);
+    }
+  };
+
+  const download = async (attachment: ProjectFieldAttachment) => {
+    if (!field) return;
+    updateBusy(true);
+    try {
+      const blob = await loadProjectFieldAttachment(projectId, field.id, attachment.id);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url; link.download = attachment.file_name; document.body.appendChild(link); link.click(); link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "The attachment could not be downloaded.", "error");
+    } finally {
+      updateBusy(false);
+    }
+  };
+
+  const remove = async (attachment: ProjectFieldAttachment) => {
+    if (!field || !canManage || busy || !(detail.access.owner || attachment.uploader_id === user.id) || !window.confirm(`Remove “${attachment.file_name}” from this field?`)) return;
+    updateBusy(true);
+    try {
+      await deleteProjectFieldAttachment(projectId, field.id, attachment.id);
+      await onChanged();
+      notify("Attachment removed.", "success");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "The attachment could not be removed.", "error");
+    } finally {
+      updateBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <section className="pj-detail-section pj-attachments-section" aria-label="Private attachments">
+        <header>
+          <IconTile variant="soft" size="xs" className="text-blue-600"><Paperclip size={13} /></IconTile>
+          <h3>Private attachments</h3>
+          <Badge variant="secondary" size="xs" radius="full">{attachments.length + queuedFiles.length}</Badge>
+          <span className="pj-flex-spacer" />
+          {canManage && user.uploadsEnabled && (
+            <label className={`pj-attachment-upload ${busy ? "is-busy" : ""}`}>
+              <input type="file" multiple={!showNote} accept={PROJECT_ATTACHMENT_ACCEPT} disabled={busy || disabled} onChange={(event) => { const files = event.currentTarget.files ? Array.from(event.currentTarget.files) : []; try { event.currentTarget.value = ""; } catch { /* synthetic FileList */ } void handleFiles(files); }} />
+              {busy ? <Spinner className="size-3.5" /> : <Plus size={14} />} Attach file
+            </label>
+          )}
+        </header>
+        {showNote && <p className="pj-detail-permission-note">Files stay in private storage. PDFs and images can be previewed; supported documents are available to download.</p>}
+        {canManage && !user.uploadsEnabled && <small className="pj-muted">Uploads are disabled for this account. Existing attachments remain available.</small>}
+        {busy && uploadProgress && <TransferProgressIndicator progress={uploadProgress} label="Uploading private attachment…" detail={`${formatProjectFileSize(uploadProgress.loaded)} of ${formatProjectFileSize(uploadProgress.total)}`} className="mt-2" />}
+        <div className="pj-attachment-list flex flex-col gap-1.5 mt-2">
+          {attachments.map((attachment) => (
+            <Attachment key={attachment.id} size="sm" state="done">
+              <AttachmentMedia>
+                <FileType type={getFileType(attachment.file_name || attachment.file_type)} size="sm" variant="light" aria-hidden />
+              </AttachmentMedia>
+              <AttachmentContent>
+                <AttachmentTitle title={attachment.file_name}>{attachment.file_name}</AttachmentTitle>
+                <AttachmentDescription>{formatProjectFileSize(attachment.file_size)} · {attachment.uploaderName} · {formatDate(attachment.created_at)}</AttachmentDescription>
+              </AttachmentContent>
+              <AttachmentActions>
+                {(attachment.file_type.startsWith("image/") || attachment.file_type === "application/pdf") && <AttachmentAction type="button" onClick={() => void openPreview(attachment)} disabled={busy} aria-label={`Preview ${attachment.file_name}`}><Eye className="size-3.5" /></AttachmentAction>}
+                <AttachmentAction type="button" onClick={() => void download(attachment)} disabled={busy} aria-label={`Download ${attachment.file_name}`}><Download className="size-3.5" /></AttachmentAction>
+                {canManage && (detail.access.owner || attachment.uploader_id === user.id) && <AttachmentAction type="button" onClick={() => void remove(attachment)} disabled={busy} aria-label={`Remove ${attachment.file_name}`} className="text-destructive"><Trash2 className="size-3.5" /></AttachmentAction>}
+              </AttachmentActions>
+            </Attachment>
+          ))}
+          {queuedFiles.map((queued, index) => (
+            <Attachment key={`${queued.name}:${queued.size}:${index}`} size="sm" state="done">
+              <AttachmentMedia>
+                <FileType type={getFileType(queued.name || queued.type)} size="sm" variant="light" aria-hidden />
+              </AttachmentMedia>
+              <AttachmentContent>
+                <AttachmentTitle title={queued.name}>{queued.name}</AttachmentTitle>
+                <AttachmentDescription>{formatProjectFileSize(queued.size)} · Ready to upload when field is created</AttachmentDescription>
+              </AttachmentContent>
+              <AttachmentActions>
+                <AttachmentAction type="button" onClick={() => setQueuedFiles?.((current) => current.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove ${queued.name}`} className="text-destructive"><Trash2 className="size-3.5" /></AttachmentAction>
+              </AttachmentActions>
+            </Attachment>
+          ))}
+          {!attachments.length && !queuedFiles.length && <p className="pj-attachment-empty">No attachments on this field yet.</p>}
+        </div>
+      </section>
+      {preview && (
+        <ProjectModal title={`Preview · ${preview.name}`} wide onClose={() => setPreview(null)}>
+          <div className="pj-attachment-preview">
+            {preview.type.startsWith("image/") ? <img src={preview.url} alt={preview.name} /> : <iframe src={preview.url} title={`Preview ${preview.name}`} sandbox="allow-same-origin" />}
+          </div>
+        </ProjectModal>
+      )}
+    </>
+  );
+}
+
+function FieldFormModal({ busy, mode, field, detail, user, maxUploadMb, notify, onChanged, onClose, onSubmit }: {
   busy: boolean;
   mode: "create" | "request" | "edit";
   field?: ProjectField;
   detail: ProjectDetail;
+  user: AppUser;
+  maxUploadMb: number;
+  notify: (message: string, kind?: "success" | "error") => void;
+  onChanged: () => Promise<void>;
   onClose: () => void;
-  onSubmit: (input: ProjectFieldInput, note: string) => Promise<void>;
+  onSubmit: (input: ProjectFieldInput, note: string, queuedFiles: File[]) => Promise<void>;
 }) {
   const [title, setTitle] = useState(field?.title || "");
   const [description, setDescription] = useState(field?.description || "");
@@ -883,23 +1173,32 @@ function FieldFormModal({ busy, mode, field, detail, onClose, onSubmit }: {
   const [assigneeId, setAssigneeId] = useState(field?.assignee_id || "");
   const [dueDate, setDueDate] = useState(field?.due_date || "");
   const [note, setNote] = useState("");
+  const [queuedFiles, setQueuedFiles] = useState<File[]>([]);
+  const [attachmentBusy, setAttachmentBusy] = useState(false);
   const requestMode = mode === "request";
+  const canManageAttachments = mode === "create"
+    ? canCreateField(detail.access)
+    : Boolean(field && canEditField(detail.access, field, user.id));
+
   const team = useMemo(() => {
     const people: { id: string; name: string }[] = [];
     if (detail.owner) people.push({ id: detail.owner.id, name: `${detail.owner.name} (owner)` });
     for (const member of detail.members) if (!people.some((person) => person.id === member.userId)) people.push({ id: member.userId, name: member.name });
     return people;
   }, [detail]);
+
   const submit = (event: FormEvent) => {
     event.preventDefault();
+    if (busy || attachmentBusy) return;
     const input: ProjectFieldInput = {
       title: title.trim(), description: description.trim(), folderId: folderId || null,
       status, assigneeId: assigneeId || null, dueDate: dueDate || null,
     };
-    void onSubmit(input, note.trim());
+    void onSubmit(input, note.trim(), queuedFiles);
   };
+
   return (
-    <ModalShell title={mode === "edit" ? "Edit field" : requestMode ? "Request a new field" : "New field"} onClose={onClose}>
+    <ProjectModal title={mode === "edit" ? "Edit field" : requestMode ? "Request a new field" : "New field"} wide={!requestMode} onClose={onClose}>
       <form className="pj-form" onSubmit={submit}>
         {requestMode && <p className="pj-form-hint"><ShieldCheck size={14} /> The project owner reviews this request; once approved, the field is created in your name.</p>}
         <label>Title<input value={title} maxLength={160} minLength={1} onChange={(event) => setTitle(event.target.value)} placeholder="e.g. Draft homepage copy" required autoFocus /></label>
@@ -918,13 +1217,29 @@ function FieldFormModal({ busy, mode, field, detail, onClose, onSubmit }: {
             {team.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
           </select></label>
         </div>
+        {!requestMode && (
+          <FieldAttachmentsSection
+            projectId={detail.project.id}
+            field={field}
+            detail={detail}
+            user={user}
+            maxUploadMb={maxUploadMb}
+            canManage={canManageAttachments}
+            disabled={busy}
+            queuedFiles={queuedFiles}
+            setQueuedFiles={setQueuedFiles}
+            onBusyChange={setAttachmentBusy}
+            onChanged={onChanged}
+            notify={notify}
+          />
+        )}
         {requestMode && <label>Note for the owner <small>(optional)</small><textarea rows={2} maxLength={1000} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Why does the team need this field?" /></label>}
         <div className="pj-modal-actions">
-          <button type="button" className="pj-ghost-button" onClick={onClose} disabled={busy}>Cancel</button>
-          <button type="submit" className="pj-primary-button" disabled={busy || !title.trim()}>{busy ? <Loader2 size={15} className="pj-spin" /> : null}{mode === "edit" ? "Save field" : requestMode ? "Send request" : "Create field"}</button>
+          <button type="button" className="pj-ghost-button" onClick={onClose} disabled={busy || attachmentBusy}>Cancel</button>
+          <button type="submit" className="pj-primary-button" disabled={busy || attachmentBusy || !title.trim()}>{busy ? <Spinner className="size-3.5" /> : null}{mode === "edit" ? "Save field" : requestMode ? "Send request" : "Create field"}</button>
         </div>
       </form>
-    </ModalShell>
+    </ProjectModal>
   );
 }
 
@@ -941,7 +1256,7 @@ function FolderFormModal({ busy, folder, onClose, onSubmit }: {
     void onSubmit({ name: name.trim(), color });
   };
   return (
-    <ModalShell title={folder ? "Edit folder" : "New folder"} onClose={onClose}>
+    <ProjectModal title={folder ? "Edit folder" : "New folder"} onClose={onClose}>
       <form className="pj-form" onSubmit={submit}>
         <label>Folder name<input value={name} maxLength={80} minLength={1} onChange={(event) => setName(event.target.value)} placeholder="e.g. Design" required autoFocus /></label>
         <div className="pj-color-picker" role="group" aria-label="Folder colour">
@@ -951,10 +1266,10 @@ function FolderFormModal({ busy, folder, onClose, onSubmit }: {
         </div>
         <div className="pj-modal-actions">
           <button type="button" className="pj-ghost-button" onClick={onClose} disabled={busy}>Cancel</button>
-          <button type="submit" className="pj-primary-button" disabled={busy}>{busy ? <Loader2 size={15} className="pj-spin" /> : null}{folder ? "Save folder" : "Create folder"}</button>
+          <button type="submit" className="pj-primary-button" disabled={busy}>{busy ? <Spinner className="size-3.5" /> : null}{folder ? "Save folder" : "Create folder"}</button>
         </div>
       </form>
-    </ModalShell>
+    </ProjectModal>
   );
 }
 
@@ -976,16 +1291,30 @@ function FieldDetailModal({ busy, field, detail, user, maxUploadMb, onClose, onT
   const [commentBusy, setCommentBusy] = useState(false);
   const [editingCommentId, setEditingCommentId] = useState("");
   const [editingCommentBody, setEditingCommentBody] = useState("");
-  const [attachmentBusy, setAttachmentBusy] = useState(false);
-  const [attachmentPreview, setAttachmentPreview] = useState<{ url: string; type: string; name: string } | null>(null);
   const comments = field.comments || [];
-  const attachments = field.attachments || [];
   const linkedTasks = (detail.tasks || []).filter((task) => task.field_id === field.id);
   const progress = fieldProgress(field);
   const completedTaskCount = linkedTasks.filter((task) => task.status === "complete").length;
   const mine = field.mine || { pinned: false, favourite: false };
   const meta = statusMeta(field.status);
   const editable = canEditField(detail.access, field, user.id);
+  const fieldPaused = isFieldPaused(field);
+  const [pauseBusy, setPauseBusy] = useState(false);
+
+  const toggleFieldPause = async () => {
+    if (!editable || pauseBusy) return;
+    const nextStatus: ProjectFieldStatus = fieldPaused ? "in-progress" : "blocked";
+    setPauseBusy(true);
+    try {
+      await updateProjectField(detail.project.id, field.id, { status: nextStatus });
+      await onChanged();
+      notify(nextStatus === "blocked" ? `“${field.title}” paused — linked tasks are locked in their columns.` : `“${field.title}” resumed.`, "success");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Could not update field pause state.", "error");
+    } finally {
+      setPauseBusy(false);
+    }
+  };
 
   const postComment = async () => {
     const body = comment.trim();
@@ -997,8 +1326,7 @@ function FieldDetailModal({ busy, field, detail, user, maxUploadMb, onClose, onT
       await onChanged();
     } catch (error) { notify(error instanceof Error ? error.message : "The comment could not be posted.", "error"); return; }
     finally { setCommentBusy(false); }
-    // onChanged reloads the bundle; keep focus stable after posting.
-    setTimeout(() => { (document.querySelector(".pj-comment-input textarea") as HTMLTextAreaElement | null)?.focus(); }, 260);
+    setTimeout(() => { (document.querySelector(".pj-comment-input textarea") as HTMLTextAreaElement | null)?.focus(); }, 180);
   };
   const saveEditedComment = async (entry: ProjectFieldComment) => {
     const body = editingCommentBody.trim();
@@ -1018,58 +1346,28 @@ function FieldDetailModal({ busy, field, detail, user, maxUploadMb, onClose, onT
     catch (error) { notify(error instanceof Error ? error.message : "The comment could not be deleted.", "error"); }
     finally { setCommentBusy(false); }
   };
-  useEffect(() => () => { if (attachmentPreview?.url) URL.revokeObjectURL(attachmentPreview.url); }, [attachmentPreview?.url]);
 
-  const uploadAttachment = async (file?: File) => {
-    if (!file || !editable || attachmentBusy) return;
-    const validation = validateProjectAttachmentClient(file, maxUploadMb);
-    if (validation) { notify(validation, "error"); return; }
-    setAttachmentBusy(true);
-    try { await uploadProjectFieldAttachment(detail.project.id, field.id, file); await onChanged(); notify("Private attachment uploaded.", "success"); }
-    catch (error) { notify(error instanceof Error ? error.message : "The attachment could not be uploaded.", "error"); }
-    finally { setAttachmentBusy(false); }
-  };
-  const openAttachmentPreview = async (attachment: ProjectFieldAttachment) => {
-    if (!(attachment.file_type.startsWith("image/") || attachment.file_type === "application/pdf")) return;
-    setAttachmentBusy(true);
-    try {
-      const blob = await loadProjectFieldAttachment(detail.project.id, field.id, attachment.id, true);
-      setAttachmentPreview({ url: URL.createObjectURL(blob), type: attachment.file_type, name: attachment.file_name });
-    } catch (error) { notify(error instanceof Error ? error.message : "The attachment preview could not be opened.", "error"); }
-    finally { setAttachmentBusy(false); }
-  };
-  const downloadAttachment = async (attachment: ProjectFieldAttachment) => {
-    setAttachmentBusy(true);
-    try {
-      const blob = await loadProjectFieldAttachment(detail.project.id, field.id, attachment.id);
-      const url = URL.createObjectURL(blob); const link = document.createElement("a");
-      link.href = url; link.download = attachment.file_name; document.body.appendChild(link); link.click(); link.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1500);
-    } catch (error) { notify(error instanceof Error ? error.message : "The attachment could not be downloaded.", "error"); }
-    finally { setAttachmentBusy(false); }
-  };
-  const removeAttachment = async (attachment: ProjectFieldAttachment) => {
-    if (!editable || attachmentBusy || !(detail.access.owner || attachment.uploader_id === user.id) || !window.confirm(`Remove “${attachment.file_name}” from this field?`)) return;
-    setAttachmentBusy(true);
-    try { await deleteProjectFieldAttachment(detail.project.id, field.id, attachment.id); await onChanged(); notify("Attachment removed.", "success"); }
-    catch (error) { notify(error instanceof Error ? error.message : "The attachment could not be removed.", "error"); }
-    finally { setAttachmentBusy(false); }
-  };
-
-  return (<>
-    <ModalShell title={field.title} wide onClose={onClose}>
+  return (
+    <ProjectModal title={field.title} wide onClose={onClose}>
       <div className="pj-detail-actions">
         <span className={`pj-chip pj-chip-${meta.tone}`}>{meta.label}</span>
+        {fieldPaused && <span className="pj-task-lock-pill"><Pause size={9} aria-hidden="true" /> Locks task moves</span>}
         <span className="pj-flex-spacer" />
         <button type="button" className={`pj-icon-button ${mine.pinned ? "pj-icon-active" : ""}`} onClick={() => onToggleReaction("pinned")} aria-label={mine.pinned ? "Unpin field" : "Pin field"} aria-pressed={mine.pinned}><Pin size={15} /></button>
         <button type="button" className={`pj-icon-button ${mine.favourite ? "pj-icon-star-active" : ""}`} onClick={() => onToggleReaction("favourite")} aria-label={mine.favourite ? "Remove favourite" : "Favourite field"} aria-pressed={mine.favourite}><Star size={15} /></button>
+        {editable && field.status !== "completed" && (
+          <button type="button" className="pj-ghost-button" onClick={() => void toggleFieldPause()} disabled={busy || pauseBusy}>
+            {pauseBusy ? <Spinner className="size-3.5" /> : fieldPaused ? <Play size={14} /> : <Pause size={14} />}
+            {fieldPaused ? "Resume" : "Pause"}
+          </button>
+        )}
         {editable && <button type="button" className="pj-ghost-button" onClick={onDelete} disabled={busy}><Trash2 size={14} /> Delete</button>}
         {editable && <button type="button" className="pj-primary-button" onClick={onEdit} disabled={busy}><Pencil size={14} /> Edit</button>}
       </div>
 
       <div className="pj-detail-sections">
         <section className="pj-detail-section">
-          <header><span className="pj-detail-section-icon pj-detail-blue"><Info size={15} /></span><h3>Information</h3></header>
+          <header><IconTile variant="soft" size="xs" className="text-blue-600"><Info size={13} /></IconTile><h3>Information</h3></header>
           <div className="pj-detail-info-grid">
             <div><span>Project</span><b>{detail.project.name}</b></div>
             <div><span>Project access</span><b>{detail.access.owner ? "Owner" : detail.access.role}</b></div>
@@ -1083,30 +1381,27 @@ function FieldDetailModal({ busy, field, detail, user, maxUploadMb, onClose, onT
         </section>
 
         <section className="pj-detail-section">
-          <header><span className="pj-detail-section-icon pj-detail-purple"><FileText size={15} /></span><h3>Description</h3></header>
+          <header><IconTile variant="soft" size="xs" className="text-violet-600"><FileText size={13} /></IconTile><h3>Description</h3></header>
           <p className="pj-modal-copy pj-detail-description">{field.description || "No description has been added."}</p>
         </section>
 
         <section className="pj-detail-section pj-progress-section">
-          <header><span className="pj-detail-section-icon pj-detail-green"><CheckCircle2 size={15} /></span><h3>Status &amp; task progress</h3><span className={`pj-chip pj-chip-${meta.tone}`}>{meta.label}</span><span className="pj-flex-spacer" /><button type="button" className="pj-link-button" onClick={onViewTasks}>View Task List</button></header>
-          <div className="pj-detail-progress-row"><div className="pj-progress-track pj-progress-track-lg" role="progressbar" aria-label="Completed linked tasks" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><span style={{ width: `${progress}%` }} /></div><b>{progress}%</b></div>
+          <header><IconTile variant="soft" size="xs" className="text-emerald-600"><CheckCircle2 size={13} /></IconTile><h3>Status &amp; task progress</h3><Badge variant={meta.tone === "success" ? "success-light" : meta.tone === "warning" ? "warning-light" : meta.tone === "accent" ? "primary-light" : "secondary"} size="xs" radius="full">{meta.label}</Badge><span className="pj-flex-spacer" /><button type="button" className="pj-link-button" onClick={onViewTasks}>View Task List</button></header>
+          <div className="pj-detail-progress-row"><Progress value={progress} aria-label="Completed linked tasks" className="h-2 flex-1" /><b>{progress}%</b></div>
           <small className="pj-detail-progress-note">{linkedTasks.length ? `${completedTaskCount} of ${linkedTasks.length} linked task${linkedTasks.length === 1 ? "" : "s"} complete.` : "No linked tasks — progress is 0%."} Field workflow status remains separate from task completion.</small>
         </section>
 
-        <section className="pj-detail-section pj-attachments-section">
-          <header><span className="pj-detail-section-icon pj-detail-blue"><Paperclip size={15} /></span><h3>Private attachments</h3><span className="pj-chip pj-chip-muted">{attachments.length}</span><span className="pj-flex-spacer" />{editable && user.uploadsEnabled && <label className={`pj-attachment-upload ${attachmentBusy ? "is-busy" : ""}`}><input type="file" accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.txt,.csv,.docx,.xlsx,.pptx" disabled={attachmentBusy} onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; void uploadAttachment(file); }}/>{attachmentBusy ? <Loader2 size={14} className="pj-spin"/> : <Plus size={14}/>} Attach file</label>}</header>
-          <p className="pj-detail-permission-note">Files stay in private storage. PDFs and images can be previewed; supported documents are available to download.</p>
-          {editable && !user.uploadsEnabled && <small className="pj-muted">Uploads are disabled for this account. Existing attachments remain available.</small>}
-          <ul className="pj-attachment-list">
-            {attachments.map((attachment) => <li key={attachment.id}>
-              <span className="pj-attachment-file-icon"><FileText size={15}/></span><span className="pj-attachment-copy"><b title={attachment.file_name}>{attachment.file_name}</b><small>{formatFileSize(attachment.file_size)} · {attachment.uploaderName} · {formatDate(attachment.created_at)}</small></span>
-              {(attachment.file_type.startsWith("image/") || attachment.file_type === "application/pdf") && <button type="button" className="pj-icon-button" onClick={() => void openAttachmentPreview(attachment)} disabled={attachmentBusy} aria-label={`Preview ${attachment.file_name}`}><Eye size={14}/></button>}
-              <button type="button" className="pj-icon-button" onClick={() => void downloadAttachment(attachment)} disabled={attachmentBusy} aria-label={`Download ${attachment.file_name}`}><Download size={14}/></button>
-              {editable && (detail.access.owner || attachment.uploader_id === user.id) && <button type="button" className="pj-icon-button pj-danger-text" onClick={() => void removeAttachment(attachment)} disabled={attachmentBusy} aria-label={`Remove ${attachment.file_name}`}><Trash2 size={14}/></button>}
-            </li>)}
-            {!attachments.length && <li className="pj-attachment-empty">No attachments on this field yet.</li>}
-          </ul>
-        </section>
+        <FieldAttachmentsSection
+          projectId={detail.project.id}
+          field={field}
+          detail={detail}
+          user={user}
+          maxUploadMb={maxUploadMb}
+          canManage={editable}
+          showNote
+          onChanged={onChanged}
+          notify={notify}
+        />
       </div>
 
       <section className="pj-comments">
@@ -1139,12 +1434,11 @@ function FieldDetailModal({ busy, field, detail, user, maxUploadMb, onClose, onT
         </ul>
         <form className="pj-comment-input" onSubmit={(event) => { event.preventDefault(); void postComment(); }}>
           <textarea rows={2} maxLength={2000} value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Add a comment…" aria-label="Add a comment" />
-          <button type="submit" className="pj-primary-button" disabled={commentBusy || !comment.trim()}>{commentBusy ? <Loader2 size={15} className="pj-spin" /> : <Send size={14} />} Post</button>
+          <button type="submit" className="pj-primary-button" disabled={commentBusy || !comment.trim()}>{commentBusy ? <Spinner className="size-3.5" /> : <Send size={14} />} Post</button>
         </form>
       </section>
-    </ModalShell>
-    {attachmentPreview && <ModalShell title={`Preview · ${attachmentPreview.name}`} wide onClose={() => setAttachmentPreview(null)}><div className="pj-attachment-preview">{attachmentPreview.type.startsWith("image/") ? <img src={attachmentPreview.url} alt={attachmentPreview.name}/> : <iframe src={attachmentPreview.url} title={`Preview ${attachmentPreview.name}`} sandbox="allow-same-origin"/>}</div></ModalShell>}
-  </>);
+    </ProjectModal>
+  );
 }
 
 function ProjectNotificationPreferencesModal({ onClose, notify }: { onClose: () => void; notify: (message: string, kind?: "success" | "error") => void }) {
@@ -1174,12 +1468,12 @@ function ProjectNotificationPreferencesModal({ onClose, notify }: { onClose: () 
     catch (reason) { setError(reason instanceof Error ? reason.message : "Notification preferences could not be saved."); }
     finally { setSaving(false); }
   };
-  return <ModalShell title="Project notification preferences" onClose={onClose}>
+  return <ProjectModal title="Project notification preferences" onClose={onClose}>
     <p className="pj-modal-copy">Choose which project events create persistent in-app notifications. Access checks still apply when notifications are opened.</p>
-    {loading ? <div className="pj-loading"><Loader2 className="pj-spin" size={18}/> Loading preferences…</div> : preferences && <div className="pj-notification-preferences">{rows.map((row) => <label key={row.key}><span><b>{row.label}</b><small>{row.note}</small></span><input type="checkbox" checked={preferences[row.key]} onChange={(event) => setPreferences((current) => current ? { ...current, [row.key]: event.target.checked } : current)}/></label>)}</div>}
+    {loading ? <div className="pj-loading"><Spinner className="size-4 text-primary"/> Loading preferences…</div> : preferences && <div className="pj-notification-preferences">{rows.map((row) => <label key={row.key}><span><b>{row.label}</b><small>{row.note}</small></span><Checkbox checked={preferences[row.key]} onCheckedChange={(next) => setPreferences((current) => current ? { ...current, [row.key]: next === true } : current)} aria-label={row.label}/></label>)}</div>}
     {error && <p className="pj-form-error" role="alert">{error}</p>}
-    <div className="pj-modal-actions"><button type="button" className="pj-ghost-button" onClick={onClose} disabled={saving}>Cancel</button><button type="button" className="pj-primary-button" onClick={() => void save()} disabled={loading || saving || !preferences}>{saving ? <Loader2 size={15} className="pj-spin"/> : <Check size={14}/>} Save preferences</button></div>
-  </ModalShell>;
+    <div className="pj-modal-actions"><button type="button" className="pj-ghost-button" onClick={onClose} disabled={saving}>Cancel</button><button type="button" className="pj-primary-button" onClick={() => void save()} disabled={loading || saving || !preferences}>{saving ? <Spinner className="size-3.5"/> : <Check size={14}/>} Save preferences</button></div>
+  </ProjectModal>;
 }
 
 function MembersModal({ busy, detail, user, onClose, act, onLeft }: {
@@ -1208,7 +1502,7 @@ function MembersModal({ busy, detail, user, onClose, act, onLeft }: {
     if (ok) onLeft();
   };
   return (
-    <ModalShell title="Project team" wide onClose={onClose}>
+    <ProjectModal title="Project team" wide onClose={onClose}>
       <ul className="pj-people-list pj-people-list-modal">
         {detail.owner && (
           <li>
@@ -1227,11 +1521,11 @@ function MembersModal({ busy, detail, user, onClose, act, onLeft }: {
                   {PROJECT_MEMBER_ROLES.map((entry) => <option key={entry.value} value={entry.value}>{entry.label}</option>)}
                 </select>
                 {member.role === "editor" && (
-                  <label className="pj-mini-check"><input type="checkbox" checked={member.canCreateFields} disabled={busy} onChange={(event) => void act(async () => { await updateProjectMember(detail.project.id, member.userId, { canCreateFields: event.target.checked }); return event.target.checked ? `${member.name} can now create fields.` : `${member.name} now needs approval for new fields.`; })} /> Creates fields</label>
+                  <label className="pj-mini-check"><Checkbox checked={member.canCreateFields} disabled={busy} onCheckedChange={(next) => void act(async () => { const checked = next === true; await updateProjectMember(detail.project.id, member.userId, { canCreateFields: checked }); return checked ? `${member.name} can now create fields.` : `${member.name} now needs approval for new fields.`; })} aria-label={`Allow ${member.name} to create fields`} /> Creates fields</label>
                 )}
                 <button type="button" className="pj-icon-button pj-icon-danger" aria-label={`Remove ${member.name}`} disabled={busy} onClick={() => { if (window.confirm(`Remove ${member.name} from the project? Fields they created stay with the project.`)) void act(async () => { await removeProjectMember(detail.project.id, member.userId); return `${member.name} was removed.`; }); }}><Trash2 size={14} /></button>
               </span>
-            ) : <span className="pj-chip pj-chip-soft">{member.role}{member.canCreateFields ? " · creates fields" : ""}</span>}
+            ) : <Badge variant="outline" size="xs" radius="full">{member.role}{member.canCreateFields ? " · creates fields" : ""}</Badge>}
           </li>
         ))}
       </ul>
@@ -1244,10 +1538,10 @@ function MembersModal({ busy, detail, user, onClose, act, onLeft }: {
             <label>Role<select value={role} onChange={(event) => setRole(event.target.value as ProjectMemberRole)}>
               {PROJECT_MEMBER_ROLES.map((entry) => <option key={entry.value} value={entry.value}>{entry.label} — {entry.hint}</option>)}
             </select></label>
-            {role === "editor" && <label className="pj-mini-check pj-member-grant"><input type="checkbox" checked={grant} onChange={(event) => setGrant(event.target.checked)} /> Let them create fields without approval</label>}
+            {role === "editor" && <label className="pj-mini-check pj-member-grant"><Checkbox checked={grant} onCheckedChange={(next) => setGrant(next === true)} aria-label="Let them create fields without approval" /> Let them create fields without approval</label>}
           </div>
           <div className="pj-modal-actions">
-            <button type="submit" className="pj-primary-button" disabled={busy || !recipient.trim()}>{busy ? <Loader2 size={15} className="pj-spin" /> : <UserPlus size={15} />} Add member</button>
+            <button type="submit" className="pj-primary-button" disabled={busy || !recipient.trim()}>{busy ? <Spinner className="size-3.5" /> : <UserPlus size={15} />} Add member</button>
           </div>
         </form>
       )}
@@ -1256,7 +1550,7 @@ function MembersModal({ busy, detail, user, onClose, act, onLeft }: {
           <button type="button" className="pj-danger-button" onClick={() => void leave()} disabled={busy}><Trash2 size={14} /> Leave project</button>
         </div>
       )}
-    </ModalShell>
+    </ProjectModal>
   );
 }
 
@@ -1274,7 +1568,7 @@ function RequestsModal({ busy, detail, user, onClose, act }: {
   const pending = queue.filter((request) => request.status === "pending");
   const resolved = queue.filter((request) => request.status !== "pending");
   return (
-    <ModalShell title={owner ? "Field requests" : "My field requests"} wide onClose={onClose}>
+    <ProjectModal title={owner ? "Field requests" : "My field requests"} wide onClose={onClose}>
       {!queue.length && <div className="pj-empty pj-empty-small"><h2>{owner ? "No requests yet" : "You have not requested fields yet"}</h2><p>{owner ? "When members propose fields they appear here for approval." : "Use “Request field” from the project toolbar whenever you're missing a workspace."}</p></div>}
       {pending.length > 0 && (
         <div className="pj-request-group">
@@ -1300,7 +1594,7 @@ function RequestsModal({ busy, detail, user, onClose, act }: {
           ))}
         </div>
       )}
-    </ModalShell>
+    </ProjectModal>
   );
 }
 

@@ -1,5 +1,8 @@
-import { AlertTriangle, CheckCircle2, LoaderCircle, RotateCcw, ScanLine, Sparkles } from "lucide-react";
+import { AlertTriangle, CheckCircle2, RotateCcw, ScanLine, Sparkles } from "lucide-react";
 import type { SmartScanFieldResult, SmartScanResult } from "../types";
+import { Spinner } from "./ui/spinner";
+import { Badge } from "./reui/badge";
+import { IconTile } from "./reui/icon-tile";
 
 export const SMART_SCAN_MAX_FILE_BYTES = 7 * 1024 * 1024;
 export function isSmartScanFileSizeAllowed(size?: number) { return size === undefined || (size > 0 && size <= SMART_SCAN_MAX_FILE_BYTES); }
@@ -31,10 +34,10 @@ export function SmartScanActionPanel({ fileName, canScan, busy, error, result, o
 
   return <section className={`smart-scan-panel ${busy ? "is-scanning" : ""}`} aria-label="Smart Scan document extraction">
     <div className="smart-scan-topline">
-      <span className="smart-scan-icon"><ScanLine size={16}/><i/></span>
-      <span className="smart-scan-copy"><b>Smart Scan <small>AI</small></b><span>{fileName}</span></span>
+      <IconTile variant="soft" size="sm" className="text-primary"><ScanLine size={16}/></IconTile>
+      <span className="smart-scan-copy"><b className="inline-flex items-center gap-1.5">Smart Scan <Badge variant="primary-light" size="xs" radius="full">AI</Badge></b><span>{fileName}</span></span>
       <button type="button" className="smart-scan-button" onClick={() => onScan(retry)} disabled={!canScan || busy}>
-        {busy ? <LoaderCircle className="smart-scan-button-spinner" size={14}/> : error ? <RotateCcw size={14}/> : <Sparkles size={14}/>}
+        {busy ? <Spinner className="size-3.5"/> : error ? <RotateCcw size={14}/> : <Sparkles size={14}/>}
         {busy ? "Scanning…" : error ? "Retry scan" : result ? "Scan again" : "Scan"}
       </button>
     </div>

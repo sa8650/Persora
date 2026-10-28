@@ -1,32 +1,13 @@
-/* Console refinements: translucent dashboard surfaces, matched 74px headers,
-   a cleaner contact profile, and one shared-card system for every share type. */
-
-/* Overview cards are glassy; the MagicCard pointer glow remains on its own overlay. */
-.dashboard-view .metric-card > .bg-background {
-  background-color: rgba(255, 255, 255, .5) !important;
-}
-.dashboard-view .dashboard-panel {
-  background-color: rgba(255, 255, 255, .5);
-}
-.dashboard-view .space-tile,
-.dashboard-view .dashboard-quick-action,
-.dashboard-view .dashboard-favorites-empty {
-  background-color: rgba(255, 255, 255, .5);
-}
-.dashboard-view .space-tile:hover {
-  background-color: #f8fafd;
-}
-.dashboard-view .dashboard-quick-action:hover {
-  background-color: #f8fbff;
-}
+/* Console refinements: matched header seams, contact profile details,
+   and one shared-card system for every share type. */
 
 /* Align the user and admin navigation/header seams exactly. */
 .sidebar-header,
 .workspace-topbar {
   box-sizing: border-box;
-  height: 74px;
-  min-height: 74px;
-  flex: 0 0 74px;
+  height: 70px;
+  min-height: 70px;
+  flex: 0 0 70px;
 }
 .admin-sidebar {
   padding-top: 0;
@@ -572,25 +553,25 @@
 }
 .shared-view .shared-access-control select {
   height: 33px;
-  border: 1px solid #e0e5eb;
+  border: 1px solid var(--ds-border-strong);
   border-radius: 9px;
   padding: 0 26px 0 9px;
-  color: #3c4043;
-  background: #fff;
-  font-size: 9px;
+  color: var(--ds-text);
+  background: var(--ds-input-bg);
+  font-size: 11px;
 }
 .shared-view .shared-action-unavailable {
   align-self: flex-start;
-  border: 1px solid #e8edf3;
+  border: 1px solid var(--ds-border);
   border-radius: 999px;
   padding: 8px 10px;
-  color: #80868b;
-  background: #f8fafd;
-  font-size: 8px;
+  color: var(--ds-text-muted);
+  background: var(--ds-subtle-bg);
+  font-size: 10px;
 }
 .shared-view .shared-empty {
   border-radius: 16px;
-  background: rgba(255, 255, 255, .7);
+  background: var(--ds-card-bg);
 }
 
 @media (max-width: 720px) {

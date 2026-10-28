@@ -107,7 +107,7 @@ async function databaseError(response) {
   try { payload = await response.json(); } catch { /* generic below */ }
   const code = typeof payload?.code === "string" ? payload.code : "";
   if (code === "42P01" || code === "PGRST205" || code === "PGRST202" || code === "42703") {
-    return new ConnectionError("Connections need their database migration (202610310001_connections.sql). Ask an administrator to apply it.", 503, "migration_required");
+    return new ConnectionError("Connections need the Persora database schema (supabase/schema.sql). Ask an administrator to apply it.", 503, "migration_required");
   }
   console.error("Persora connections database request failed", response.status, code);
   return new ConnectionError("The connection service couldn't reach the database.", 502);

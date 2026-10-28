@@ -175,9 +175,11 @@ test('connected and manage tabs show the real EMS connection with Manage / Disco
   await view.unmount();
 });
 
-test('stripes stay behind content: each host isolates and the pattern sits at z-index -1', () => {
+test('background striped pattern is removed across the entire website', () => {
   const css = read('src/persora-theme.css');
-  assert.match(css, /\.workspace-main, \.admin-portal, \.admin-access-page \{ isolation: isolate; \}/);
-  assert.match(css, /\.workspace-striped-pattern \{ z-index: -1!important;/);
-  assert.match(css, /\.striped-pattern \{[^}]*pointer-events: none/);
+  assert.doesNotMatch(css, /\.workspace-striped-pattern/);
+  assert.doesNotMatch(css, /\.striped-pattern/);
+  for (const page of ['src/components/Workspace.tsx', 'src/components/AdminConsole.tsx', 'src/components/AdminAccessPage.tsx']) {
+    assert.doesNotMatch(read(page), /StripedPattern|workspace-striped-pattern/);
+  }
 });

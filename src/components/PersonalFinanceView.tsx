@@ -11,6 +11,9 @@ import {
   type FinanceKind, type FinanceSaveDraft,
 } from "./FinanceItemModals";
 import type { PersoraContact, VaultItem, ViewId } from "../types";
+import { Badge } from "./reui/badge";
+import { IconTile } from "./reui/icon-tile";
+import { PersoraEmptyState, iconToneClass } from "../design-system";
 import "../personal-finance.css";
 
 type FinanceTab = "dashboard" | FinanceKind;
@@ -137,7 +140,7 @@ export default function PersonalFinanceView({ items, contacts, onSave, onOpenIte
       <div className="finance-heading-actions"><label className="finance-currency-picker"><span>Summary currency</span><select aria-label="Summary currency" value={summaryCurrency} onChange={(event) => setSummaryCurrency(event.target.value)}>{CURRENCIES.map((currency) => <option key={currency} value={currency}>{currency}</option>)}</select></label><button className="finance-primary-button" onClick={() => openAdd()}><Plus size={16}/> Add record</button></div>
     </header>
 
-    <div className="finance-tabs" role="tablist" aria-label="Personal finance sections">{tabs.map(({ id, label, icon: Icon, count }) => <button key={id} type="button" role="tab" aria-selected={activeTab === id} className={activeTab === id ? "is-active" : ""} onClick={() => { setActiveTab(id); setSearch(""); }}><Icon size={15}/><span>{label}</span><small>{count}</small></button>)}</div>
+    <div className="finance-tabs" role="tablist" aria-label="Personal finance sections">{tabs.map(({ id, label, icon: Icon, count }) => <button key={id} type="button" role="tab" aria-selected={activeTab === id} className={activeTab === id ? "is-active" : ""} onClick={() => { setActiveTab(id); setSearch(""); }}><Icon size={15}/><span>{label}</span><Badge variant={activeTab === id ? "primary-light" : "secondary"} size="xs" radius="full">{count}</Badge></button>)}</div>
 
     {activeTab === "dashboard" ? <>
       <section className="finance-summary-section" aria-label={`Monthly cash flow in ${summaryCurrency}`}>
@@ -170,7 +173,7 @@ export default function PersonalFinanceView({ items, contacts, onSave, onOpenIte
       <section className="finance-panel finance-recent-panel"><div className="finance-panel-heading"><div><span className="finance-panel-kicker">Your latest money records</span><h3>Recent activity</h3></div><button className="finance-text-link" onClick={() => setActiveTab("expense")}>View expenses <ArrowRight size={14}/></button></div>
         {records.length ? <div className="finance-recent-list">{records.slice(0, 5).map((item) => <FinanceRecordRow key={item.id} item={item} onOpen={() => setDetailRecord(item)} onEdit={() => { setEditingRecord(item); setNewRecordType(kindOf(item)); setEditorOpen(true); }} onDelete={() => onDeleteItem(item)}/>)}</div> : <FinanceEmpty onAdd={() => openAdd("income")} />}
       </section>
-      <section className="finance-panel finance-links-panel"><div className="finance-panel-heading"><div><span className="finance-panel-kicker">Connected to your life</span><h3>Related spaces</h3></div><Link2 size={17}/></div><div className="finance-linked-spaces">{relatedCounts.map(({ label, count, view, icon: Icon }) => <button key={label} onClick={() => onNavigate(view)}><span><Icon size={15}/></span><b>{label}</b><small>{count} records</small><ChevronRight size={15}/></button>)}<button onClick={() => onNavigate("family")}><span><UsersRound size={15}/></span><b>Family & people</b><small>{relatedItems.filter((item) => item.section === "family").length + contacts.length} records</small><ChevronRight size={15}/></button></div><p className="finance-links-note">Link related vault records or contacts to any income, expense, loan or asset.</p></section>
+      <section className="finance-panel finance-links-panel"><div className="finance-panel-heading"><div><span className="finance-panel-kicker">Connected to your life</span><h3>Related spaces</h3></div><Link2 size={17}/></div><div className="finance-linked-spaces">{relatedCounts.map(({ label, count, view, icon: Icon }) => <button key={label} onClick={() => onNavigate(view)}><IconTile variant="soft" size="xs" className="ds-tone-blue"><Icon size={14}/></IconTile><b>{label}</b><small>{count} records</small><ChevronRight size={15}/></button>)}<button onClick={() => onNavigate("family")}><IconTile variant="soft" size="xs" className="ds-tone-rose"><UsersRound size={14}/></IconTile><b>Family & people</b><small>{relatedItems.filter((item) => item.section === "family").length + contacts.length} records</small><ChevronRight size={15}/></button></div><p className="finance-links-note">Link related vault records or contacts to any income, expense, loan or asset.</p></section>
     </> : <>
       <div className="finance-records-toolbar"><div><span className="finance-panel-kicker">{KIND_PLURAL[activeTab]}</span><h3>{activeTab === "loan" ? "Keep obligations visible." : activeTab === "asset" ? "Know what you own." : activeTab === "income" ? "Track money coming in." : "See where money goes."}</h3></div><div className="finance-records-actions"><label className="finance-record-search"><Search size={14}/><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search ${KIND_PLURAL[activeTab].toLowerCase()}…`} aria-label={`Search ${KIND_PLURAL[activeTab].toLowerCase()}`}/></label><button className="finance-primary-button" onClick={() => openAdd(activeTab)}><Plus size={15}/> Add {KIND_LABEL[activeTab].toLowerCase()}</button></div></div>
       <div className="finance-list-summary"><span><b>{recordsForTab.length}</b> {recordsForTab.length === 1 ? KIND_LABEL[activeTab].toLowerCase() : KIND_PLURAL[activeTab].toLowerCase()}</span><span><ShieldCheck size={12}/> Private to you</span></div>
@@ -185,11 +188,11 @@ export default function PersonalFinanceView({ items, contacts, onSave, onOpenIte
 }
 
 function FinanceMetric({ label, value, note, tone, icon: Icon }: { label: string; value: string; note: string; tone: string; icon: typeof TrendingUp }) {
-  return <article className={`finance-metric finance-metric-${tone}`}><span className="finance-metric-icon"><Icon size={17}/></span><span className="finance-metric-label">{label}</span><b className="finance-metric-value">{value}</b><small>{note}</small></article>;
+  return <article className={`finance-metric finance-metric-${tone}`}><IconTile variant="soft" size="sm" className={iconToneClass(tone)}><Icon size={16}/></IconTile><span className="finance-metric-label">{label}</span><b className="finance-metric-value">{value}</b><small>{note}</small></article>;
 }
 
 function FinanceEmpty({ onAdd }: { onAdd: () => void }) {
-  return <div className="finance-empty-state"><span><CircleDollarSign size={22}/></span><h3>Nothing here yet</h3><p>Add a record to start building your personal finance picture.</p><button className="finance-primary-button" onClick={onAdd}><Plus size={15}/> Add a record</button></div>;
+  return <PersoraEmptyState className="finance-empty-state" moduleId="personal-finance" tone="blue" title="Nothing here yet" description="Add a record to start building your personal finance picture." action={<button className="finance-primary-button" onClick={onAdd}><Plus size={15}/> Add a record</button>}/>;
 }
 
 function FinanceRecordRow({ item, onOpen, onEdit, onDelete }: { item: VaultItem; onOpen: () => void; onEdit: () => void; onDelete: () => void }) {
@@ -201,9 +204,17 @@ function FinanceRecordRow({ item, onOpen, onEdit, onDelete }: { item: VaultItem;
   const category = item.metadata.category || item.metadata.assetCategory || item.metadata.debtCategory || KIND_LABEL[kind];
   const currency = item.metadata.currency || "BDT";
   const isNegative = kind === "expense" || (kind === "loan" && item.metadata.debtDirection !== "Owed to me");
+  const recordTone = kind === "income" ? "emerald" : kind === "expense" ? "amber" : kind === "loan" ? "rose" : "violet";
+  const statusVariant = status === "Active" || status === "Current" || status === "Paid" || status === "Received"
+    ? "success-light"
+    : status === "Planned"
+      ? "warning-light"
+      : status === "Overdue"
+        ? "destructive-light"
+        : "secondary";
   return <article className="finance-record-row">
-    <button className={`finance-record-icon finance-icon-${kind}`} aria-label={`Open ${item.title}`} onClick={onOpen}><Icon size={17}/></button>
-    <button className="finance-record-main" onClick={onOpen}><span><b>{item.title}</b><small>{category}{item.metadata.frequency && item.metadata.frequency !== "One-time" ? ` · ${item.metadata.frequency}` : ""}{valueDate ? ` · ${shortDate(valueDate)}` : ""}</small></span><span className={`finance-status finance-status-${status.toLowerCase().replace(/[^a-z]+/g, "-")}`}>{status}</span></button>
+    <IconTile asChild variant="soft" size="default" className={iconToneClass(recordTone)}><button type="button" aria-label={`Open ${item.title}`} onClick={onOpen}><Icon size={17}/></button></IconTile>
+    <button className="finance-record-main" onClick={onOpen}><span><b>{item.title}</b><small>{category}{item.metadata.frequency && item.metadata.frequency !== "One-time" ? ` · ${item.metadata.frequency}` : ""}{valueDate ? ` · ${shortDate(valueDate)}` : ""}</small></span><Badge variant={statusVariant} size="xs" radius="full">{status}</Badge></button>
     <b className={`finance-record-amount ${isNegative ? "amount-negative" : "amount-positive"}`}>{isNegative ? "−" : kind === "income" || kind === "asset" || item.metadata.debtDirection === "Owed to me" ? "+" : ""}{formatMoney(amount, currency)}</b>
     <div className="finance-record-actions"><button type="button" onClick={onEdit} aria-label={`Edit ${item.title}`} title="Edit"><Pencil size={14}/></button><button type="button" onClick={onDelete} aria-label={`Delete ${item.title}`} title="Delete"><Trash2 size={14}/></button></div>
   </article>;

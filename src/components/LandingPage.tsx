@@ -1,321 +1,674 @@
-import type { CSSProperties } from "react";
+import { useState } from "react";
 import {
-  ArrowRight,
-  ArrowUpRight,
-  BookOpen,
-  CalendarDays,
-  Check,
-  CheckCircle2,
-  FileText,
-  Fingerprint,
-  HardDrive,
-  HeartPulse,
-  Home,
-  LayoutGrid,
-  LockKeyhole,
-  MoreHorizontal,
-  Plus,
-  Search,
-  ShieldCheck,
-  Sparkles,
-  UsersRound,
-  WalletCards,
+  ArrowRight, Check, CheckCircle2, ChevronDown, Lock, Play, Search, ShieldCheck,
 } from "lucide-react";
-import { Button } from "./ui/button";
-import IphoneMockup from "./IphoneMockup";
-import { BlurFade, BorderBeam, MagicCard, ShimmerButton } from "./magic-ui";
 import type { SubscriptionPlan } from "../types";
+import { MagicCard } from "./magic-ui";
+import { LauncherModuleIcon } from "./launcher/LauncherIcons";
+import type { LauncherModuleId } from "../lib/app-launcher";
+import {
+  FEATURE_CATEGORIES, FEATURED_TOOLS, ModuleBadgeIcon, PUBLIC_FAQS, PublicFooter, PublicHeader,
+  SECURITY_PILLARS, type PublicPath,
+} from "./PublicSiteShared";
 
-interface LandingPageProps {
+export interface LandingPageProps {
   onSignIn: () => void;
   onGetStarted: () => void;
   onDemo: () => void;
+  onNavigatePublic: (path: PublicPath) => void;
   onChoosePlan: (planId: string) => void;
   plans: SubscriptionPlan[];
   billingEnabled: boolean;
   maxUploadMb: number;
 }
 
-const features = [
-  { icon: Sparkles, title: "Smart Scan + editable catch-all", body: "Scan supported IDs and paperwork. Matching facts fill the right fields; other readable facts land in editable Additional Data for review.", tone: "blue" },
-  { icon: UsersRound, title: "Family-linked records", body: "Choose Me or a person from your Family space when saving identity and student records. Rename a family member without losing the link.", tone: "yellow" },
-  { icon: HeartPulse, title: "Health records & life timeline", body: "Keep visits, prescriptions, tests and files together, then see important dates and milestones in context.", tone: "red" },
-  { icon: FileText, title: "Documents that stay useful", body: "Organize NID, student ID, passport, certificates, warranties and expiry dates with fields that adapt to the record type.", tone: "blue" },
-  { icon: WalletCards, title: "Everyday life, in its own spaces", body: "Track subscriptions, memberships, personal finance, study materials, tasks, reminders and useful links.", tone: "yellow" },
-  { icon: LockKeyhole, title: "People, sharing & control", body: "Import contacts on Android or from a file, make digital business cards, organize folders, share selected records and export a backup.", tone: "blue" },
+type PreviewTabId = "overview" | "documents" | "tables" | "studios";
+
+const PREVIEW_SIDEBAR_ITEMS: Array<{ id: PreviewTabId; iconId: LauncherModuleId; label: string; badge?: string }> = [
+  { id: "overview", iconId: "dashboard", label: "Overview" },
+  { id: "documents", iconId: "documents", label: "Document Vault", badge: "14" },
+  { id: "tables", iconId: "tables", label: "Persora Table", badge: "New" },
+  { id: "studios", iconId: "pdf-studio", label: "PDF & Photo Studio" },
 ];
 
-const faqs = [
-  { question: "Can I try Persora before creating an account?", answer: "Yes. Choose Explore the demo to look around with sample information stored in this browser. Demo data is separate from a registered account." },
-  { question: "Is Persora only for documents?", answer: "No. Your workspace includes dedicated spaces for records, subscriptions, contacts, business cards, reminders, notes, study, and more." },
-  { question: "Can I share something from my vault?", answer: "You decide what to share. Persora supports sharing specific records with another Persora account, and you can manage or revoke access." },
-  { question: "How large can an uploaded file be?", answer: "You can add and manage records on any plan. New file and image uploads require an active paid plan, with a limit of {maxUploadMb} MB per file." },
-  { question: "How do paid plans work?", answer: "Storage plans and prices are shown above when configured. Where manual payments are enabled, an administrator verifies the transaction reference before a paid plan starts." },
+const PREVIEW_SECONDARY_MODULES: Array<{ iconId: LauncherModuleId; label: string }> = [
+  { iconId: "calendar", label: "Calendar" },
+  { iconId: "projects", label: "Projects" },
+  { iconId: "habits", label: "Habits" },
+  { iconId: "loans", label: "Loans" },
+  { iconId: "password-manager", label: "Passwords" },
 ];
 
 function formatMoney(value: number, currency: string) {
-  try { return new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits: 2 }).format(value || 0); }
-  catch { return `${currency} ${Number(value || 0).toFixed(2)}`; }
+  try {
+    return new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits: 2 }).format(value || 0);
+  } catch {
+    return `${currency} ${value}`;
+  }
 }
 
-export default function LandingPage({ onSignIn, onGetStarted, onDemo, onChoosePlan, plans, billingEnabled, maxUploadMb }: LandingPageProps) {
+export default function LandingPage({
+  onSignIn,
+  onGetStarted,
+  onDemo,
+  onNavigatePublic,
+  onChoosePlan,
+  plans,
+  billingEnabled,
+  maxUploadMb,
+}: LandingPageProps) {
+  const [previewTab, setPreviewTab] = useState<PreviewTabId>("overview");
+  const [activeCategory, setActiveCategory] = useState<string>("all");
+  const [openFaq, setOpenFaq] = useState<number>(0);
+
+  const visibleCategories =
+    activeCategory === "all"
+      ? FEATURE_CATEGORIES
+      : FEATURE_CATEGORIES.filter((cat) => cat.id === activeCategory);
+
+  const scrollToFeatures = () => {
+    const el = document.getElementById("persora-features");
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    else onNavigatePublic("/features");
+  };
+
   return (
-    <div className="landing-shell" id="top">
-      <header className="landing-nav">
-        <a className="landing-brand" href="#top" aria-label="Persora home">
-          <span className="brand-mark"><ShieldCheck size={19} strokeWidth={2.1} /></span>
-          <span>persora</span>
-        </a>
-        <nav className="landing-links" aria-label="Main navigation">
-          <a href="#features">Features</a>
-          <a href="#how-it-works">Phone flow</a>
-          <a href="#security">Privacy</a>
-          <a href="#pricing">Pricing</a>
-          <a href="#faqs">FAQ</a>
-        </nav>
-        <div className="landing-nav-actions">
-          <Button variant="ghost" className="nav-login" onClick={onSignIn}>Sign in</Button>
-          <Button className="nav-get-started" onClick={onGetStarted}>Get started <ArrowUpRight size={16} /></Button>
-        </div>
-      </header>
+    <div className="ps-site-shell">
+      <PublicHeader
+        currentPath="/"
+        onHome={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+        onNavigate={onNavigatePublic}
+        onSignIn={onSignIn}
+        onGetStarted={onGetStarted}
+      />
 
-      <main>
-        <section className="landing-hero">
-          <div className="hero-ambient hero-ambient-one" />
-          <div className="hero-ambient hero-ambient-two" />
-          <div className="hero-layout">
-            <div className="hero-copy">
-              <BlurFade delay={20}>
-                <div className="hero-pill"><span className="hero-pill-dot" /><span>Your personal digital home</span></div>
-              </BlurFade>
-              <BlurFade delay={70}>
-                <h1>Your life,<br /><span>all in one place.</span></h1>
-              </BlurFade>
-              <BlurFade delay={120}>
-                <p className="hero-description">A phone-friendly personal portal for IDs, family details, health records, contacts and everyday admin—with type-aware forms, Smart Scan suggestions and one calm place to find it again.</p>
-                <div className="hero-actions">
-                  <ShimmerButton onClick={onGetStarted} className="hero-primary">Create your free vault <ArrowRight size={17} /></ShimmerButton>
-                  <button className="hero-secondary" onClick={onDemo}>Explore the demo <ArrowUpRight size={16} /></button>
-                </div>
-                <div className="hero-note"><ShieldCheck size={15} /> Private by default <span /> Built for phone and desktop</div>
-              </BlurFade>
-            </div>
-
-            <BlurFade delay={110} className="hero-preview-wrap">
-              <div className="hero-device-stage" role="img" aria-label="Persora personal portal shown on a laptop and iPhone">
-                <div className="hero-laptop">
-                  <div className="hero-laptop-bezel">
-                    <div className="hero-preview-card">
-                <div className="preview-topbar">
-                  <div className="preview-brand"><span className="brand-mark tiny"><ShieldCheck size={12} /></span><b>persora</b><span className="preview-workspace-label">Personal space</span></div>
-                  <div className="preview-avatar">AR</div>
-                </div>
-                <div className="preview-body">
-                  <aside className="preview-sidebar">
-                    <div className="preview-side-active"><span className="preview-side-icon"><Sparkles size={14} /></span>Overview</div>
-                    <div><span className="preview-side-icon preview-blue"><FileText size={14} /></span>Documents</div>
-                    <div><span className="preview-side-icon preview-blue"><HeartPulse size={14} /></span>Health records</div>
-                    <div><span className="preview-side-icon preview-yellow"><WalletCards size={14} /></span>Subscriptions</div>
-                    <div><span className="preview-side-icon preview-purple"><BookOpen size={14} /></span>Study</div>
-                    <div className="preview-side-private"><LockKeyhole size={12} /> Private vault</div>
-                  </aside>
-                  <div className="preview-main">
-                    <div className="preview-greeting-row">
-                      <div><span className="preview-overline">SAMPLE WORKSPACE</span><h3>Good morning, Amina</h3><p>A clear view of what matters today.</p></div>
-                      <span className="preview-weather-icon"><Fingerprint size={20} /></span>
-                    </div>
-                    <div className="preview-metrics">
-                      <div className="preview-metric"><span className="preview-metric-icon metric-blue"><FileText size={14} /></span><b>12</b><small>Documents</small></div>
-                      <div className="preview-metric"><span className="preview-metric-icon metric-yellow"><WalletCards size={14} /></span><b>06</b><small>Subscriptions</small></div>
-                      <div className="preview-metric"><span className="preview-metric-icon metric-blue"><UsersRound size={14} /></span><b>18</b><small>Contacts</small></div>
-                    </div>
-                    <div className="preview-list-heading"><b>Coming up</b><span>Next 30 days <ArrowRight size={12} /></span></div>
-                    <div className="preview-reminder">
-                      <span className="preview-file-icon"><FileText size={15} /></span>
-                      <span><b>Bangladesh passport</b><small>Personal document · Renewal reminder</small></span>
-                      <i className="preview-date-chip">8 days</i>
-                    </div>
-                    <div className="preview-reminder">
-                      <span className="preview-calendar-icon"><b>18</b><small>OCT</small></span>
-                      <span><b>Google One</b><small>Subscription · ৳ 650 / month</small></span>
-                      <i className="preview-status-dot" />
-                    </div>
-                    <div className="preview-bottom-note"><LockKeyhole size={12} /> Your vault is private <span><Check size={12} /></span></div>
-                  </div>
-                </div>
-                  </div>
-                  <span className="hero-laptop-camera" aria-hidden="true" />
-                </div>
-                <div className="hero-laptop-base" aria-hidden="true"><span /></div>
-                </div>
-                <IphoneMockup className="hero-iphone-device" aria-hidden="true">
-                  <div className="hero-iphone-screen">
-                    <div className="hero-iphone-status"><span>9:41</span><span>● ● ● ▰</span></div>
-                    <div className="hero-iphone-header"><span className="hero-iphone-brand"><span className="hero-iphone-brand-mark"><ShieldCheck size={13}/></span>persora<span>.</span></span><span className="hero-iphone-avatar">AR</span></div>
-                    <div className="hero-iphone-welcome"><small>YOUR PERSONAL SPACE</small><b>Good morning,<br/>Amina</b><span>Your life, in one place.</span></div>
-                    <div className="hero-iphone-search"><Search size={13}/><span>Search your vault</span></div>
-                    <div className="hero-iphone-add"><span><Plus size={15}/></span><span><b>Add document</b><small>Scan or add a record</small></span><ArrowRight size={13}/></div>
-                    <div className="hero-iphone-section"><b>Your spaces</b><span>View all</span></div>
-                    <div className="hero-iphone-spaces"><span><FileText size={13}/><b>Documents</b></span><span><HeartPulse size={13}/><b>Medical</b></span><span><UsersRound size={13}/><b>Family</b></span><span><BookOpen size={13}/><b>Study</b></span></div>
-                    <div className="hero-iphone-section hero-iphone-upcoming"><b>Coming up</b><span>See all</span></div>
-                    <div className="hero-iphone-record"><span><Fingerprint size={13}/></span><b>Bangladesh passport</b><small>Expires in 8 days</small></div>
-                    <div className="hero-iphone-bottom-nav"><span><Home size={12}/>Home</span><span><LayoutGrid size={12}/>Spaces</span><span className="hero-iphone-nav-add"><i><Plus size={13}/></i>Add</span><span><CheckCircle2 size={12}/>Tasks</span><span><MoreHorizontal size={12}/>More</span></div>
-                  </div>
-                </IphoneMockup>
+      <main className="ps-site-main">
+        {/* 1. HERO SECTION */}
+        <section className="ps-hero" aria-labelledby="ps-hero-heading">
+          <div className="ps-container ps-hero-grid">
+            <div className="ps-hero-copy">
+              <div className="ps-pill-eyebrow">
+                <ShieldCheck size={14} aria-hidden="true" />
+                <span>Private personal workspace</span>
               </div>
-            </BlurFade>
-          </div>
-          <div className="hero-bottom-rule"><span />A LITTLE MORE ROOM TO THINK<span /></div>
-        </section>
 
-        <section className="landing-trust-strip" aria-label="Persora principles">
-          <span>Made for real life</span>
-          <div><span className="trust-check trust-blue"><LockKeyhole size={14} /></span><b>Private by default</b></div>
-          <div><span className="trust-check trust-blue"><Check size={14} /></span><b>Organized around you</b></div>
-          <div><span className="trust-check trust-yellow"><Fingerprint size={14} /></span><b>Your choice, your control</b></div>
-        </section>
+              <h1 id="ps-hero-heading" className="ps-hero-title">
+                Everything that matters. One place to manage it.
+              </h1>
 
-        <section className="features-section" id="features">
-          <div className="section-heading">
-            <span className="section-eyebrow">Useful features available today</span>
-            <h2>One thoughtful portal.<br /><span>Spaces that fit real life.</span></h2>
-            <p>From NID and student records to medical history, contacts, money and reminders—Persora adapts the form to what you’re saving.</p>
-          </div>
-          <div className="feature-grid">
-            {features.map(({ icon: Icon, title, body, tone }, index) => (
-              <MagicCard key={title} className={`feature-card feature-${tone}`} glowColor="rgba(26, 115, 232, .1)">
-                <div className="feature-card-top"><span className={`feature-icon tone-${tone}`}><Icon size={19} /></span><span className="feature-number">0{index + 1}</span></div>
-                <h3>{title}</h3><p>{body}</p><span className="feature-arrow"><ArrowUpRight size={16} /></span>
-              </MagicCard>
-            ))}
-          </div>
-          <div className="feature-chip-row"><span>NID + Student ID</span><span>Smart Scan + Additional Data</span><span>Family members</span><span>Medical records</span><span>Contacts + business cards</span><span>Folders + backup</span><span>Finance + subscriptions</span><span>Tasks + reminders</span></div>
-        </section>
+              <p className="ps-hero-subtitle">
+                Keep your essential documents, schedules, spreadsheets, PDF &amp; photo tools, projects, habits, finances, and passwords organized inside one calm, account-isolated workspace.
+              </p>
 
-        <section className="portal-flow-section" id="how-it-works">
-          <div className="portal-flow-heading">
-            <span className="section-eyebrow">A phone-first portal flow</span>
-            <h2>From home to saved.<br/><span>Five clear steps.</span></h2>
-            <p>Persora’s web workspace follows the same simple flow on a phone: choose a space, choose a type, scan if useful, review every suggestion, then save.</p>
-          </div>
-          <div className="portal-flow-layout">
-            <ol className="portal-flow-steps">
-              {[
-                ["01", "Open your home", "See your spaces, recent records and dates coming up."],
-                ["02", "Choose a space", "Documents, Family, Medical Records, Contacts and more."],
-                ["03", "Choose the record type", "NID, Student ID, passport, visit, task—fields adapt to your choice."],
-                ["04", "Scan and review", "Smart Scan suggests matching fields; other readable facts stay editable in Additional Data."],
-                ["05", "Save to your vault", "Find it later, move it to a folder, or share only that record."],
-              ].map(([number, title, body], index) => <li className="portal-flow-step" key={number} style={{ "--flow-index": index } as CSSProperties}>
-                <span className="portal-flow-step-number">{number}</span><span className="portal-flow-step-copy"><b>{title}</b><small>{body}</small></span><span className="portal-flow-step-state"><Check size={13}/></span>
-              </li>)}
-              <li className="portal-flow-progress" aria-hidden="true"><span/></li>
-            </ol>
-            <div className="portal-phone-stage" aria-label="Illustrative Persora mobile web workspace">
-              <div className="portal-phone-glow"/>
-              <div className="portal-phone-shell">
-                <div className="portal-phone-speaker" aria-hidden="true"><i/></div>
-                <div className="portal-phone-screen">
-                  <div className="portal-phone-status"><span>9:41</span><span aria-hidden="true">● ● ●</span></div>
-                  <div className="portal-phone-header"><span className="portal-phone-brand"><span className="portal-phone-brand-mark"><ShieldCheck size={13}/></span>persora<span className="portal-phone-dot">.</span></span><span className="portal-phone-avatar">AR</span></div>
-                  <div className="portal-phone-greeting"><span>YOUR PERSONAL SPACE</span><b>Good morning, Amina</b><small>Your important details, together.</small></div>
-                  <div className="portal-phone-search"><Search size={13}/> Search your vault</div>
-                  <div className="portal-phone-add"><span><Plus size={16}/></span><span><b>Add document</b><small>Choose a space and record type</small></span><ArrowRight size={14}/></div>
-                  <div className="portal-phone-section-head"><b>Your spaces</b><span>View all</span></div>
-                  <div className="portal-phone-spaces">
-                    <div><span className="phone-space-icon phone-space-blue"><FileText size={13}/></span><b>Documents</b><small>Identity &amp; records</small></div>
-                    <div><span className="phone-space-icon phone-space-rose"><HeartPulse size={13}/></span><b>Medical</b><small>Health archive</small></div>
-                    <div><span className="phone-space-icon phone-space-yellow"><UsersRound size={13}/></span><b>Family</b><small>People &amp; details</small></div>
-                    <div><span className="phone-space-icon phone-space-violet"><BookOpen size={13}/></span><b>Study</b><small>Notes &amp; files</small></div>
-                  </div>
-                  <div className="portal-phone-scan">
-                    <div className="portal-phone-scan-head"><span><Sparkles size={13}/> Smart Scan</span><small>READY TO REVIEW</small></div>
-                    <div className="portal-phone-scan-row"><span>NID number</span><b>•••• •••• 3412</b></div>
-                    <div className="portal-phone-scan-row"><span>Belongs to</span><b>Me</b></div>
-                    <div className="portal-phone-scan-row"><span>Additional Data</span><b>Address · issue date</b></div>
-                    <div className="portal-phone-scan-foot"><Check size={11}/> Editable before saving</div>
-                  </div>
-                  <div className="portal-phone-reminder"><CalendarDays size={14}/><span><small>UP NEXT</small><b>Passport expires in 8 days</b></span><ArrowRight size={12}/></div>
-                  <div className="portal-phone-nav"><span><span>⌂</span>Home</span><span><span>▦</span>Spaces</span><span className="portal-phone-nav-add"><span>＋</span>Add</span><span><span>✓</span>Tasks</span><span><span>···</span>More</span></div>
-                </div>
-                <div className="portal-phone-home-indicator" aria-hidden="true"/>
+              <div className="ps-hero-actions">
+                <button type="button" className="ps-btn ps-btn-primary ps-btn-lg" onClick={onGetStarted}>
+                  <span>Get Started</span>
+                  <ArrowRight size={16} />
+                </button>
+                <button type="button" className="ps-btn ps-btn-secondary ps-btn-lg" onClick={scrollToFeatures}>
+                  <span>Explore Features</span>
+                </button>
+                <button type="button" className="ps-btn ps-btn-ghost ps-demo-trigger" onClick={onDemo}>
+                  <Play size={14} aria-hidden="true" />
+                  <span>Interactive Demo</span>
+                </button>
               </div>
-              <div className="portal-phone-caption"><span><LockKeyhole size={13}/></span><b>Private by default</b><small>Review first. Save when ready.</small></div>
-            </div>
-          </div>
-        </section>
 
-        <section className="security-section" id="security">
-          <div className="security-copy">
-            <span className="section-eyebrow">Clear about your privacy</span>
-            <h2>Your information<br /><span>belongs to you.</span></h2>
-            <p>Persora is designed around your personal space. Keep records private, share individual items when it helps, and manage your account from one place.</p>
-            <div className="security-points">
-              <div><span className="security-point-icon security-blue"><LockKeyhole size={16} /></span><span><b>Private by default</b><small>Your records stay in your signed-in workspace.</small></span></div>
-              <div><span className="security-point-icon security-blue"><UsersRound size={16} /></span><span><b>Share on your terms</b><small>Manage access to the specific items you choose.</small></span></div>
-              <div><span className="security-point-icon security-yellow"><HardDrive size={16} /></span><span><b>Take your data with you</b><small>Export a backup of your personal records.</small></span></div>
-            </div>
-          </div>
-          <div className="security-visual">
-            <div className="security-orbit orbit-a" /><div className="security-orbit orbit-b" />
-            <div className="security-card-main">
-              <div className="security-card-icon"><ShieldCheck size={23} /></div>
-              <span className="security-card-label">YOUR PERSORA SPACE</span>
-              <h3>Private, by design.</h3>
-              <p>Personal details, organized at your pace.</p>
-              <div className="security-card-separator" />
-              <div className="security-card-state"><span><LockKeyhole size={14} /> Only you decide what to share</span><i><Check size={13} /></i></div>
-            </div>
-            <div className="security-mini-card"><span className="security-mini-avatar">AR</span><span><b>Amina Rahman</b><small>Personal account</small></span><span className="security-mini-dot" /></div>
-          </div>
-        </section>
-
-        <section className="landing-pricing-section" id="pricing">
-          <div className="section-heading section-heading-compact">
-            <span className="section-eyebrow">Room for what matters</span>
-            <h2>Storage that fits <span>your life.</span></h2>
-            <p>Choose the amount of storage you need. Plans and billing are managed transparently.</p>
-          </div>
-          {plans.length ? <div className="landing-plan-grid">{plans.map((plan) => {
-            const price = formatMoney(plan.monthly_price || 0, plan.currency || "BDT");
-            const unavailable = !billingEnabled && plan.monthly_price > 0;
-            return <article className={`landing-plan-card ${plan.slug === "free" ? "landing-plan-free" : ""}`} key={plan.id}>
-              <div className="landing-plan-top"><span>{plan.name}</span><span className="plan-capacity">{plan.storage_gb} GB</span></div>
-              <h3>{price}<small> / month</small></h3>
-              <p>{plan.description || `${plan.storage_gb} GB of private storage.`}</p>
-              <ul className="landing-plan-benefits">
-                <li><Check size={14} /><span>{plan.storage_gb} GB for the records and files you choose to keep</span></li>
-                <li><Check size={14} /><span>Uploads up to {maxUploadMb} MB per file</span></li>
-                <li><Check size={14} /><span>Use across every Persora vault section</span></li>
-                <li><Check size={14} /><span>{plan.monthly_price > 0 ? "Plan activates after payment review" : "No payment required"}</span></li>
+              <ul className="ps-hero-trust-list" aria-label="Core workspace guarantees">
+                <li>
+                  <CheckCircle2 size={15} aria-hidden="true" />
+                  <span>Private by default</span>
+                </li>
+                <li>
+                  <CheckCircle2 size={15} aria-hidden="true" />
+                  <span>20+ integrated modules</span>
+                </li>
+                <li>
+                  <CheckCircle2 size={15} aria-hidden="true" />
+                  <span>Desktop &amp; mobile ready</span>
+                </li>
               </ul>
-              <div className="landing-plan-rate">{formatMoney(plan.price_per_gb_monthly, plan.currency || "BDT")} per GB / month</div>
-              <Button className="landing-plan-action" disabled={unavailable} onClick={() => onChoosePlan(plan.id)}>{unavailable ? "Payments opening soon" : plan.monthly_price > 0 ? "Choose this plan" : "Create your free vault"}<ArrowRight size={15} /></Button>
-            </article>;
-          })}</div> : <div className="landing-plans-empty"><LockKeyhole size={17} /><span>Storage plans will appear here once Persora is connected.</span></div>}
-          <p className="landing-pricing-note">Manual payments are reviewed by the Persora team. Your files are never used to verify a payment.</p>
+            </div>
+
+            {/* Realistic Interactive Preview of Persora Workspace */}
+            <div className="ps-hero-preview" aria-label="Interactive preview of the Persora workspace">
+              <div className="ps-workspace-frame">
+                <div className="ps-wf-topbar">
+                  <div className="ps-wf-dots" aria-hidden="true">
+                    <span />
+                    <span />
+                    <span />
+                  </div>
+                  <div className="ps-wf-search" aria-hidden="true">
+                    <Search size={13} />
+                    <span>Search documents, tables, events, passwords…</span>
+                  </div>
+                  <span className="ps-wf-lock">
+                    <Lock size={12} aria-hidden="true" /> Vault Locked to Owner
+                  </span>
+                </div>
+
+                <div className="ps-wf-body">
+                  <aside className="ps-wf-sidebar" aria-label="Preview workspace modules">
+                    <div className="ps-wf-nav-label">Workspace</div>
+                    {PREVIEW_SIDEBAR_ITEMS.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className={`ps-wf-nav-btn ${previewTab === item.id ? "is-active" : ""}`}
+                        onClick={() => setPreviewTab(item.id)}
+                      >
+                        <span className="ps-wf-nav-icon" aria-hidden="true">
+                          <LauncherModuleIcon id={item.iconId} />
+                        </span>
+                        <span className="ps-wf-nav-text">{item.label}</span>
+                        {item.badge && <span className="ps-wf-nav-badge">{item.badge}</span>}
+                      </button>
+                    ))}
+
+                    <div className="ps-wf-nav-label">Daily Tools</div>
+                    {PREVIEW_SECONDARY_MODULES.map((mod) => (
+                      <div key={mod.iconId} className="ps-wf-nav-static" aria-hidden="true">
+                        <span className="ps-wf-nav-icon">
+                          <LauncherModuleIcon id={mod.iconId} />
+                        </span>
+                        <span className="ps-wf-nav-text">{mod.label}</span>
+                      </div>
+                    ))}
+                  </aside>
+
+                  <div className="ps-wf-canvas">
+                    {previewTab === "overview" && (
+                      <div className="ps-wf-panel">
+                        <div className="ps-wf-panel-head">
+                          <div>
+                            <span className="ps-wf-kicker">Customizable Overview</span>
+                            <h2>Good morning — your week at a glance</h2>
+                          </div>
+                          <span className="ps-wf-chip">Sample preview</span>
+                        </div>
+                        <div className="ps-wf-widget-grid">
+                          <div className="ps-wf-widget">
+                            <div className="ps-wf-widget-title">
+                              <ModuleBadgeIcon iconId="documents" size="sm" />
+                              <span>Upcoming Renewals</span>
+                            </div>
+                            <ul className="ps-wf-mini-list">
+                              <li>
+                                <strong>Passport Renewal</strong>
+                                <span className="is-warn">Due in 42 days</span>
+                              </li>
+                              <li>
+                                <strong>Vehicle Insurance</strong>
+                                <span className="is-ok">Valid · Nov 2027</span>
+                              </li>
+                            </ul>
+                          </div>
+
+                          <div className="ps-wf-widget">
+                            <div className="ps-wf-widget-title">
+                              <ModuleBadgeIcon iconId="calendar" size="sm" />
+                              <span>Today&apos;s Schedule</span>
+                            </div>
+                            <ul className="ps-wf-mini-list">
+                              <li>
+                                <strong>10:30 · Bank verification</strong>
+                                <span>Checklist ready</span>
+                              </li>
+                              <li>
+                                <strong>17:00 · Project review</strong>
+                                <span>3 tasks complete</span>
+                              </li>
+                            </ul>
+                          </div>
+
+                          <div className="ps-wf-widget">
+                            <div className="ps-wf-widget-title">
+                              <ModuleBadgeIcon iconId="habits" size="sm" />
+                              <span>Habits &amp; Loans</span>
+                            </div>
+                            <div className="ps-wf-metrics">
+                              <div>
+                                <b>12d</b>
+                                <small>Reading streak</small>
+                              </div>
+                              <div>
+                                <b>On track</b>
+                                <small>Next EMI · 5th</small>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="ps-wf-widget">
+                            <div className="ps-wf-widget-title">
+                              <ModuleBadgeIcon iconId="password-manager" size="sm" />
+                              <span>Quick Studios &amp; Vault</span>
+                            </div>
+                            <div className="ps-wf-pill-row">
+                              <span>Merge PDF</span>
+                              <span>ID Photo 2×2</span>
+                              <span>24 Logins Encrypted</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {previewTab === "documents" && (
+                      <div className="ps-wf-panel">
+                        <div className="ps-wf-panel-head">
+                          <div>
+                            <span className="ps-wf-kicker">Personal Document Vault</span>
+                            <h2>Identity, Academic &amp; Policy Records</h2>
+                          </div>
+                          <span className="ps-wf-chip">Private R2 Storage</span>
+                        </div>
+                        <div className="ps-wf-doc-rows">
+                          {[
+                            { name: "International Passport", type: "Identity", meta: "Expires Dec 2029 · PDF attached", status: "Verified" },
+                            { name: "National ID Smart Card", type: "Identity", meta: "Front & back scan · Protected", status: "Active" },
+                            { name: "University Transcript & Degree", type: "Academic", meta: "Signed PDF packet · 2.4 MB", status: "Archived" },
+                            { name: "Home & Health Policy", type: "Insurance", meta: "Annual renewal reminder active", status: "Tracked" },
+                          ].map((docRow) => (
+                            <div key={docRow.name} className="ps-wf-doc-row">
+                              <ModuleBadgeIcon iconId="documents" size="sm" />
+                              <div className="ps-wf-doc-info">
+                                <strong>{docRow.name}</strong>
+                                <small>{docRow.meta}</small>
+                              </div>
+                              <span className="ps-wf-tag">{docRow.type}</span>
+                              <span className="ps-wf-status">{docRow.status}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {previewTab === "tables" && (
+                      <div className="ps-wf-panel">
+                        <div className="ps-wf-panel-head">
+                          <div>
+                            <span className="ps-wf-kicker">Persora Table · 200 × 52 Grid</span>
+                            <h2>Household Budget &amp; Savings Sheet</h2>
+                          </div>
+                          <span className="ps-wf-chip">fx =SUM(C2:C4)</span>
+                        </div>
+                        <div className="ps-wf-mini-sheet" role="presentation">
+                          <div className="ps-wf-sheet-row is-head">
+                            <span>#</span>
+                            <span>A</span>
+                            <span>B</span>
+                            <span>C</span>
+                            <span>D</span>
+                          </div>
+                          <div className="ps-wf-sheet-row is-bold">
+                            <span>1</span>
+                            <span>Category</span>
+                            <span>Planned</span>
+                            <span>Actual</span>
+                            <span>Status</span>
+                          </div>
+                          <div className="ps-wf-sheet-row">
+                            <span>2</span>
+                            <span>Housing &amp; Utilities</span>
+                            <span className="is-num">$1,450</span>
+                            <span className="is-num">$1,420</span>
+                            <span className="is-good">Under</span>
+                          </div>
+                          <div className="ps-wf-sheet-row">
+                            <span>3</span>
+                            <span>Emergency Reserve</span>
+                            <span className="is-num">$600</span>
+                            <span className="is-num">$600</span>
+                            <span className="is-good">Funded</span>
+                          </div>
+                          <div className="ps-wf-sheet-row is-selected">
+                            <span>4</span>
+                            <span>Total Monthly</span>
+                            <span className="is-num">$2,050</span>
+                            <span className="is-num is-active-cell">$2,020</span>
+                            <span>=C2+C3</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {previewTab === "studios" && (
+                      <div className="ps-wf-panel">
+                        <div className="ps-wf-panel-head">
+                          <div>
+                            <span className="ps-wf-kicker">Built-in Document Utilities</span>
+                            <h2>PDF Studio &amp; Photo Studio</h2>
+                          </div>
+                          <span className="ps-wf-chip">Zero third-party uploads</span>
+                        </div>
+                        <div className="ps-wf-studio-cards">
+                          <div className="ps-wf-studio-card">
+                            <ModuleBadgeIcon iconId="pdf-studio" size="md" />
+                            <h3>PDF Studio</h3>
+                            <p>Merge multi-page scans, split specific pages, place your signature, and save directly into Document Vault.</p>
+                          </div>
+                          <div className="ps-wf-studio-card">
+                            <ModuleBadgeIcon iconId="photo-studio" size="md" />
+                            <h3>Photo Studio</h3>
+                            <p>Crop passport and visa photos to exact dimensions, fine-tune exposure, and export clean JPEG/PNG files.</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </section>
 
-        <section className="landing-faq-section" id="faqs">
-          <div className="faq-intro"><span className="section-eyebrow">Good to know</span><h2>Questions, answered.</h2><p>Learn how Persora works before you create your space.</p></div>
-          <div className="landing-faq">{faqs.map((item) => <details key={item.question}><summary>{item.question}<span><ArrowRight size={15} /></span></summary><p>{item.answer.replace("{maxUploadMb}", String(maxUploadMb))}</p></details>)}</div>
+        {/* 2. FEATURE CATEGORIES (Organize, Plan, Create & Edit, Protect, Connect) */}
+        <section id="persora-features" className="ps-section" aria-labelledby="ps-categories-heading">
+          <div className="ps-container">
+            <div className="ps-section-header">
+              <span className="ps-section-eyebrow">Feature Categories</span>
+              <h2 id="ps-categories-heading">Five clear pillars for everyday digital life</h2>
+              <p>
+                Every module in Persora belongs to a deliberate workflow—so you always know where a document, task, spreadsheet, or credential lives.
+              </p>
+            </div>
+
+            <div className="ps-category-filter" role="tablist" aria-label="Filter feature categories">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeCategory === "all"}
+                className={`ps-filter-chip ${activeCategory === "all" ? "is-active" : ""}`}
+                onClick={() => setActiveCategory("all")}
+              >
+                All Categories
+              </button>
+              {FEATURE_CATEGORIES.map((cat) => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeCategory === cat.id}
+                  className={`ps-filter-chip ${activeCategory === cat.id ? "is-active" : ""}`}
+                  onClick={() => setActiveCategory(cat.id)}
+                >
+                  {cat.name}
+                </button>
+              ))}
+            </div>
+
+            <div className="ps-categories-stack">
+              {visibleCategories.map((category) => (
+                <div key={category.id} className="ps-category-band">
+                  <div className="ps-category-meta">
+                    <span className="ps-category-badge">{category.name}</span>
+                    <h3>{category.tagline}</h3>
+                    <p>{category.summary}</p>
+                  </div>
+                  <div className="ps-category-modules">
+                    {category.modules.map((mod) => (
+                      <div key={mod.title} className="ps-mini-module-card">
+                        <ModuleBadgeIcon iconId={mod.iconId} size="md" />
+                        <div>
+                          <h4>{mod.title}</h4>
+                          <p>{mod.detail}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </section>
 
-        <section className="landing-cta">
-          <div className="cta-glow" />
-          <span className="cta-icon"><ShieldCheck size={22} /></span>
-          <div><span className="section-eyebrow">Make room for what matters</span><h2>A little more organized<br /><span>starts here.</span></h2><p>Give all your important details a place to call home.</p></div>
-          <div className="cta-actions"><ShimmerButton onClick={onGetStarted}>Create your free vault <ArrowRight size={16} /></ShimmerButton><button onClick={onDemo}>Or explore the demo</button></div>
-          <BorderBeam />
+        {/* 3. FEATURED TOOLS SPOTLIGHT (8 core tools) */}
+        <section className="ps-section ps-section-tinted" aria-labelledby="ps-featured-tools-heading">
+          <div className="ps-container">
+            <div className="ps-section-header">
+              <span className="ps-section-eyebrow">Featured Tools</span>
+              <h2 id="ps-featured-tools-heading">Purpose-built tools ready the moment you sign in</h2>
+              <p>
+                Instead of stitching together eight separate subscriptions and converter websites, work with consistent tools built on one design system.
+              </p>
+            </div>
+
+            <div className="ps-tools-grid">
+              {FEATURED_TOOLS.map((tool) => (
+                <MagicCard key={tool.id} className="ps-tool-card">
+                  <div className="ps-tool-card-inner">
+                    <div className="ps-tool-card-top">
+                      <ModuleBadgeIcon iconId={tool.iconId} size="lg" />
+                      <span className="ps-tool-cat-tag">{tool.category}</span>
+                    </div>
+                    <h3>{tool.title}</h3>
+                    <p>{tool.description}</p>
+                    <ul className="ps-tool-highlights">
+                      {tool.highlights.map((pt) => (
+                        <li key={pt}>
+                          <Check size={13} aria-hidden="true" />
+                          <span>{pt}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </MagicCard>
+              ))}
+            </div>
+
+            <div className="ps-section-foot-cta">
+              <button type="button" className="ps-btn ps-btn-secondary" onClick={() => onNavigatePublic("/features")}>
+                <span>See all workspace capabilities</span>
+                <ArrowRight size={15} />
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {/* 4. PRODUCT PREVIEW — HOW PERSORA CONNECTS DOCUMENTS, TASKS & TOOLS */}
+        <section className="ps-section" aria-labelledby="ps-workflow-heading">
+          <div className="ps-container">
+            <div className="ps-section-header">
+              <span className="ps-section-eyebrow">Connected Workflow</span>
+              <h2 id="ps-workflow-heading">Personal documents, everyday tasks, and digital tools—working together</h2>
+              <p>
+                Life tasks rarely stay inside a single app. Persora connects the files you store with the tools you need to act on them.
+              </p>
+            </div>
+
+            <div className="ps-workflow-showcase">
+              <div className="ps-workflow-step">
+                <div className="ps-workflow-step-head">
+                  <span className="ps-step-num">01</span>
+                  <ModuleBadgeIcon iconId="documents" size="md" />
+                </div>
+                <h3>Store &amp; track critical records</h3>
+                <p>
+                  Save passports, academic certificates, contracts, medical files, and receipts in your Personal Document Vault with structured fields and expiry dates.
+                </p>
+                <div className="ps-workflow-artifact">
+                  <span>Passport · Expires in 60 days</span>
+                  <span className="is-badge">Auto-reminded</span>
+                </div>
+              </div>
+
+              <div className="ps-workflow-step">
+                <div className="ps-workflow-step-head">
+                  <span className="ps-step-num">02</span>
+                  <ModuleBadgeIcon iconId="pdf-studio" size="md" />
+                </div>
+                <h3>Prepare files &amp; numbers in-place</h3>
+                <p>
+                  Resize ID photos in Photo Studio, merge and sign supporting packets in PDF Studio, and calculate budgets or checklists in Persora Table—without external uploads.
+                </p>
+                <div className="ps-workflow-artifact">
+                  <span>Application_Packet_Signed.pdf</span>
+                  <span className="is-badge">Saved to Vault</span>
+                </div>
+              </div>
+
+              <div className="ps-workflow-step">
+                <div className="ps-workflow-step-head">
+                  <span className="ps-step-num">03</span>
+                  <ModuleBadgeIcon iconId="projects" size="md" />
+                </div>
+                <h3>Plan deadlines &amp; daily follow-through</h3>
+                <p>
+                  Schedule appointments on Calendar, track multi-step tasks in Projects, keep loan installments and habits on schedule, and store portal logins in Password Manager.
+                </p>
+                <div className="ps-workflow-artifact">
+                  <span>Renewal Project · 4 of 4 done</span>
+                  <span className="is-badge is-done">Complete</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* 5. SECURITY & PRIVACY SECTION */}
+        <section className="ps-section ps-section-tinted" aria-labelledby="ps-security-heading">
+          <div className="ps-container">
+            <div className="ps-security-layout">
+              <div className="ps-security-intro">
+                <span className="ps-section-eyebrow">Security &amp; Privacy</span>
+                <h2 id="ps-security-heading">Clear, verifiable protection for personal records</h2>
+                <p>
+                  Persora is engineered around strict account isolation, private cloud object storage, and encrypted credential management—explained in plain language without exaggerated claims.
+                </p>
+                <div className="ps-security-actions">
+                  <button type="button" className="ps-btn ps-btn-secondary" onClick={() => onNavigatePublic("/security")}>
+                    <span>Read Security &amp; Privacy Overview</span>
+                    <ArrowRight size={15} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="ps-security-cards">
+                {SECURITY_PILLARS.map((pillar) => (
+                  <div key={pillar.title} className="ps-security-card">
+                    <div className="ps-security-card-icon" aria-hidden="true">
+                      <ShieldCheck size={18} />
+                    </div>
+                    <div>
+                      <h3>{pillar.title}</h3>
+                      <p>{pillar.description}</p>
+                      <small>{pillar.detail}</small>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* OPTIONAL CONFIGURED PLANS SECTION */}
+        {billingEnabled && plans.length > 0 && (
+          <section className="ps-section" aria-labelledby="ps-plans-heading">
+            <div className="ps-container">
+              <div className="ps-section-header">
+                <span className="ps-section-eyebrow">Storage Plans</span>
+                <h2 id="ps-plans-heading">Simple plans that grow with your vault</h2>
+                <p>Start organizing records right away and upgrade storage capacity when you need larger file uploads (up to {maxUploadMb} MB per file).</p>
+              </div>
+              <div className="ps-plans-grid">
+                {plans.map((plan) => (
+                  <div key={plan.id} className="ps-plan-card">
+                    <div className="ps-plan-head">
+                      <h3>{plan.name}</h3>
+                      {plan.description && <p>{plan.description}</p>}
+                    </div>
+                    <div className="ps-plan-price">
+                      <strong>{formatMoney(plan.monthly_price, plan.currency)}</strong>
+                      <span>/ month</span>
+                    </div>
+                    <ul className="ps-plan-features">
+                      <li>
+                        <Check size={14} aria-hidden="true" />
+                        <span>{plan.storage_gb} GB private vault storage</span>
+                      </li>
+                      <li>
+                        <Check size={14} aria-hidden="true" />
+                        <span>All Persora workspace modules included</span>
+                      </li>
+                    </ul>
+                    <button type="button" className="ps-btn ps-btn-primary" onClick={() => onChoosePlan(plan.id)}>
+                      Choose {plan.name}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* 6. FAQ SECTION */}
+        <section className="ps-section" aria-labelledby="ps-faq-heading">
+          <div className="ps-container ps-faq-container">
+            <div className="ps-section-header">
+              <span className="ps-section-eyebrow">Frequently Asked Questions</span>
+              <h2 id="ps-faq-heading">Answers to common questions</h2>
+            </div>
+
+            <div className="ps-faq-list">
+              {PUBLIC_FAQS.map((item, idx) => {
+                const isOpen = openFaq === idx;
+                return (
+                  <div key={item.question} className={`ps-faq-item ${isOpen ? "is-open" : ""}`}>
+                    <h3>
+                      <button
+                        type="button"
+                        className="ps-faq-trigger"
+                        aria-expanded={isOpen}
+                        onClick={() => setOpenFaq(isOpen ? -1 : idx)}
+                      >
+                        <span>{item.question}</span>
+                        <ChevronDown size={17} aria-hidden="true" />
+                      </button>
+                    </h3>
+                    {isOpen && (
+                      <div className="ps-faq-answer">
+                        <p>{item.answer.replace("{maxUploadMb}", String(maxUploadMb))}</p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+
+        {/* 7. FINAL CTA */}
+        <section className="ps-section ps-cta-section" aria-labelledby="ps-final-cta-heading">
+          <div className="ps-container">
+            <div className="ps-final-cta-card">
+              <div className="ps-final-cta-copy">
+                <span className="ps-section-eyebrow">Ready when you are</span>
+                <h2 id="ps-final-cta-heading">Bring calm order to your documents, plans, and daily tools.</h2>
+                <p>
+                  Create your private Persora account in under a minute and keep everything that matters in one place.
+                </p>
+              </div>
+              <div className="ps-final-cta-actions">
+                <button type="button" className="ps-btn ps-btn-primary ps-btn-lg" onClick={onGetStarted}>
+                  <span>Get Started Free</span>
+                  <ArrowRight size={16} />
+                </button>
+                <button type="button" className="ps-btn ps-btn-secondary ps-btn-lg" onClick={onSignIn}>
+                  <span>Sign In</span>
+                </button>
+              </div>
+            </div>
+          </div>
         </section>
       </main>
 
-      <footer className="landing-footer">
-        <a className="landing-brand footer-brand" href="#top"><span className="brand-mark"><ShieldCheck size={17} /></span><span>persora</span></a>
-        <p>A little more room for what matters.</p>
-        <nav className="landing-footer-links" aria-label="Legal and contact"><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/contact">Contact</a></nav>
-        <div className="landing-footer-meta"><span>© 2026 Persora</span><span>Powered by Dexter Studio</span><button onClick={onSignIn}>Sign in</button><a href="/admin">Admin sign in</a></div>
-      </footer>
+      <PublicFooter
+        onHome={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+        onNavigate={onNavigatePublic}
+        onSignIn={onSignIn}
+        onGetStarted={onGetStarted}
+      />
     </div>
   );
 }

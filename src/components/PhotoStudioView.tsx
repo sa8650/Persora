@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ChangeEvent } from "react";
-import { AlertTriangle, ArrowDownUp, Camera, Download, Eye, FolderOpen, GitBranch, ImagePlus, ImageIcon, Loader2, Lock, Pencil, RefreshCw, Search, Share2, ShieldCheck, Trash2, Upload, Wand2 } from "lucide-react";
-import type { AppUser, PhotoCategory, PhotoStudioPhoto, PhotoStudioSaveInput, VaultFolder } from "../types";
+import { AlertTriangle, ArrowDownUp, Camera, Download, Eye, FolderOpen, GitBranch, ImageIcon, Lock, Pencil, RefreshCw, Search, Share2, ShieldCheck, Trash2, Upload, Wand2 } from "lucide-react";
+import type { AppUser, PhotoCategory, PhotoStudioPhoto, PhotoStudioSaveInput, TransferProgress, VaultFolder } from "../types";
 import { deletePhotoStudioPhoto, isPagesApiConfigured, listPhotoStudioPhotos, loadPhotoStudioFile, savePhotoStudioPhoto, updatePhotoStudioPhoto } from "../lib/cloud";
+import { Badge } from "@/components/reui/badge";
+import { IconTile } from "@/components/reui/icon-tile";
+import { Spinner } from "@/components/ui/spinner";
+import { PersoraAsideStat, PersoraEmptyState } from "@/design-system";
 import {
   PHOTO_CATEGORIES, PHOTO_EDITOR_ACCEPT, aspectRatio, PHOTO_UPLOAD_ACCEPT, SAVEABLE_PHOTO_TYPES, analysisMetadata, analyzePhoto, categoryLabel, defaultTitleFromFileName, editedFileName,
   filterPhotos, folderCounts, formatBytes, formatDimensions, isPhotoCategory, printSizeLabel, type PhotoAnalysis, type PhotoSort,
@@ -215,7 +219,10 @@ export default function PhotoStudioView({ user, canUpload, maxUploadMb, onUpgrad
   };
 
   // ----- Final Save (the only write) ----------------------------------------
-  const savePending = async (fields: Pick<PhotoStudioSaveInput, "title" | "category" | "notes" | "folderId" | "newFolder">) => {
+  const savePending = async (
+    fields: Pick<PhotoStudioSaveInput, "title" | "category" | "notes" | "folderId" | "newFolder">,
+    onProgress?: (progress: TransferProgress) => void,
+  ) => {
     if (!pending) return;
     const input: PhotoStudioSaveInput = {
       ...fields,
@@ -225,7 +232,7 @@ export default function PhotoStudioView({ user, canUpload, maxUploadMb, onUpgrad
       metadata: analysisMetadata(pending.analysis),
       editSettings: pending.mode === "edited" ? pending.editSettings : {},
     };
-    const result = await savePhotoStudioPhoto(pending.blob, pending.fileName, input);
+    const result = await savePhotoStudioPhoto(pending.blob, pending.fileName, input, onProgress);
     setPhotos((current) => [result.photo, ...current.filter((photo) => photo.id !== result.photo.id)]);
     if (result.folder && !folders.some((folder) => folder.id === result.folder?.id)) {
       setFolders((current) => [...current, result.folder as VaultFolder]);
@@ -278,10 +285,10 @@ export default function PhotoStudioView({ user, canUpload, maxUploadMb, onUpgrad
     finally { setDeleting(false); }
   };
 
-  const heading = <div className="section-page-heading"><div><div className="section-page-eyebrow"><span className="section-mini-icon tag-blue"><Camera size={13}/></span>Official photos</div><h2>Photo Studio</h2><p>Keep passport, visa, ID and application photos ready — sized correctly and organized in one private place.</p></div><div className="section-heading-aside"><div className="section-aside-art"><div className="aside-orbit"/><Camera size={44} strokeWidth={1.1}/><div className="aside-art-bottom"><span>PHOTOS</span><span>{String(photos.length).padStart(2, "0")}</span></div></div><div className="aside-note"><ShieldCheck size={13}/><span>Private to your account · edits run on this device</span></div></div></div>;
+  const heading = <div className="section-page-heading"><div><div className="section-page-eyebrow"><IconTile variant="soft" size="xs" className="ds-tone-blue"><Camera size={13}/></IconTile>Official photos</div><h2>Photo Studio</h2><p>Keep passport, visa, ID and application photos ready — sized correctly and organized in one private place.</p></div><PersoraAsideStat icon={<Camera size={18}/>} label="PHOTOS" value={photos.length} tone="blue" note="Private to your account · edits run on this device" noteIcon={<ShieldCheck size={13}/>}/></div>;
 
   if (!available) {
-    return <div className="section-view ps-page">{heading}<div className="section-empty"><div className="empty-icon-stack"><div className="empty-icon-circle tag-blue"><Lock size={21}/></div><span>✦</span></div><h3>Photo Studio needs a Persora account</h3><p>Saved photos live in your private cloud storage, so Photo Studio is available after signing in to a connected Persora account.</p></div></div>;
+    return <div className="section-view ps-page">{heading}<PersoraEmptyState icon={<Lock size={20}/>} tone="blue" title="Photo Studio needs a Persora account" description="Saved photos live in your private cloud storage, so Photo Studio is available after signing in to a connected Persora account."/></div>;
   }
 
   const primaryActions = <>
@@ -305,17 +312,17 @@ export default function PhotoStudioView({ user, canUpload, maxUploadMb, onUpgrad
       </div>
     </div>
     <div className="section-list-meta"><span><b>{String(visible.length).padStart(2, "0")}</b> {visible.length === 1 ? "photo" : "photos"}{selectedFolderId ? ` in ${folderName(selectedFolderId) || "this folder"}` : ""}</span><span className="list-meta-private"><ShieldCheck size={12}/> Nothing is uploaded until you press Save</span></div>
-    {preparing && <div className="ps-preparing" role="status"><Loader2 className="ps-spin" size={15}/> Reading your photo on this device…</div>}
+    {preparing && <div className="ps-preparing" role="status"><Spinner className="size-4"/> Reading your photo on this device…</div>}
 
     {loading ? <div className="ps-grid" aria-busy="true" aria-label="Loading photos">{[0, 1, 2, 3].map((key) => <div key={key} className="ps-card ps-card-skeleton"><div className="ps-card-media"/><div className="ps-card-body"><span/><span/></div></div>)}</div>
-    : loadError ? <div className="section-empty" role="alert"><div className="empty-icon-stack"><div className="empty-icon-circle tag-red"><AlertTriangle size={21}/></div></div><h3>Your photos couldn't be loaded</h3><p>{loadError}</p><button type="button" className="quiet-button" onClick={() => void loadPhotos()}><RefreshCw size={15}/> Try again</button></div>
+    : loadError ? <PersoraEmptyState role="alert" stacked={false} icon={<AlertTriangle size={20}/>} tone="rose" title="Your photos couldn't be loaded" description={loadError} action={<button type="button" className="quiet-button" onClick={() => void loadPhotos()}><RefreshCw size={15}/> Try again</button>}/>
     : visible.length ? <div className="ps-grid">{visible.map((photo) => {
       const source = photo.sourcePhotoId ? photoById.get(photo.sourcePhotoId) : null;
       const print = printSizeLabel(photo.width, photo.height, photo.dpi);
       return <article key={photo.id} className="ps-card">
         <button type="button" className="ps-card-media" onClick={() => setViewing(photo)} aria-label={`View ${photo.title}`}>
           {urls[photo.id] ? <img src={urls[photo.id]} alt="" loading="lazy"/> : failed[photo.id] ? <span className="ps-thumb-failed"><ImageIcon size={20}/><small>Preview unavailable</small></span> : <span className="ps-thumb-loading" aria-label="Loading preview"/>}
-          {photo.sourcePhotoId && <span className="ps-edited-badge"><GitBranch size={11}/> Edited</span>}
+          {photo.sourcePhotoId && <Badge variant="secondary" size="xs" className="ps-edited-badge"><GitBranch className="size-3"/> Edited</Badge>}
         </button>
         <div className="ps-card-body">
           <div className="ps-card-title"><h3 title={photo.title}>{photo.title}</h3>
@@ -328,18 +335,14 @@ export default function PhotoStudioView({ user, canUpload, maxUploadMb, onUpgrad
               { label: "Delete photo", icon: Trash2, danger: true, onSelect: () => setDeleteTarget(photo) },
             ]}/>
           </div>
-          <div className="ps-card-chips"><span className={`ps-chip ps-chip-${photo.category}`}>{categoryLabel(photo.category)}</span>{photo.folderId && folderName(photo.folderId) && <span className="ps-chip ps-chip-folder"><FolderOpen size={10}/>{folderName(photo.folderId)}</span>}</div>
+          <div className="ps-card-chips"><Badge variant="info-light" size="xs">{categoryLabel(photo.category)}</Badge>{photo.folderId && folderName(photo.folderId) && <Badge variant="outline" size="xs"><FolderOpen className="size-2.5"/>{folderName(photo.folderId)}</Badge>}</div>
           {print && <p className="ps-card-meta">{print}</p>}
           <p className="ps-card-sub">{formatBytes(photo.fileSize)}{photo.sourcePhotoId ? ` · from ${source ? `“${source.title}”` : "a deleted original"}` : ""}</p>
           {failed[photo.id] && <button type="button" className="ps-link-button" onClick={() => retry(photo.id)}><RefreshCw size={12}/> Retry preview</button>}
         </div>
       </article>;
     })}</div>
-    : <div className="section-empty ps-empty"><div className="empty-icon-stack"><div className="empty-icon-circle tag-blue"><ImagePlus size={21}/></div><span>✦</span></div>
-      <h3>{photos.length ? "No photos match" : "No official photos yet"}</h3>
-      <p>{photos.length ? "Try another search, category or folder." : "Upload a ready-made passport or ID photo, or create one from any portrait — crop to official sizes, remove the background and save."}</p>
-      {!photos.length && <div className="ps-empty-actions">{primaryActions}</div>}
-    </div>}
+    : <PersoraEmptyState className="ps-empty" moduleId="photo-studio" tone="blue" title={photos.length ? "No photos match" : "No official photos yet"} description={photos.length ? "Try another search, category or folder." : "Upload a ready-made passport or ID photo, or create one from any portrait — crop to official sizes, remove the background and save."} action={!photos.length ? <div className="ps-empty-actions">{primaryActions}</div> : undefined}/>}
 
     {chooserOpen && <CreateChooser photos={photos} urls={urls} preparing={preparing} onClose={() => setChooserOpen(false)} onFile={openEditorWithFile} onPhoto={(photo) => void openEditorWithPhoto(photo)} notify={notify}/>}
     {editorSource && <PhotoEditorModal source={editorSource} cloudAvailable={isPagesApiConfigured && !user.demo} organizing={Boolean(pending && pending.mode === "edited")} onClose={() => { setEditorSource(null); setPending(null); }} onSaveAndOrganize={onEditorResult}/>}
@@ -409,7 +412,7 @@ function CreateChooser({ photos, urls, preparing, onClose, onFile, onPhoto, noti
           </button>)}</div>
           {!list.length && <p className="ps-muted-note">No saved photos match “{search}”.</p>}
         </> : <p className="ps-muted-note">You haven't saved any photos yet.</p>}
-        {preparing && <div className="ps-preparing" role="status"><Loader2 className="ps-spin" size={15}/> Opening photo…</div>}
+        {preparing && <div className="ps-preparing" role="status"><Spinner className="size-4"/> Opening photo…</div>}
       </div>
     </ItemModalShell>
   </ModalPortal>;

@@ -15,7 +15,11 @@ const types = read('src/types.ts');
 const data = read('src/data.ts');
 const catalogue = read('src/lib/app-launcher.ts');
 const icons = read('src/components/launcher/LauncherIcons.tsx');
-const migration = read('supabase/migrations/202610270001_workspace_preferences.sql');
+const fullSchema = read('supabase/schema.sql');
+const migration = fullSchema.slice(
+  fullSchema.indexOf('create table if not exists public.workspace_preferences'),
+  fullSchema.indexOf('grant all on public.workspace_preferences to service_role;') + 'grant all on public.workspace_preferences to service_role;'.length,
+);
 
 const ACCOUNT_VIEWS = new Set(['trash', 'billing', 'settings']);
 const viewIds = () => {
@@ -104,9 +108,9 @@ test('favorites: moveFavorite reorders and clamps', () => {
   assert.deepEqual(list, ['a', 'b', 'c', 'd'], 'input untouched');
 });
 
-test('migration: additive, owner-scoped and locked to the service role', () => {
+test('schema: workspace_preferences is owner-scoped and locked to the service role', () => {
   assert.match(migration, /create table if not exists public\.workspace_preferences/);
-  assert.match(migration, /references public\.profiles\(id\) on delete cascade/);
+  assert.match(migration, /REFERENCES public\.profiles\(id\) ON DELETE CASCADE/i);
   assert.match(migration, /enable row level security/);
   assert.match(migration, /revoke all on public\.workspace_preferences from public, anon, authenticated/);
   assert.doesNotMatch(migration, /\bdrop\b|\btruncate\b|\bdelete from\b|alter table public\.(?!workspace_preferences)/i);
@@ -191,7 +195,7 @@ test('API: an unmigrated database reports 503; export degrades to null', async (
   mockDatabase({ failWith: { status: 404, body: { code: 'PGRST205', message: 'missing table' } } });
   const result = await call('GET');
   assert.equal(result.status, 503);
-  assert.match(result.body.error, /202610270001_workspace_preferences\.sql/);
+  assert.match(result.body.error, /supabase\/schema\.sql/);
   assert.equal(await exportWorkspacePreferences(OWNER, env), null);
   mockDatabase({ row: { launcher_favorites: ['notes'], updated_at: '2026-10-24T09:00:00+00:00' } });
   assert.deepEqual(await exportWorkspacePreferences(OWNER, env), { launcher_favorites: ['notes'], updated_at: '2026-10-24T09:00:00+00:00' });

@@ -3,6 +3,9 @@ import { Check, CircleAlert, Eye, EyeOff, LockKeyhole, ShieldCheck, Unplug } fro
 import ItemModalShell from "../ItemModalShell";
 import ModalPortal from "../ModalPortal";
 import { connectEms, type ConnectionStatus } from "../../lib/connections-api";
+import { Badge } from "@/components/reui/badge";
+import { Spinner } from "@/components/ui/spinner";
+import { PersoraDeleteModal } from "@/design-system";
 import emsLogo from "../../assets/connections/ems.svg";
 import googleDriveLogo from "../../assets/connections/google-drive.svg";
 import googlePhotosLogo from "../../assets/connections/google-photos.svg";
@@ -34,7 +37,8 @@ const STATUS_LABEL: Record<ConnectionStatus, string> = {
 
 export function ConnectionStatusPill({ status, degraded = false }: { status: ConnectionStatus; degraded?: boolean }) {
   const tone = degraded && status === "connected" ? "warn" : status === "connected" ? "good" : status === "reauth_required" ? "bad" : "muted";
-  return <span className={`cn-pill cn-pill-${tone}`}><i aria-hidden="true"/>{degraded && status === "connected" ? "Connected · limited" : STATUS_LABEL[status]}</span>;
+  const variant = tone === "good" ? "success-light" : tone === "warn" ? "warning-light" : tone === "bad" ? "destructive-light" : "secondary";
+  return <Badge variant={variant} size="xs" radius="full" className={`cn-pill cn-pill-${tone}`}><i aria-hidden="true"/>{degraded && status === "connected" ? "Connected · limited" : STATUS_LABEL[status]}</Badge>;
 }
 
 /** The service's official logo in a consistent tile; proportions are preserved (object-fit: contain). */
@@ -77,7 +81,7 @@ export function EmsConnectDialog({ reconnect = false, defaultEmail = "", onClose
       </ul>
       <div className="cn-dialog-actions">
         <button type="button" className="cn-button" onClick={onClose} disabled={busy}>Cancel</button>
-        <button type="submit" className="cn-primary-button" disabled={busy || !email || !password}>{busy ? <><span className="cn-spinner" aria-hidden="true"/> Verifying…</> : <>{reconnect ? "Reconnect" : "Connect"} EMS</>}</button>
+        <button type="submit" className="cn-primary-button" disabled={busy || !email || !password}>{busy ? <><Spinner className="size-3.5"/> Verifying…</> : <>{reconnect ? "Reconnect" : "Connect"} EMS</>}</button>
       </div>
     </form>
   </ItemModalShell></ModalPortal>;
@@ -85,13 +89,27 @@ export function EmsConnectDialog({ reconnect = false, defaultEmail = "", onClose
 
 export function ConfirmDisconnectDialog({ name, onCancel, onConfirm }: { name: string; onCancel: () => void; onConfirm: () => Promise<void> }) {
   const [busy, setBusy] = useState(false);
-  return <ModalPortal><ItemModalShell labelledBy="cn-disconnect-title" className="cn-dialog" icon={<Unplug size={18}/>} iconClassName="cn-dialog-icon cn-dialog-icon-bad" eyebrow="Connections" title={<span id="cn-disconnect-title">Disconnect {name}?</span>} onClose={onCancel} closeDisabled={busy} dismissable={!busy}>
-    <div className="cn-connect-form">
-      <p className="cn-connect-lead">Persora will stop accessing {name} and forget this connection. Nothing in {name} is changed or deleted, and copies you already saved to Persora stay in your vault.</p>
-      <div className="cn-dialog-actions">
-        <button type="button" className="cn-button" onClick={onCancel} disabled={busy}>Cancel</button>
-        <button type="button" className="cn-danger-button" disabled={busy} onClick={async () => { setBusy(true); try { await onConfirm(); } finally { setBusy(false); } }}>{busy ? "Disconnecting…" : "Disconnect"}</button>
-      </div>
-    </div>
-  </ItemModalShell></ModalPortal>;
+  return (
+    <PersoraDeleteModal
+      eyebrow="Connections"
+      title={`Disconnect ${name}?`}
+      titleId="cn-disconnect-title"
+      icon={<Unplug size={18} />}
+      confirmLabel={busy ? "Disconnecting…" : "Disconnect"}
+      busy={busy}
+      onCancel={onCancel}
+      onConfirm={async () => {
+        setBusy(true);
+        try {
+          await onConfirm();
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <p>
+        Persora will stop accessing {name} and forget this connection. Nothing in {name} is changed or deleted, and copies you already saved to Persora stay in your vault.
+      </p>
+    </PersoraDeleteModal>
+  );
 }

@@ -7,6 +7,10 @@ import { ConfirmDialog } from "./VaultDialogs";
 import { MagicCard } from "./magic-ui";
 import { SECTION_BY_ID } from "../data";
 import type { SectionId, TrashEntry, TrashKind } from "../types";
+import { Badge } from "@/components/reui/badge";
+import { IconTile } from "@/components/reui/icon-tile";
+import { Spinner } from "@/components/ui/spinner";
+import { PersoraEmptyState } from "@/design-system";
 
 const KIND_ICONS: Record<TrashKind, typeof FileText> = {
   vault_item: FileText,
@@ -18,6 +22,7 @@ const KIND_ICONS: Record<TrashKind, typeof FileText> = {
   photo_studio_photo: Camera,
   pdf_studio_document: FileStack,
   persora_table: Sheet,
+  persora_doc: FileText,
 };
 
 const KIND_LABELS: Record<TrashKind, string> = {
@@ -30,6 +35,7 @@ const KIND_LABELS: Record<TrashKind, string> = {
   photo_studio_photo: "Studio photo",
   pdf_studio_document: "PDF",
   persora_table: "Table",
+  persora_doc: "Document",
 };
 
 const SPACE_LABELS: Record<string, string> = {
@@ -41,6 +47,7 @@ const SPACE_LABELS: Record<string, string> = {
   "photo-studio": "Photo Studio",
   "pdf-studio": "PDF Studio",
   "persora-table": "Persora Table",
+  "persora-docs": "Persora Docs",
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -93,15 +100,15 @@ function ViewItemModal({ entry, onClose, onRestore, onDelete }: {
         iconClassName={`detail-icon trash-icon-${entry.kind}`}
         eyebrow="Trash item details"
         title={entry.title || KIND_LABELS[entry.kind]}
-        headerMeta={<span className="detail-private-pill"><Trash2 size={12} /> RETAINED FOR 7 DAYS</span>}
+        headerMeta={<Badge variant="secondary" size="xs" radius="full"><Trash2 size={12} /> RETAINED FOR 7 DAYS</Badge>}
         onClose={onClose}
         closeLabel="Close item details"
       >
         <div className="vault-modal-scroll trash-view-body">
           <div className="trash-detail-summary">
-            <span className={`trash-row-icon trash-icon-${entry.kind}`}><Icon size={18} /></span>
+            <IconTile variant="soft" size="sm" className={`trash-icon-${entry.kind}`}><Icon size={18} /></IconTile>
             <div><b>{entry.title || KIND_LABELS[entry.kind]}</b><span>{KIND_LABELS[entry.kind]} · {spaceLabel(entry)}</span></div>
-            <span className={`trash-remaining ${left.urgent ? "trash-remaining-urgent" : ""}`}>{left.label}</span>
+            <Badge variant={left.urgent ? "warning-outline" : "info-outline"} size="xs" radius="full">{left.label}</Badge>
           </div>
           <div className="detail-fields-grid trash-detail-grid">
             {metadata.map(([label, value]) => <div className="detail-field" key={label}><span>{label}</span><b>{value}</b></div>)}
@@ -182,10 +189,10 @@ export default function TrashView({ entries, busy, onRefresh, onRestore, onDelet
 
   return <div className="section-view trash-view">
     <div className="trash-toolbar">
-      <span className="trash-count-pill"><Trash2 size={13}/>{entries.length ? `${entries.length} item${entries.length === 1 ? "" : "s"}` : "Empty"}</span>
+      <Badge variant="outline" size="sm" radius="full"><Trash2 size={13}/>{entries.length ? `${entries.length} item${entries.length === 1 ? "" : "s"}` : "Empty"}</Badge>
       {soonest && entries.length > 0 && <span className="trash-toolbar-note">Auto-purged after 7 days · next expiry {dateLabel(soonest)}</span>}
       <span className="trash-toolbar-spacer"/>
-      <button type="button" className="icon-button trash-refresh" onClick={() => void run(onRefresh, "")} disabled={busy} aria-label="Refresh Trash" title="Refresh Trash"><RefreshCw size={16} className={busy ? "trash-spinning" : ""}/></button>
+      <button type="button" className="icon-button trash-refresh" onClick={() => void run(onRefresh, "")} disabled={busy} aria-label="Refresh Trash" title="Refresh Trash">{busy ? <Spinner className="size-4"/> : <RefreshCw size={16}/>}</button>
       <button type="button" className="trash-empty-button" onClick={() => setConfirmEmpty(true)} disabled={busy || !entries.length}><Trash2 size={14}/> Empty trash</button>
     </div>
 
@@ -196,13 +203,13 @@ export default function TrashView({ entries, busy, onRefresh, onRestore, onDelet
         const working = pendingId === entry.id;
         return <MagicCard className={`trash-card-shell ${working ? "trash-row-busy" : ""}`} key={`${entry.kind}:${entry.id}`}>
           <article className="trash-row">
-            <span className={`trash-row-icon trash-icon-${entry.kind}`}><Icon size={16}/></span>
+            <IconTile variant="soft" size="sm" className={`trash-icon-${entry.kind}`}><Icon size={16}/></IconTile>
             <div className="trash-row-copy">
               <h3><button type="button" className="trash-view-link" onClick={() => setViewEntry(entry)}>{entry.title || KIND_LABELS[entry.kind]}</button></h3>
-              <p><span className="trash-kind-chip">{KIND_LABELS[entry.kind]}</span> in <b>{spaceLabel(entry)}</b>{entry.folder && <> · <FolderOpen size={12}/> {entry.folder}</>}{entry.recordType && <> · {entry.recordType}</>}{entry.eventDate && <> · {dateLabel(entry.eventDate)}</>}{entry.hasFiles && <> · <Paperclip size={12}/> attachments</>}</p>
+              <p><Badge variant="secondary" size="xs" radius="full" className="mr-0.5">{KIND_LABELS[entry.kind]}</Badge> in <b>{spaceLabel(entry)}</b>{entry.folder && <> · <FolderOpen size={12}/> {entry.folder}</>}{entry.recordType && <> · {entry.recordType}</>}{entry.eventDate && <> · {dateLabel(entry.eventDate)}</>}{entry.hasFiles && <> · <Paperclip size={12}/> attachments</>}</p>
               <p className="trash-row-dates">Deleted {dateLabel(entry.deletedAt)} · Expires {dateLabel(entry.expiresAt)}</p>
             </div>
-            <span className={`trash-remaining ${left.urgent ? "trash-remaining-urgent" : ""}`}>{left.label}</span>
+            <Badge variant={left.urgent ? "warning-outline" : "info-outline"} size="xs" radius="full" className="trash-remaining">{left.label}</Badge>
             <div className="trash-row-actions">
               <button type="button" className="trash-view-button" disabled={busy || working} onClick={() => setViewEntry(entry)}><Eye size={14}/> View</button>
               <button type="button" className="quiet-button trash-restore-button" disabled={busy || working} onClick={() => void restoreEntry(entry)}><ArchiveRestore size={14}/> Restore</button>
@@ -211,11 +218,12 @@ export default function TrashView({ entries, busy, onRefresh, onRestore, onDelet
           </article>
         </MagicCard>;
       })}
-    </div> : <div className="section-empty">
-      <div className="empty-icon-stack"><div className="empty-icon-circle tag-slate"><Trash2 size={21}/></div><span>✦</span></div>
-      <h3>Your Trash is empty</h3>
-      <p>Deleted records, contacts, cards, medical entries, and timeline posts wait here for 7 days before they're permanently removed.</p>
-    </div>}
+    </div> : <PersoraEmptyState
+      icon={<Trash2 size={20}/>}
+      tone="slate"
+      title="Your Trash is empty"
+      description="Deleted records, contacts, cards, medical entries, and timeline posts wait here for 7 days before they're permanently removed."
+    />}
 
     <footer className="trash-footnote"><ShieldCheck size={14}/><span>Trash is private to your account. Restoration puts items back with their folders when possible, and permanently deleting also removes their uploaded files from secure storage when nothing else uses them.</span></footer>
 

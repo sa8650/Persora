@@ -10,6 +10,11 @@ import ModalPortal from "./ModalPortal";
 import { ConfirmDialog } from "./VaultDialogs";
 import PdfSaveModal from "./PdfSaveModal";
 import type { EditorRequest, PdfSaveHandlers } from "./PdfEditorModal";
+import { Badge } from "@/components/reui/badge";
+import { FileType } from "@/components/reui/file-type";
+import { IconTile } from "@/components/reui/icon-tile";
+import { Spinner } from "@/components/ui/spinner";
+import { PersoraEmptyState } from "@/design-system";
 import "./pdf-studio.css";
 
 // The editor and Create PDF flows pull in PDF.js / pdf-lib, so they load only when opened.
@@ -70,11 +75,11 @@ function ToolPanel({ id, labelledBy, icon, tone, title, copy, chips, dropLabel, 
     onDrop={(event) => { if (!hasFiles(event)) return; event.preventDefault(); depth.current = 0; setOver(false); const files = Array.from(event.dataTransfer.files || []); if (files.length) onFiles(files); }}
   >
     <div className="pdfs-tool-panel-head">
-      <span className={`pdfs-tool-panel-icon ${tone}`}>{icon}</span>
+      <IconTile variant="soft" size="default" className={tone === "tag-rose" ? "text-rose-600 dark:text-rose-300" : tone === "tag-violet" ? "text-violet-600 dark:text-violet-300" : "text-blue-600 dark:text-blue-300"}>{icon}</IconTile>
       <div className="pdfs-tool-panel-copy">
         <h3>{title}</h3>
         <p>{copy}</p>
-        {chips && <div className="pdfs-tool-panel-chips">{chips.map((chip) => <span key={chip}>{chip}</span>)}</div>}
+        {chips && <div className="pdfs-tool-panel-chips">{chips.map((chip) => <Badge key={chip} variant="secondary" size="xs">{chip}</Badge>)}</div>}
       </div>
     </div>
     {children}
@@ -219,7 +224,7 @@ export default function PdfStudioView({ user, canUpload, maxUploadMb, onUpgrade,
 
   const heading = <div className="section-page-heading pdfs-heading">
     <div>
-      <div className="section-page-eyebrow"><span className="section-mini-icon tag-rose"><FileStack size={13}/></span>Documents &amp; forms</div>
+      <div className="section-page-eyebrow"><IconTile variant="soft" size="xs" className="text-rose-600 dark:text-rose-300"><FileStack size={13}/></IconTile>Documents &amp; forms</div>
       <h2>PDF Studio</h2>
       <p>Create, edit, annotate and password-protect PDFs right in your browser. Files stay on this device while you work — nothing is uploaded until you choose Save to Persora.</p>
     </div>
@@ -270,10 +275,7 @@ export default function PdfStudioView({ user, canUpload, maxUploadMb, onUpgrade,
     <p className="pdfs-supported"><ImageIcon size={12}/> Supported: {SUPPORTED_INPUTS_LABEL}. Word and other office files need to be exported to PDF first.</p>
 
     <div className="pdfs-library-head"><h3>Saved PDFs</h3><span>Private to your account</span></div>
-    {!available ? <div className="section-empty pdfs-empty"><div className="empty-icon-stack"><div className="empty-icon-circle tag-blue"><Lock size={21}/></div><span>✦</span></div>
-      <h3>Your PDF library needs a Persora account</h3>
-      <p>You can create, edit and download PDFs right now. Saving them to a private library is available after signing in to a connected Persora account.</p>
-    </div> : <>
+    {!available ? <PersoraEmptyState className="pdfs-empty" icon={<Lock size={20}/>} tone="blue" title="Your PDF library needs a Persora account" description="You can create, edit and download PDFs right now. Saving them to a private library is available after signing in to a connected Persora account."/> : <>
       <VaultFolderShelf userId={user.id} scope="pdf-studio" pageLabel="PDFs" demoMode={false} totalCount={documents.length} folderCounts={counts} selectedFolderId={selectedFolderId} onSelectFolder={setSelectedFolderId} onFoldersChange={setFolders} notify={notify} reloadToken={folderReload}/>
       <div className="section-toolbar pdfs-toolbar">
         <label className="pdfs-search"><Search size={15}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search PDFs…" aria-label="Search PDFs"/></label>
@@ -282,12 +284,12 @@ export default function PdfStudioView({ user, canUpload, maxUploadMb, onUpgrade,
       <div className="section-list-meta"><span><b>{String(visible.length).padStart(2, "0")}</b> {visible.length === 1 ? "PDF" : "PDFs"}{selectedFolderId ? ` in ${folderName(selectedFolderId) || "this folder"}` : ""}</span><span className="list-meta-private"><ShieldCheck size={12}/> Nothing is uploaded until you press Save to Persora</span></div>
 
       {loading ? <div className="pdfs-grid" aria-busy="true" aria-label="Loading PDFs">{[0, 1, 2, 3].map((key) => <div key={key} className="pdfs-card pdfs-card-skeleton"><div className="pdfs-card-media"/><div className="pdfs-card-body"><span/><span/></div></div>)}</div>
-      : loadError ? <div className="section-empty" role="alert"><div className="empty-icon-stack"><div className="empty-icon-circle tag-rose"><AlertTriangle size={21}/></div></div><h3>Your PDFs couldn't be loaded</h3><p>{loadError}</p><button type="button" className="quiet-button" onClick={() => void loadDocuments()}><RefreshCw size={15}/> Try again</button></div>
+      : loadError ? <PersoraEmptyState role="alert" stacked={false} icon={<AlertTriangle size={20}/>} tone="rose" title="Your PDFs couldn't be loaded" description={loadError} action={<button type="button" className="quiet-button" onClick={() => void loadDocuments()}><RefreshCw size={15}/> Try again</button>}/>
       : visible.length ? <div className="pdfs-grid">{visible.map((doc) => <article key={doc.id} className="pdfs-card">
         <button type="button" className="pdfs-card-media" onClick={() => void openSaved(doc)} aria-label={`Open ${doc.title} in the editor`} disabled={Boolean(opening)}>
-          {doc.thumbnail ? <img src={doc.thumbnail} alt="" loading="lazy"/> : <span className="pdfs-thumb-fallback"><FileText size={26}/><small>PDF</small></span>}
-          <span className="pdfs-card-pages">{pageCountLabel(doc.pageCount)}</span>
-          {opening === doc.id && <span className="pdfs-card-opening" role="status"><span className="spinner"/> Opening…</span>}
+          {doc.thumbnail ? <img src={doc.thumbnail} alt="" loading="lazy"/> : <span className="pdfs-thumb-fallback"><FileType type="pdf" size="lg" variant="light" aria-hidden/></span>}
+          <Badge variant="secondary" size="xs" className="pdfs-card-pages">{pageCountLabel(doc.pageCount)}</Badge>
+          {opening === doc.id && <span className="pdfs-card-opening" role="status"><Spinner className="size-3.5"/> Opening…</span>}
         </button>
         <div className="pdfs-card-body">
           <div className="pdfs-card-title"><h3 title={doc.title}>{doc.title}</h3>
@@ -298,17 +300,14 @@ export default function PdfStudioView({ user, canUpload, maxUploadMb, onUpgrade,
               { label: "Delete PDF", icon: Trash2, danger: true, onSelect: () => setDeleteTarget(doc) },
             ]}/>
           </div>
-          {doc.folderId && folderName(doc.folderId) && <div className="pdfs-card-chips"><span className="pdfs-chip"><FolderOpen size={10}/>{folderName(doc.folderId)}</span></div>}
+          {doc.folderId && folderName(doc.folderId) && <div className="pdfs-card-chips"><Badge variant="outline" size="xs"><FolderOpen className="size-2.5"/>{folderName(doc.folderId)}</Badge></div>}
           <p className="pdfs-card-sub">{formatBytes(doc.fileSize)} · Updated {dateLabel(doc.updatedAt)}</p>
         </div>
       </article>)}</div>
-      : <div className="section-empty pdfs-empty"><div className="empty-icon-stack"><div className="empty-icon-circle tag-rose"><FileStack size={21}/></div><span>✦</span></div>
-        <h3>{documents.length ? "No PDFs match" : "No saved PDFs yet"}</h3>
-        <p>{documents.length ? "Try another search or folder." : "Create a PDF or open one to edit. When you're happy with it, choose Save to Persora to keep it here."}</p>
-      </div>}
+      : <PersoraEmptyState className="pdfs-empty" moduleId="pdf-studio" tone="rose" title={documents.length ? "No PDFs match" : "No saved PDFs yet"} description={documents.length ? "Try another search or folder." : "Create a PDF or open one to edit. When you're happy with it, choose Save to Persora to keep it here."}/>}
     </>}
 
-    {createFiles && <Suspense fallback={<div className="pdfs-lazy-fallback" role="status"><span className="spinner"/> Loading Create PDF…</div>}>
+    {createFiles && <Suspense fallback={<div className="pdfs-lazy-fallback" role="status"><Spinner className="size-4"/> Loading Create PDF…</div>}>
       <PdfCreateModal
         initialFiles={createFiles}
         onClose={() => setCreateFiles(null)}
@@ -316,7 +315,7 @@ export default function PdfStudioView({ user, canUpload, maxUploadMb, onUpgrade,
         notify={notify}
       />
     </Suspense>}
-    {editor && <Suspense fallback={<div className="pdfs-lazy-fallback" role="status"><span className="spinner"/> Loading the PDF editor…</div>}>
+    {editor && <Suspense fallback={<div className="pdfs-lazy-fallback" role="status"><Spinner className="size-4"/> Loading the PDF editor…</div>}>
       <PdfEditorModal
         request={editor}
         folders={folders}

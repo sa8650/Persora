@@ -3,6 +3,8 @@ import { Download, Eraser, FileImage, ImagePlus, PenLine, Scissors, Signature, T
 import { IMAGE_ACCEPT, chunkPages, describePages, flattenGroups, pageCountLabel, parsePageRanges } from "../lib/pdf-studio";
 import ModalPortal from "./ModalPortal";
 import ItemModalShell from "./ItemModalShell";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Spinner } from "@/components/ui/spinner";
 
 /** Escape closes only the top dialog (capture phase, before the editor's own handler). */
 function useEscape(onClose: () => void, disabled: boolean) {
@@ -22,7 +24,7 @@ function Footer({ busy, label, icon, onCancel, disabled, note }: { busy: boolean
     <div className="editor-footnote"><span>{note}</span></div>
     <div className="editor-actions">
       <button type="button" className="quiet-button" onClick={onCancel} disabled={busy}>Cancel</button>
-      <button type="submit" className="editor-submit" disabled={busy || disabled}>{busy ? <><span className="spinner"/> Working…</> : <>{icon} {label}</>}</button>
+      <button type="submit" className="editor-submit" disabled={busy || disabled}>{busy ? <><Spinner className="size-3.5"/> Working…</> : <>{icon} {label}</>}</button>
     </div>
   </div>;
 }
@@ -66,7 +68,7 @@ export function SplitDialog({ pageCount, selected, currentIndex, busy, onCancel,
               <label className="field-label">Pages
                 <input value={ranges} onChange={(event) => setRanges(event.target.value)} aria-invalid={Boolean(error)} placeholder="1-3, 5, 8-" disabled={busy} autoFocus/>
               </label>
-              <label className="pdfs-check"><input type="checkbox" checked={separate} onChange={(event) => setSeparate(event.target.checked)} disabled={busy}/> One PDF for each range (split)</label>
+              <label className="pdfs-check"><Checkbox checked={separate} onCheckedChange={(checked) => setSeparate(checked === true)} disabled={busy}/> One PDF for each range (split)</label>
               {error && <small className="pdfs-field-error" role="alert">{error}</small>}
             </div>}
             <label className={`pdfs-choice ${mode === "every" ? "is-selected" : ""}`}>
@@ -128,7 +130,7 @@ export function ExportImagesDialog({ pageCount, selected, currentIndex, pageSize
             <label className="field-label">Resolution
               <select value={dpi} onChange={(event) => setDpi(Number(event.target.value))} disabled={busy}><option value={72}>72 DPI — screen</option><option value={150}>150 DPI — standard</option><option value={300}>300 DPI — print</option></select>
             </label>
-            <label className="pdfs-check field-wide"><input type="checkbox" checked={overlays} onChange={(event) => setOverlays(event.target.checked)} disabled={busy}/> Include annotations and signatures</label>
+            <label className="pdfs-check field-wide"><Checkbox checked={overlays} onCheckedChange={(checked) => setOverlays(checked === true)} disabled={busy}/> Include annotations and signatures</label>
           </div>
           <p className="pdfs-dialog-summary">{pages.length ? `${pageCountLabel(pages.length)} · about ${pixels.width} × ${pixels.height} px for the current page size${pages.length > 1 ? " · downloaded together as a ZIP file" : ""}.` : "Choose at least one page."}</p>
           {busy && progress && <p className="pdfs-dialog-progress" role="status">{progress}</p>}
@@ -263,7 +265,7 @@ export function SignatureDialog({ recent, onUseRecent, onCancel, onCreate }: { r
             <input ref={uploadInput} className="hidden-file-input" type="file" accept={IMAGE_ACCEPT} onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (!file) return; if (uploadUrl) URL.revokeObjectURL(uploadUrl); setUploadUrl(URL.createObjectURL(file)); }} aria-label="Choose a signature image"/>
             {uploadUrl ? <img src={uploadUrl} alt="Signature preview" className="pdfs-signature-preview"/> : <div className="pdfs-create-empty"><ImagePlus size={22}/><span>A photo or scan of your signature on white paper works best.</span></div>}
             <div className="pdfs-dropzone-actions"><button type="button" className="quiet-button" onClick={() => uploadInput.current?.click()} disabled={busy}><Upload size={14}/> {uploadUrl ? "Choose another" : "Choose image"}</button></div>
-            <label className="pdfs-check"><input type="checkbox" checked={removeWhite} onChange={(event) => setRemoveWhite(event.target.checked)} disabled={busy}/> Make the white paper background transparent</label>
+            <label className="pdfs-check"><Checkbox checked={removeWhite} onCheckedChange={(checked) => setRemoveWhite(checked === true)} disabled={busy}/> Make the white paper background transparent</label>
           </div>}
           {error && <div className="form-alert error-alert" role="alert">{error}</div>}
           <p className="pdfs-muted-note">After you continue, click on the page where the signature should go. It's added as an image on top of the page; it isn't a certificate-based digital signature. Signatures are kept only for this editing session.</p>

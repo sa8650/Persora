@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, CircleAlert, Download, Eye, FileImage, FileSpreadsheet, FileText, FolderInput, LockKeyhole, Receipt, RefreshCw, Search, ShieldCheck, Store, UserRound, Wallet } from "lucide-react";
+import { ArrowLeft, CircleAlert, Download, Eye, FileText, FolderInput, LockKeyhole, RefreshCw, Search, ShieldCheck, Store, UserRound, Wallet } from "lucide-react";
 import ItemModalShell from "../ItemModalShell";
 import ModalPortal from "../ModalPortal";
 import ImagePreview from "../ImagePreview";
@@ -7,6 +7,19 @@ import PdfPreview from "../PdfPreview";
 import { humanSize } from "../../lib/utils";
 import { disconnectEms, fetchEmsFile, loadEmsFiles, loadEmsOverview, saveEmsFileCopy, type EmsFile, type EmsOverview, type EmsShop } from "../../lib/connections-api";
 import { ConfirmDisconnectDialog, ConnectionStatusPill, EmsConnectDialog, ProviderLogo } from "./ConnectionParts";
+import {
+  Attachment,
+  AttachmentAction,
+  AttachmentActions,
+  AttachmentContent,
+  AttachmentDescription,
+  AttachmentMedia,
+  AttachmentTitle,
+} from "@/components/ui/attachment";
+import { Badge } from "@/components/reui/badge";
+import { FileType, getFileType } from "@/components/reui/file-type";
+import { IconTile } from "@/components/reui/icon-tile";
+import { Spinner } from "@/components/ui/spinner";
 import "./connections.css";
 
 type Notify = (message: string, kind?: "success" | "error") => void;
@@ -20,10 +33,7 @@ function formatWhen(value: string | null | undefined) {
   return Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(date);
 }
 function fileIcon(file: EmsFile) {
-  if (file.type.startsWith("image/")) return <FileImage size={17}/>;
-  if (file.type.includes("sheet") || file.type.includes("excel") || file.type === "text/csv") return <FileSpreadsheet size={17}/>;
-  if (file.category === "invoice") return <Receipt size={17}/>;
-  return <FileText size={17}/>;
+  return <FileType type={getFileType(file.name || file.type)} size="sm" variant="light" aria-hidden/>;
 }
 function saveBlob(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob);
@@ -47,7 +57,7 @@ function FilePreviewDialog({ file, canUpload, saving, onClose, onDownload, onSav
   }, [file.id, file.type]);
   return <ModalPortal><ItemModalShell labelledBy="cn-preview-title" className="cn-dialog cn-preview-dialog" icon={fileIcon(file)} iconClassName="cn-dialog-icon" eyebrow={`EMS Vaultium${file.reference ? ` · ${file.reference}` : ""}`} title={<span id="cn-preview-title">{file.name}</span>} onClose={onClose}>
     <div className="cn-preview-stage">
-      {state.status === "loading" ? <div className="cn-preview-message"><span className="cn-spinner cn-spinner-dark" aria-hidden="true"/><b>Opening file from EMS…</b></div>
+      {state.status === "loading" ? <div className="cn-preview-message"><Spinner className="size-6 text-primary"/><b>Opening file from EMS…</b></div>
         : state.status === "error" ? <div className="cn-preview-message"><CircleAlert size={22}/><b>{state.message}</b></div>
           : state.text !== undefined ? <pre className="cn-preview-text">{state.text}</pre>
             : file.type === "application/pdf" && state.url ? <PdfPreview src={state.url} name={file.name}/>
@@ -176,13 +186,13 @@ export default function EmsConnectionView({ canUpload, notify, onUpgrade, onVaul
       <div className="cn-section-head"><h3 id="cn-ems-shops">Accounts &amp; shops</h3><span className="cn-muted">Choose where to browse Vaultium files.</span></div>
       <ul className="cn-rows cn-scope-rows">
         <li><button className={`cn-row cn-scope-row ${scope.kind === "admin" ? "is-active" : ""}`} onClick={() => choose({ kind: "admin" })} disabled={!usable} aria-pressed={scope.kind === "admin"}>
-          <span className="cn-scope-icon cn-scope-admin"><UserRound size={17}/></span>
+          <IconTile variant="soft" size="sm" className="text-blue-600 dark:text-blue-300"><UserRound size={17}/></IconTile>
           <span className="cn-row-copy"><span className="cn-row-title"><b>{admin?.name || "Administrator"}</b></span><p>Admin · all shops</p></span>
           <span className="cn-scope-count">{overview?.account?.totalFiles ?? "—"}<small>files</small></span>
         </button></li>
         {shops.map((shop) => { const selected = scope.kind === "shop" && scope.shop.id === shop.id; const inactive = shopStatus(shop.status); return <li key={shop.id}><button className={`cn-row cn-scope-row ${selected ? "is-active" : ""}`} onClick={() => choose({ kind: "shop", shop })} disabled={!usable} aria-pressed={selected}>
-          <span className="cn-scope-icon"><Store size={17}/></span>
-          <span className="cn-row-copy"><span className="cn-row-title"><b>{shop.name}</b>{inactive ? <span className="cn-pill cn-pill-muted"><i aria-hidden="true"/>{inactive}</span> : <span className="cn-pill cn-pill-good"><i aria-hidden="true"/>Active</span>}</span><p>{[shop.code, shop.type].filter(Boolean).join(" · ") || "Shop"}</p></span>
+          <IconTile variant="soft" size="sm" className="text-slate-600 dark:text-slate-300"><Store size={17}/></IconTile>
+          <span className="cn-row-copy"><span className="cn-row-title"><b>{shop.name}</b>{inactive ? <Badge variant="secondary" size="xs" radius="full" className="cn-pill cn-pill-muted capitalize"><i aria-hidden="true"/>{inactive}</Badge> : <Badge variant="success-light" size="xs" radius="full" className="cn-pill cn-pill-good"><i aria-hidden="true"/>Active</Badge>}</span><p>{[shop.code, shop.type].filter(Boolean).join(" · ") || "Shop"}</p></span>
           <span className="cn-scope-count">{shop.fileCount ?? "—"}<small>files</small></span>
         </button></li>; })}
       </ul>
@@ -198,17 +208,19 @@ export default function EmsConnectionView({ canUpload, notify, onUpgrade, onVaul
       {filesState.error ? <div className="cn-alert cn-alert-bad"><CircleAlert size={15}/><span>{filesState.error}</span>{filesState.code !== "reauth_required" && <button className="cn-link-button" onClick={() => void loadFiles(0)}>Try again</button>}</div>
         : !files.length && filesState.loading ? <div className="cn-file-list">{[0, 1, 2, 3].map((i) => <div className="cn-file-row cn-skeleton" key={i}><i/><i/></div>)}</div>
           : !files.length ? <div className="cn-empty"><FileText size={22}/><b>{debounced ? "No files match your search." : "No Vaultium files here yet."}</b><span>{debounced ? "Try a different file name, invoice or expense number." : "Files uploaded to Vaultium in EMS appear here."}</span></div>
-            : <ul className="cn-file-list">{files.map((file) => <li className="cn-file-row" key={file.id}>
-              <span className={`cn-file-icon cn-file-${file.category}`}>{fileIcon(file)}</span>
-              <span className="cn-file-copy">
-                <b title={file.name}>{file.name}</b>
-                <small>{[file.reference, scope.kind === "admin" ? shopName.get(file.storeId) : "", humanSize(file.size), formatWhen(file.createdAt)].filter(Boolean).join(" · ")}</small>
-              </span>
-              <span className="cn-file-actions">
-                {PREVIEWABLE.has(file.type) && <button className="cn-icon-button" onClick={() => setPreview(file)} aria-label={`View ${file.name}`} title="View"><Eye size={16}/></button>}
-                <button className="cn-icon-button" onClick={() => void download(file)} disabled={busyFile === `dl:${file.id}`} aria-label={`Download ${file.name}`} title="Download"><Download size={16}/></button>
-                <button className="cn-button cn-button-small" onClick={() => void saveCopy(file)} disabled={busyFile === `save:${file.id}`} title={canUpload ? "Save an independent copy to your Persora Documents" : "Requires an active paid plan"}><FolderInput size={14}/><span>{busyFile === `save:${file.id}` ? "Saving…" : "Save copy"}</span></button>
-              </span>
+            : <ul className="cn-file-list">{files.map((file) => <li key={file.id} className="cn-file-row">
+              <Attachment size="sm" className="w-full justify-between border-0 bg-transparent px-0">
+                <AttachmentMedia>{fileIcon(file)}</AttachmentMedia>
+                <AttachmentContent>
+                  <AttachmentTitle title={file.name}>{file.name}</AttachmentTitle>
+                  <AttachmentDescription>{[file.reference, scope.kind === "admin" ? shopName.get(file.storeId) : "", humanSize(file.size), formatWhen(file.createdAt)].filter(Boolean).join(" · ")}</AttachmentDescription>
+                </AttachmentContent>
+                <AttachmentActions>
+                  {PREVIEWABLE.has(file.type) && <AttachmentAction type="button" onClick={() => setPreview(file)} aria-label={`View ${file.name}`} title="View"><Eye className="size-4"/></AttachmentAction>}
+                  <AttachmentAction type="button" onClick={() => void download(file)} disabled={busyFile === `dl:${file.id}`} aria-label={`Download ${file.name}`} title="Download"><Download className="size-4"/></AttachmentAction>
+                  <button type="button" className="cn-button cn-button-small ml-1.5" onClick={() => void saveCopy(file)} disabled={busyFile === `save:${file.id}`} title={canUpload ? "Save an independent copy to your Persora Documents" : "Requires an active paid plan"}><FolderInput size={14}/><span>{busyFile === `save:${file.id}` ? "Saving…" : "Save copy"}</span></button>
+                </AttachmentActions>
+              </Attachment>
             </li>)}</ul>}
       </div>
       {files.length > 0 && <footer className="cn-browser-foot"><span className="cn-muted">Showing {files.length} of {filesState.total} · copies you save belong to your Persora account</span>{filesState.hasMore && <button className="cn-button cn-button-small" onClick={() => void loadFiles(files.length)} disabled={filesState.loading}>{filesState.loading ? "Loading…" : "Load more"}</button>}</footer>}

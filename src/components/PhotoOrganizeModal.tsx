@@ -1,10 +1,12 @@
 import { useEffect, useId, useMemo, useState, type FormEvent } from "react";
 import { AlertTriangle, Check, FolderPlus, ImageIcon, Info, Lock, RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
-import type { PhotoCategory, PhotoStudioPhoto, PhotoStudioSaveInput, VaultFolder, VaultFolderColor } from "../types";
+import type { PhotoCategory, PhotoStudioPhoto, PhotoStudioSaveInput, TransferProgress, VaultFolder, VaultFolderColor } from "../types";
 import { VAULT_FOLDER_COLORS } from "../lib/folders";
 import { PHOTO_CATEGORIES, formatBytes, formatDimensions, type PhotoAnalysis } from "../lib/photo-studio";
 import ItemModalShell from "./ItemModalShell";
 import ModalPortal from "./ModalPortal";
+import { TransferProgressIndicator } from "./ProgressIndicator";
+import { Spinner } from "@/components/ui/spinner";
 
 const NEW_FOLDER = "__new__";
 
@@ -32,7 +34,10 @@ interface Props {
   onUpgrade?: () => void;
   onCancel: () => void;
   /** Persists; throw to keep the modal open with the error shown. */
-  onSave: (input: Pick<PhotoStudioSaveInput, "title" | "category" | "notes" | "folderId" | "newFolder">) => Promise<void>;
+  onSave: (
+    input: Pick<PhotoStudioSaveInput, "title" | "category" | "notes" | "folderId" | "newFolder">,
+    onProgress?: (progress: TransferProgress) => void,
+  ) => Promise<void>;
 }
 
 /**
@@ -49,6 +54,7 @@ export default function PhotoOrganizeModal({ mode, previewUrl, analysis, photo, 
   const [newFolderColor, setNewFolderColor] = useState<VaultFolderColor>("blue");
   const [notes, setNotes] = useState(defaults.notes);
   const [saving, setSaving] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<TransferProgress | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -79,7 +85,7 @@ export default function PhotoOrganizeModal({ mode, previewUrl, analysis, photo, 
     if (!cleanTitle) { setError("Give the photo a title."); return; }
     if (folderChoice === NEW_FOLDER && !newFolderName.trim()) { setError("Name the new folder, or choose an existing one."); return; }
     if (!canSave) { setError(saveBlockedReason || "This photo can't be saved right now."); return; }
-    setSaving(true); setError("");
+    setSaving(true); setError(""); setUploadProgress(null);
     try {
       await onSave({
         title: cleanTitle.slice(0, 120),
@@ -87,10 +93,11 @@ export default function PhotoOrganizeModal({ mode, previewUrl, analysis, photo, 
         notes: notes.trim().slice(0, 1000),
         folderId: folderChoice && folderChoice !== NEW_FOLDER ? folderChoice : null,
         newFolder: folderChoice === NEW_FOLDER ? { name: newFolderName.trim().slice(0, 64), color: newFolderColor } : null,
-      });
+      }, (progress) => setUploadProgress(progress));
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "The photo couldn't be saved. Try again.");
       setSaving(false);
+      setUploadProgress(null);
     }
   };
 
@@ -147,12 +154,21 @@ export default function PhotoOrganizeModal({ mode, previewUrl, analysis, photo, 
             {!canSave && <div className="form-alert ps-plan-alert field-wide" role="note"><Lock size={13}/><span>{saveBlockedReason || "Saving is unavailable."}</span>{onUpgrade && <button type="button" className="quiet-button" onClick={onUpgrade}>View plans</button>}</div>}
           </div>
         </div>
+        {saving && mode !== "details" && uploadProgress ? (
+          <div className="px-6 pt-2">
+            <TransferProgressIndicator
+              progress={uploadProgress}
+              label="Uploading photo…"
+              detail={uploadProgress.total ? `${formatBytes(uploadProgress.loaded)} of ${formatBytes(uploadProgress.total)}` : undefined}
+            />
+          </div>
+        ) : null}
         {error && <div className="form-alert error-alert editor-error" role="alert">{error}{saving ? null : <span className="ps-error-retry"> <RefreshCw size={11}/> Press {saveLabel} to try again.</span>}</div>}
         <div className="editor-form-footer">
           <div className="editor-footnote"><ShieldCheck size={14}/><span>{mode === "details" ? "Only the details change — the photo file stays as it is." : "Nothing is uploaded until you press Save."}</span></div>
           <div className="editor-actions">
             <button type="button" className="quiet-button" onClick={onCancel} disabled={saving}>Cancel</button>
-            <button type="submit" className="editor-submit" disabled={saving || !canSave}>{saving ? <><span className="spinner"/> Saving…</> : saveLabel}</button>
+            <button type="submit" className="editor-submit" disabled={saving || !canSave}>{saving ? <><Spinner className="size-3.5"/> Saving…</> : saveLabel}</button>
           </div>
         </div>
       </form>

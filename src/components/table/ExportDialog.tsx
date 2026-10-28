@@ -5,6 +5,7 @@ import { Download, Info } from "lucide-react";
 import { exportNotes } from "../../../cloudflare/table-io.js";
 import type { TableKind } from "../../../cloudflare/table-rules.js";
 import { TableDialog } from "./table-ui";
+import { Spinner } from "@/components/ui/spinner";
 
 export default function ExportDialog({ kind, sheets = 1, attachments = false, scopeNote, onClose, onExport }: {
   kind: TableKind;
@@ -27,7 +28,7 @@ export default function ExportDialog({ kind, sheets = 1, attachments = false, sc
   };
   return <TableDialog id="tb-export-title" title="Export" icon={<Download size={18}/>} busy={busy} onClose={onClose}
     footer={<><button type="button" className="quiet-button" onClick={onClose} disabled={busy}>Cancel</button>
-      <button type="button" className="editor-submit" onClick={() => void run()} disabled={busy}>{busy ? <><span className="spinner"/> Preparing…</> : `Download .${format}`}</button></>}>
+      <button type="button" className="editor-submit" onClick={() => void run()} disabled={busy}>{busy ? <><Spinner className="size-3.5"/> Preparing…</> : `Download .${format}`}</button></>}>
     <div className="tb-form">
       <fieldset className="tb-field tb-radio-stack"><legend>Format</legend>
         <label><input type="radio" name="tb-export-format" checked={format === "xlsx"} onChange={() => setFormat("xlsx")}/> <span><b>Excel (.xlsx)</b><small>{kind === "spreadsheet" ? "All sheets, values, formulas and basic formatting" : "Fields as columns, typed values"}</small></span></label>

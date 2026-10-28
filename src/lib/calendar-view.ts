@@ -107,9 +107,16 @@ export function occurrenceDays(occurrence: Occurrence, zone: string): { first: s
   return { first, last };
 }
 
-/** All-day events and timed events lasting 24h or more go in the all-day row. */
+/** Only items explicitly marked all-day belong in the all-day banner row. */
 export function isBanner(occurrence: Occurrence): boolean {
-  return occurrence.allDay || ((occurrence.endMs as number) - (occurrence.startMs as number)) >= 86_400_000;
+  return Boolean(occurrence.allDay);
+}
+
+/** True when a timed item overlaps two or more calendar dates in `zone` (exact midnight ends stay single-day). */
+export function isMultiDayTimed(occurrence: Occurrence, zone: string): boolean {
+  if (occurrence.allDay) return false;
+  const { first, last } = occurrenceDays(occurrence, zone);
+  return first !== last;
 }
 
 export function occurrenceTimeLabel(occurrence: Occurrence, zone: string): string {
@@ -144,9 +151,9 @@ export function layoutDay(occurrences: Occurrence[], date: string, zone: string)
     if (!(start < dayEnd && end > dayStart)) continue;
     const continuesBefore = start < dayStart; const continuesAfter = end > dayEnd;
     const top = continuesBefore ? 0 : minutesOfDay(start, zone);
-    let bottom = continuesAfter ? 1440 : minutesOfDay(end, zone);
+    let bottom = end >= dayEnd ? 1440 : minutesOfDay(end, zone);
     if (bottom <= top) bottom = Math.min(1440, top + Math.max(15, Math.round((end - start) / 60000)));
-    blocks.push({ occurrence, top, bottom: Math.max(bottom, top + 15), column: 0, columns: 1, continuesBefore, continuesAfter });
+    blocks.push({ occurrence, top, bottom: Math.min(1440, Math.max(bottom, top + 15)), column: 0, columns: 1, continuesBefore, continuesAfter });
   }
   blocks.sort((a, b) => a.top - b.top || (b.bottom - b.top) - (a.bottom - a.top));
   let cluster: TimedBlock[] = []; let clusterEnd = -1; let columnEnds: number[] = [];
@@ -378,6 +385,105 @@ export function dayDragTarget(occurrence: Occurrence, days: number, zone: string
   if (occurrence.allDay) return { allDay: true, startDate: addDays(occurrence.startDate as string, days), endDate: addDays(occurrence.endDate as string, days) };
   const startMs = shiftLocalDays(occurrence.startMs as number, days, zone);
   return { allDay: false, startMs, endMs: startMs + ((occurrence.endMs as number) - (occurrence.startMs as number)) };
+}
+
+export type HorizontalResizeEdge = "start" | "end";
+export interface ResizeOutcome {
+  target: MoveTarget | null;
+  invalid: string | null;
+}
+
+const MAX_TIMED_RESIZE_MS = 30 * 86_400_000;
+const MAX_ALL_DAY_RESIZE_DAYS = 366;
+const MIN_TIMED_RESIZE_MS = 15 * 60_000;
+
+/** Snap a minute offset (0–1440) to the 15-minute calendar grid. */
+export function snapQuarterHour(minutes: number, min = 0, max = 1440): number {
+  return Math.max(min, Math.min(max, Math.round(minutes / 15) * 15));
+}
+
+/**
+ * Vertical resize target (Week & Day views): changes duration by moving the
+ * bottom edge on `segmentDate` while keeping `startMs` unchanged.
+ */
+export function verticalResizeTarget(occurrence: Occurrence, segmentDate: string, bottomMinutes: number, zone: string): ResizeOutcome {
+  if (occurrence.allDay) return { target: null, invalid: "All-day items resize horizontally across days." };
+  const startMs = occurrence.startMs as number;
+  const startDate = localDateOf(startMs, zone);
+  const minMinutes = segmentDate === startDate ? Math.min(1440, minutesOfDay(startMs, zone) + 15) : 0;
+  const snapped = snapQuarterHour(bottomMinutes, minMinutes, 1440);
+  const endMs = snapped >= 1440
+    ? startOfDayInstant(addDays(segmentDate, 1), zone)
+    : zonedTimeToInstant(segmentDate, `${pad(Math.floor(snapped / 60))}:${pad(snapped % 60)}`, zone);
+  if (endMs - startMs < MIN_TIMED_RESIZE_MS) {
+    return { target: null, invalid: `The ${itemNoun(occurrence.event.itemType)} must be at least 15 minutes long.` };
+  }
+  if (endMs - startMs > MAX_TIMED_RESIZE_MS) {
+    return { target: null, invalid: `Timed ${itemNoun(occurrence.event.itemType)}s cannot span more than 30 days.` };
+  }
+  return { target: { allDay: false, startMs, endMs }, invalid: null };
+}
+
+/**
+ * Horizontal resize target (Week & Month views): drags the left (`start`) or
+ * right (`end`) boundary to `hoverDate` while anchoring the opposite boundary
+ * and preserving the wall-clock time of day on timed items.
+ */
+export function horizontalResizeTarget(occurrence: Occurrence, edge: HorizontalResizeEdge, hoverDate: string, zone: string): ResizeOutcome {
+  const noun = itemNoun(occurrence.event.itemType);
+  if (occurrence.allDay) {
+    const startDate = occurrence.startDate as string;
+    const endDate = occurrence.endDate as string;
+    if (edge === "start") {
+      if (hoverDate >= endDate) return { target: null, invalid: `The ${noun} must start before its end date.` };
+      if (daysBetween(hoverDate, endDate) > MAX_ALL_DAY_RESIZE_DAYS) return { target: null, invalid: `All-day ${noun}s cannot span more than 366 days.` };
+      return { target: { allDay: true, startDate: hoverDate, endDate }, invalid: null };
+    }
+    const nextEnd = addDays(hoverDate, 1);
+    if (nextEnd <= startDate) return { target: null, invalid: `The ${noun} must end on or after the day it starts.` };
+    if (daysBetween(startDate, nextEnd) > MAX_ALL_DAY_RESIZE_DAYS) return { target: null, invalid: `All-day ${noun}s cannot span more than 366 days.` };
+    return { target: { allDay: true, startDate, endDate: nextEnd }, invalid: null };
+  }
+
+  const startMs = occurrence.startMs as number;
+  const endMs = occurrence.endMs as number;
+  const { first, last } = occurrenceDays(occurrence, zone);
+  if (edge === "start") {
+    const delta = daysBetween(first, hoverDate);
+    const nextStartMs = shiftLocalDays(startMs, delta, zone);
+    if (endMs - nextStartMs < MIN_TIMED_RESIZE_MS) {
+      return { target: null, invalid: `The ${noun} must start before its end time.` };
+    }
+    if (endMs - nextStartMs > MAX_TIMED_RESIZE_MS) {
+      return { target: null, invalid: `Timed ${noun}s cannot span more than 30 days.` };
+    }
+    return { target: { allDay: false, startMs: nextStartMs, endMs }, invalid: null };
+  }
+
+  const delta = daysBetween(last, hoverDate);
+  const nextEndMs = shiftLocalDays(endMs, delta, zone);
+  if (nextEndMs - startMs < MIN_TIMED_RESIZE_MS) {
+    return { target: null, invalid: `The ${noun} must end after its start time.` };
+  }
+  if (nextEndMs - startMs > MAX_TIMED_RESIZE_MS) {
+    return { target: null, invalid: `Timed ${noun}s cannot span more than 30 days.` };
+  }
+  return { target: { allDay: false, startMs, endMs: nextEndMs }, invalid: null };
+}
+
+/** Local calendar dates covered by a `MoveTarget` in `zone` (for drop-cell highlighting). */
+export function targetDates(target: MoveTarget, zone: string): Set<string> {
+  if (target.allDay) return new Set(datesBetween(target.startDate, target.endDate));
+  const first = localDateOf(target.startMs, zone);
+  const last = localDateOf(Math.max(target.startMs, target.endMs - 1), zone);
+  return new Set(datesBetween(first, addDays(last, 1)));
+}
+
+/** True when `target` keeps the exact same schedule as `occurrence`. */
+export function sameTarget(occurrence: Occurrence, target: MoveTarget): boolean {
+  if (occurrence.allDay !== target.allDay) return false;
+  if (target.allDay) return occurrence.startDate === target.startDate && occurrence.endDate === target.endDate;
+  return occurrence.startMs === target.startMs && occurrence.endMs === target.endMs;
 }
 
 /** The occurrence shown at a new timing (optimistic display while a move saves). */

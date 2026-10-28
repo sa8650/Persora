@@ -35,6 +35,7 @@ globalThis.fetch = async (url, init = {}) => {
   const body = fixtures[key];
   if (!body) return new Response(JSON.stringify({ error: `No fixture for ${key}` }), { status: 404, headers: { 'Content-Type': 'application/json' } });
   const resolved = typeof body === 'function' ? await body({ method, target, init }) : body;
+  if (resolved instanceof Response) return resolved;
   return new Response(JSON.stringify(resolved), { status: 200, headers: { 'Content-Type': 'application/json' } });
 };
 
@@ -360,7 +361,8 @@ test('project sections are ordered and the Task List uses minimal equal-column c
   const cards = [...container.querySelectorAll('.pj-task-card')];
   assert.equal(cards.length, 2, 'All Tasks shows tasks across all four statuses');
   for (const card of cards) {
-    assert.equal(card.children.length, 2, 'a task card contains only its name and the three-dot menu');
+    assert.equal(card.children.length, 2, 'compact Cult UI task card contains the priority/actions meta row and the faded title');
+    assert.ok(card.querySelector('.pj-task-priority-tag'), 'each card displays a compact color-coded Cult UI priority pill');
     assert.ok(card.querySelector('.pj-task-title'));
     assert.ok(card.querySelector('.pj-task-actions .tiny-action'));
     assert.ok(!card.textContent.includes('Check the product launch copy'), 'descriptions are not shown on cards');
@@ -373,7 +375,7 @@ test('project sections are ordered and the Task List uses minimal equal-column c
   await setValue(container.querySelector('.pj-task-search input'), '');
   await press(container.querySelector('.pj-task-filter-button'));
   const selects = [...container.querySelectorAll('.pj-task-filter-popover select')];
-  assert.equal(selects.length, 4, 'field, assignee, status, and paused filters are available together');
+  assert.equal(selects.length, 5, 'field, assignee, status, priority, and paused filters are available together');
   await setValue(selects[2], 'in-progress', 'change');
   assert.deepEqual([...container.querySelectorAll('.pj-task-card .pj-task-title')].map((title) => title.textContent), ['Create mockups']);
   assert.ok(readFileSync(new URL('../src/components/projects.css', import.meta.url), 'utf8').includes('grid-template-columns: repeat(4,minmax(0,1fr))'), 'board columns share equal width and remain horizontally scrollable on narrow workspaces');
@@ -420,8 +422,9 @@ test('creating a task persists its field, assignee, description, and status thro
   const selects = [...document.querySelectorAll('.pj-task-form select')];
   await setValue(selects[1], 'fld-1', 'change');
   await setValue(selects[2], 'in-review', 'change');
+  await setValue(selects[3], 'high', 'change');
   await press(document.querySelector('.pj-task-form button[type="submit"]'));
-  assert.deepEqual(savedBody, { name: 'Publish release notes', description: 'Share the launch summary.', fieldId: 'fld-1', assigneeId: null, status: 'in-review' });
+  assert.deepEqual(savedBody, { name: 'Publish release notes', description: 'Share the launch summary.', fieldId: 'fld-1', assigneeId: null, status: 'in-review', priority: 'high' });
   assert.ok(apiCalls.some((call) => call.method === 'POST' && call.target === '/api/projects/proj-1/tasks'), 'task create reaches the project-scoped worker route');
   assert.ok(!Object.hasOwn(savedBody, 'progress'), 'field progress is derived server-side from task status');
   assert.ok(!document.querySelector('.pj-task-form'), 'the form closes after a successful save');
@@ -596,3 +599,254 @@ test('a folder filter from one project never hides another project’s fields', 
   await unmount();
   window.history.replaceState({}, '', '/');
 });
+
+test('disallowed Kanban drops reject with permission message and backend move errors roll back board and progress', async () => {
+  ownerFixture();
+  const notices = [];
+  const { container, unmount } = await mount(userRecord(OWNER_ID, 'Amina Rahman'), {
+    notify: (msg, kind) => notices.push({ msg, kind }),
+  });
+  await openTaskTab(container);
+
+  const inProgressCol = container.querySelector('.pj-task-column-in-progress');
+  const inReviewCol = container.querySelector('.pj-task-column-in-review');
+  const completeCol = container.querySelector('.pj-task-column-complete');
+  const activeCard = inProgressCol.querySelector('.pj-task-card');
+  assert.ok(activeCard, 'In Progress column starts with a task card');
+
+  const makeDragEvent = (type, taskId) => {
+    const ev = new window.Event(type, { bubbles: true, cancelable: true });
+    ev.dataTransfer = {
+      effectAllowed: 'move',
+      dropEffect: 'move',
+      setData: () => undefined,
+      getData: () => taskId,
+      setDragImage: () => undefined,
+    };
+    ev.clientX = 400;
+    ev.clientY = 220;
+    return ev;
+  };
+
+  // 1) Direct In Progress -> Complete drop is rejected client-side with a helpful message and zero API mutation.
+  apiCalls.length = 0;
+  await act(async () => {
+    activeCard.dispatchEvent(makeDragEvent('dragstart', 'task-2'));
+    completeCol.dispatchEvent(makeDragEvent('dragover', 'task-2'));
+    completeCol.dispatchEvent(makeDragEvent('drop', 'task-2'));
+    activeCard.dispatchEvent(makeDragEvent('dragend', 'task-2'));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+  assert.ok(container.querySelector('.pj-task-move-notice')?.textContent.includes('In Review'), 'helpful permission/workflow notice appears above board');
+  assert.ok(notices.some((n) => n.kind === 'error' && n.msg.includes('In Review')), 'toast explains In Review gate');
+  assert.equal(apiCalls.some((c) => c.target.endsWith('/move')), false, 'disallowed drop does not hit backend');
+  assert.equal(inProgressCol.querySelectorAll('.pj-task-card').length, 1, 'card snaps back to original In Progress column');
+
+  // 2) Valid move that fails on backend rolls back optimistic card column, counts, and derived field progress.
+  fixtures['POST /api/projects/proj-1/tasks/task-2/move'] = () => new Response(JSON.stringify({ error: 'Database write failed.' }), { status: 502, headers: { 'Content-Type': 'application/json' } });
+  await act(async () => {
+    activeCard.dispatchEvent(makeDragEvent('dragstart', 'task-2'));
+    inReviewCol.dispatchEvent(makeDragEvent('dragover', 'task-2'));
+    inReviewCol.dispatchEvent(makeDragEvent('drop', 'task-2'));
+    activeCard.dispatchEvent(makeDragEvent('dragend', 'task-2'));
+    await new Promise((resolve) => setTimeout(resolve, 40));
+  });
+  assert.equal(inProgressCol.querySelectorAll('.pj-task-card').length, 1, 'optimistic move rolled back to In Progress after API failure');
+  assert.ok(notices.some((n) => n.kind === 'error' && n.msg.includes('Database write failed')), 'backend failure notifies user');
+  await unmount();
+});
+
+test('unauthorized task viewer sees no Edit or Delete in three-dot menu, and Field Create/Edit modal supports Private attachments', async () => {
+  memberFixture();
+  const detail = fixtures['GET /api/projects/proj-1'];
+  // Ensure member is NOT assignee of fld-1 so member lacks task CRUD on task-1.
+  detail.fields = detail.fields.map((f) => ({ ...f, assignee_id: OWNER_ID }));
+  const { container: memberContainer, unmount: unmountMember } = await mount(userRecord(MEMBER_ID, 'Kris Ray'));
+  await openTaskTab(memberContainer);
+  const firstMenuBtn = memberContainer.querySelector('.pj-task-card .pj-task-actions .tiny-action');
+  await press(firstMenuBtn);
+  const menuItems = [...document.querySelectorAll('.card-action-menu-portal [role="menuitem"]')].map((el) => el.textContent.trim());
+  assert.equal(menuItems.some((label) => /Edit|Delete/i.test(label)), false, 'unauthorized user gets no Edit or Delete menu items');
+  await unmountMember();
+
+  // Owner opens New field modal: has Private attachments, Field assignee, Paused/Complete statuses, and no checklist UI.
+  ownerFixture();
+  let uploadedFieldAttachment = false;
+  fixtures['POST /api/projects/proj-1/fields'] = ({ init }) => {
+    const body = JSON.parse(init.body);
+    return { field: { ...fixtures['GET /api/projects/proj-1'].fields[0], id: 'fld-new', title: body.title } };
+  };
+  fixtures['POST /api/projects/proj-1/fields/fld-new/attachments'] = () => {
+    uploadedFieldAttachment = true;
+    return { attachment: { id: 'att-new', project_id: 'proj-1', field_id: 'fld-new', uploader_id: OWNER_ID, uploaderName: 'Amina Rahman', file_name: 'brief.pdf', file_size: 128, file_type: 'application/pdf', created_at: NOW } };
+  };
+  const { container, unmount } = await mount({ ...userRecord(OWNER_ID, 'Amina Rahman'), uploadsEnabled: true });
+  await click('.pj-project-card .magic-card-content', container);
+  await press([...container.querySelectorAll('.pj-topbar-actions button')].find((b) => b.textContent.includes('New field')));
+  const dialog = document.querySelector('.pj-modal[aria-label="New field"]');
+  assert.ok(dialog, 'New field modal opens');
+  assert.ok(dialog.querySelector('.pj-attachments-section'), 'Field Create/Edit modal includes Private attachments');
+  assert.equal(dialog.querySelector('.pj-checklist-editor'), null, 'Field modal has no checklist controls');
+  const statusLabels = [...dialog.querySelectorAll('select')[1].querySelectorAll('option')].map((o) => o.textContent);
+  assert.deepEqual(statusLabels, ['Planning', 'In Progress', 'Paused', 'In Review', 'Complete']);
+
+  const fileInput = dialog.querySelector('.pj-attachment-upload input[type="file"]');
+  const pdf = new File(['%PDF-1.4'], 'brief.pdf', { type: 'application/pdf' });
+  Object.defineProperty(fileInput, 'files', { configurable: true, value: [pdf] });
+  await act(async () => { fileInput.dispatchEvent(new window.Event('change', { bubbles: true })); await new Promise((r) => setTimeout(r, 10)); });
+  await setValue(dialog.querySelector('input[placeholder^="e.g."]'), 'Q4 Launch Plan');
+  await press(dialog.querySelector('.pj-form .pj-primary-button'));
+  assert.equal(uploadedFieldAttachment, true, 'queued private attachment uploads immediately when field is created');
+  await unmount();
+});
+
+test('Project, Field, and Task Add/Edit/View modals render with fast GPU-cached blurred backdrop, freeze background glow, and dismiss via Escape or outside click', async () => {
+  const css = readFileSync(new URL('../src/components/projects.css', import.meta.url), 'utf8');
+  const themeCss = readFileSync(new URL('../src/persora-theme.css', import.meta.url), 'utf8');
+  const backdropMatch = css.match(/\.pj-modal-backdrop\s*\{([^}]+)\}/);
+  assert.ok(backdropMatch, '.pj-modal-backdrop rule exists');
+  assert.match(backdropMatch[1], /background:\s*rgba\(15,\s*23,\s*42,\s*0\.42\)/, 'modal backdrop uses outside fade scrim');
+  assert.match(backdropMatch[1], /backdrop-filter:\s*none/, 'modal backdrop avoids backdrop blur for lag-free scroll and typing');
+  assert.ok(css.includes('body:has(.pj-modal-backdrop) .pj-view { pointer-events: none; }'), 'background MagicCard pointer tracking pauses while a modal is open');
+  assert.ok(!css.includes('striped-pattern') && !themeCss.includes('striped-pattern'), 'background striped pattern is completely removed website-wide');
+
+  const taskTitleMatch = css.match(/\.pj-task-title\s*\{([^}]+)\}/);
+  assert.ok(taskTitleMatch, '.pj-task-title rule exists');
+  assert.match(taskTitleMatch[1], /font-size:\s*13px/, 'task card title uses compact smaller font size');
+  assert.match(taskTitleMatch[1], /rgba\(30,\s*41,\s*59,\s*0\.77\)/, 'task card title is slightly faded');
+
+  ownerFixture();
+  const baseTask = fixtures['GET /api/projects/proj-1'].tasks[0];
+  fixtures['GET /api/projects/proj-1/tasks/task-1'] = async () => {
+    await new Promise((r) => setTimeout(r, 35));
+    return { task: { ...baseTask, comments: [], attachments: [] } };
+  };
+
+  const { container, unmount } = await mount(userRecord(OWNER_ID, 'Amina Rahman'));
+
+  // 1. Project Add modal: Escape closes immediately.
+  await press([...container.querySelectorAll('.pj-list-head-actions button')].find((b) => b.textContent.includes('New project')));
+  assert.ok(document.querySelector('.pj-modal[aria-label="New project"]'), 'New project modal opens');
+  await act(async () => { document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await new Promise((r) => setTimeout(r, 15)); });
+  assert.equal(document.querySelector('.pj-modal'), null, 'Escape dismisses Project Add modal');
+
+  // 2. Field View modal -> Edit modal -> outside backdrop click closes cleanly.
+  await click('.pj-project-card .magic-card-content', container);
+  await press([...container.querySelectorAll('.pj-section-nav button')].find((b) => b.textContent === 'Fields'));
+  await click('.pj-field-card', container);
+  assert.ok(document.querySelector('.pj-modal[aria-label="Hero illustration"]'), 'Field View modal opens');
+  const backdrop = document.querySelector('.pj-modal-backdrop');
+  await act(async () => { backdrop.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true })); await new Promise((r) => setTimeout(r, 15)); });
+  assert.equal(document.querySelector('.pj-modal'), null, 'clicking outside the floating dialog dismisses the modal');
+
+  // 3. Task View modal renders initial task data immediately without a layout-shifting .pj-loading banner, and Escape dismisses it.
+  await press([...container.querySelectorAll('.pj-section-nav button')].find((b) => b.textContent === 'Task List'));
+  await press(container.querySelector('.pj-task-card[aria-label="Open task Draft campaign brief"]'));
+  const taskView = document.querySelector('.pj-task-modal[aria-label="Task details"]');
+  assert.ok(taskView, 'Task View modal opens');
+  assert.equal(taskView.querySelector('.pj-loading'), null, 'Task View avoids layout-shifting loading block while syncing');
+  assert.ok(taskView.querySelector('.pj-task-view-title')?.textContent.includes('Draft campaign brief'), 'initial card title renders immediately on frame 0');
+  await act(async () => { await new Promise((r) => setTimeout(r, 45)); });
+  await act(async () => { document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await new Promise((r) => setTimeout(r, 15)); });
+  assert.equal(document.querySelector('.pj-task-modal'), null, 'Escape dismisses Task View modal');
+
+  await unmount();
+});
+
+test('Add/Edit Project options persist category/tags/dates/priority/pause/archive, and paused task or paused field locks Kanban column moves', async () => {
+  ownerFixture();
+  const detail = fixtures['GET /api/projects/proj-1'];
+  // Task 1 is paused; Task 2 belongs to fld-2 which is set to Paused ('blocked') with High priority.
+  detail.fields.push({
+    ...detail.fields[0],
+    id: 'fld-paused',
+    title: 'Paused Infrastructure',
+    status: 'blocked',
+  });
+  detail.tasks = [
+    { ...detail.tasks[0], id: 'task-paused', name: 'Frozen copy deck', status: 'todo', priority: 'medium', paused: true },
+    { ...detail.tasks[1], id: 'task-in-paused-field', field_id: 'fld-paused', fieldTitle: 'Paused Infrastructure', name: 'Blocked schema rollout', status: 'in-progress', priority: 'high', paused: false },
+  ];
+
+  let updatedProjectBody = null;
+  fixtures['PATCH /api/projects/proj-1'] = ({ init }) => {
+    updatedProjectBody = JSON.parse(init.body);
+    detail.project = { ...detail.project, ...updatedProjectBody };
+    return { project: detail.project };
+  };
+
+  const notices = [];
+  const { container, unmount } = await mount(userRecord(OWNER_ID, 'Amina Rahman'), (msg, kind) => notices.push({ msg, kind }));
+  await click('.pj-project-card .magic-card-content', container);
+
+  // 1. Edit Project settings saves category, priority, start/due dates, tags, and pause/archive toggles.
+  await press([...container.querySelectorAll('.pj-topbar-actions button')].find((b) => b.textContent.includes('Project settings')));
+  const settingsDialog = document.querySelector('.pj-modal[aria-label="Project settings"]');
+  assert.ok(settingsDialog, 'Project settings modal opens');
+  const categoryInput = settingsDialog.querySelector('input[placeholder*="Product Launch"]');
+  await setValue(categoryInput, 'Platform');
+  const prioritySelect = settingsDialog.querySelector('select');
+  await setValue(prioritySelect, 'high', 'change');
+  const dateInputs = [...settingsDialog.querySelectorAll('input[type="date"]')];
+  await setValue(dateInputs[0], '2026-10-26', 'change');
+  await setValue(dateInputs[1], '2026-12-01', 'change');
+  const tagInput = settingsDialog.querySelector('.pj-tag-editor input');
+  await setValue(tagInput, 'infra, q4,');
+  const checkboxes = [...settingsDialog.querySelectorAll('[role="checkbox"]')];
+  await press(checkboxes[0]); // Pause project
+  await press(settingsDialog.querySelector('button[type="submit"]'));
+  assert.deepEqual(updatedProjectBody, {
+    name: 'Website relaunch',
+    description: 'Ship the new marketing site.',
+    kind: 'shared',
+    category: 'Platform',
+    tags: ['infra', 'q4'],
+    startDate: '2026-10-26',
+    dueDate: '2026-12-01',
+    priority: 'high',
+    paused: true,
+    archived: false,
+  });
+
+  // 2. Switch to Task List: verify Cult UI priority tags & pause lock pills, and verify drag-and-drop lock for BOTH paused task & paused field!
+  await press([...container.querySelectorAll('.pj-section-nav button')].find((b) => b.textContent === 'Task List'));
+  const pausedCard = container.querySelector('.pj-task-card[aria-label="Open task Frozen copy deck"]');
+  const fieldPausedCard = container.querySelector('.pj-task-card[aria-label="Open task Blocked schema rollout"]');
+  assert.ok(pausedCard?.querySelector('.pj-task-priority-tag.pj-priority-medium')?.textContent.includes('Medium'));
+  assert.ok(pausedCard?.querySelector('.pj-task-lock-pill')?.textContent.includes('Paused'));
+  assert.ok(fieldPausedCard?.querySelector('.pj-task-priority-tag.pj-priority-high')?.textContent.includes('High'));
+  assert.ok(fieldPausedCard?.querySelector('.pj-task-lock-pill')?.textContent.includes('Field paused'));
+
+  const makeDragEvent = (type, taskId) => {
+    const ev = new window.Event(type, { bubbles: true, cancelable: true });
+    ev.dataTransfer = { effectAllowed: 'move', dropEffect: 'move', setData: () => undefined, getData: () => taskId, setDragImage: () => undefined };
+    ev.clientX = 400; ev.clientY = 220;
+    return ev;
+  };
+  const inReviewCol = container.querySelector('.pj-task-column-in-review');
+
+  apiCalls.length = 0;
+  await act(async () => {
+    pausedCard.dispatchEvent(makeDragEvent('dragstart', 'task-paused'));
+    inReviewCol.dispatchEvent(makeDragEvent('dragover', 'task-paused'));
+    inReviewCol.dispatchEvent(makeDragEvent('drop', 'task-paused'));
+    pausedCard.dispatchEvent(makeDragEvent('dragend', 'task-paused'));
+    await new Promise((r) => setTimeout(r, 20));
+  });
+  assert.match(container.querySelector('.pj-task-move-notice')?.textContent || '', /paused task/i);
+  assert.equal(apiCalls.some((c) => c.target.endsWith('/move')), false, 'paused task cross-column move is blocked client-side');
+
+  await act(async () => {
+    fieldPausedCard.dispatchEvent(makeDragEvent('dragstart', 'task-in-paused-field'));
+    inReviewCol.dispatchEvent(makeDragEvent('dragover', 'task-in-paused-field'));
+    inReviewCol.dispatchEvent(makeDragEvent('drop', 'task-in-paused-field'));
+    fieldPausedCard.dispatchEvent(makeDragEvent('dragend', 'task-in-paused-field'));
+    await new Promise((r) => setTimeout(r, 20));
+  });
+  assert.match(container.querySelector('.pj-task-move-notice')?.textContent || '', /field is paused/i);
+  assert.equal(apiCalls.some((c) => c.target.endsWith('/move')), false, 'paused field task cross-column move is blocked client-side');
+
+  await unmount();
+});
+
+

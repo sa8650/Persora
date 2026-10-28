@@ -3,6 +3,7 @@ import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, ListFilter, Panel
 import "./calendar.css";
 import type { AppUser } from "../../types";
 import { PagesApiError, isPagesApiConfigured } from "../../lib/cloud";
+import { Spinner } from "@/components/ui/spinner";
 import {
   CALENDAR_CHANGED_EVENT, checkCalendarConflicts, createCalendarEvent, deleteCalendarEvent, loadCalendarEvent, loadCalendarEvents, loadCalendarMeta,
   loadCalendarPreferences, saveCalendarPreferences, searchCalendarEvents, setCalendarTaskCompletion, updateCalendarEvent,
@@ -119,6 +120,8 @@ export default function CalendarView({ user, notify, focusRequest }: Props) {
   const [filterSync, setFilterSync] = useState<FilterSync>("local");
   const filterTimer = useRef(0);
   const [pending, setPending] = useState<Record<string, { target: MoveTarget; status: "saving" | "saved" }>>({});
+  const [restoringIds, setRestoringIds] = useState<Set<string>>(() => new Set());
+  const restoreTimers = useRef<Map<string, number>>(new Map());
   const [movePrompt, setMovePrompt] = useState<{ occurrence: Occurrence; target: MoveTarget } | null>(null);
   const [moveConflict, setMoveConflict] = useState<{ request: MoveRequest; report: ConflictReport } | null>(null);
   const [reschedule, setReschedule] = useState<Occurrence | null>(null);
@@ -170,7 +173,11 @@ export default function CalendarView({ user, notify, focusRequest }: Props) {
     }).catch(() => { if (active) setFilterSync("offline"); });
     return () => { active = false; };
   }, [disabled, user.id]);
-  useEffect(() => () => window.clearTimeout(filterTimer.current), []);
+  useEffect(() => () => {
+    window.clearTimeout(filterTimer.current);
+    restoreTimers.current.forEach((timer) => window.clearTimeout(timer));
+    restoreTimers.current.clear();
+  }, []);
 
   const changeFilters = useCallback((next: CalendarFilters) => {
     const value = normalizeCalendarFilters(next);
@@ -316,7 +323,35 @@ export default function CalendarView({ user, notify, focusRequest }: Props) {
     return { id: event.id, body: { event: draftToInput(draft, true), scope: "series" as const, occurrenceKey: null, expectedRevision: event.revision }, ignore: conflictIgnore(occurrence, null), completed };
   };
 
-  const revertMove = (occurrence: Occurrence) => setPending((current) => { const next = { ...current }; delete next[occurrence.id]; return next; });
+  const markRestoring = useCallback((occurrenceId: string) => {
+    const existing = restoreTimers.current.get(occurrenceId);
+    if (existing) window.clearTimeout(existing);
+    setRestoringIds((current) => {
+      const next = new Set(current);
+      next.add(occurrenceId);
+      return next;
+    });
+    const timer = window.setTimeout(() => {
+      restoreTimers.current.delete(occurrenceId);
+      setRestoringIds((current) => {
+        if (!current.has(occurrenceId)) return current;
+        const next = new Set(current);
+        next.delete(occurrenceId);
+        return next;
+      });
+    }, 240);
+    restoreTimers.current.set(occurrenceId, timer);
+  }, []);
+
+  const handleInvalidMove = useCallback((message: string, occurrenceId: string) => {
+    markRestoring(occurrenceId);
+    notify(message, "error");
+  }, [markRestoring, notify]);
+
+  const revertMove = (occurrence: Occurrence) => {
+    markRestoring(occurrence.id);
+    setPending((current) => { const next = { ...current }; delete next[occurrence.id]; return next; });
+  };
 
   const commitMove = async (request: MoveRequest) => {
     const { occurrence, target } = request;
@@ -487,7 +522,7 @@ export default function CalendarView({ user, notify, focusRequest }: Props) {
           <h2 aria-live="polite">{rangeHeading(mode, anchor)}</h2>
           {!(wide && sidebarOpen) && <ChevronDown size={16} aria-hidden="true"/>}
         </button>
-        {loadState === "loading" && <span className="cal-spinner" role="status" aria-label="Loading events"/>}
+        {loadState === "loading" && <Spinner className="cal-spinner size-3.5 text-primary" aria-label="Loading events"/>}
       </div>
       <div className="cal-toolbar-tools">
         <label className="cal-search">
@@ -533,9 +568,9 @@ export default function CalendarView({ user, notify, focusRequest }: Props) {
             : searchResults.length === 0 && searchState !== "loading" ? <p className="cal-results-empty">{searchHidden > 0 ? <>Matching items are hidden by filters. <button type="button" className="cal-link-button" onClick={resetFilters}>Reset filters</button></> : <>No events have a title matching “{query.trim()}”.</>}</p>
               : <ul>{searchResults.map((occurrence) => {
                 const first = occurrenceDays(occurrence, zone).first;
-                return <li key={occurrence.event.id}><button type="button" className="cal-result" onClick={() => { setQuery(""); setAnchor(first); setHighlightId(occurrence.event.id); }}>
+                return <li key={occurrence.event.id}><button type="button" className={`cal-result cal-cat-${occurrence.event.category || "default"}`} onClick={() => { setQuery(""); setAnchor(first); setHighlightId(occurrence.event.id); }}>
                   <CategoryDot category={occurrence.event.category}/>
-                  <span className={`cal-result-main is-${occurrence.event.itemType}${occurrence.event.completedAt ? " is-done" : ""}`}><b><ItemTypeIcon event={occurrence.event}/>{occurrence.event.title}</b><small>{occurrenceDateLabel(occurrence, zone)} · {occurrenceTimeLabel(occurrence, zone)}{occurrence.event.location ? ` · ${occurrence.event.location}` : ""}</small></span>
+                  <span className={`cal-result-main is-${occurrence.event.itemType}${occurrence.event.completedAt ? " is-done" : ""}`}><b><ItemTypeIcon event={occurrence.event} size={13}/>{occurrence.event.title}</b><small>{occurrenceDateLabel(occurrence, zone)} · {occurrenceTimeLabel(occurrence, zone)}{occurrence.event.location ? ` · ${occurrence.event.location}` : ""}</small></span>
                   {occurrence.recurring && <span className="cal-result-tag"><Repeat size={11} aria-hidden="true"/> {occurrence.exception ? "Changed occurrence" : "Next occurrence"}</span>}
                 </button></li>;
               })}</ul>}
@@ -543,8 +578,8 @@ export default function CalendarView({ user, notify, focusRequest }: Props) {
           {emptyRange && (filteredEmpty
             ? <p className="cal-empty-note" role="status">Nothing this {viewLabel === "day" ? "day" : viewLabel} matches your filters. <button type="button" className="cal-link-button" onClick={resetFilters}>Reset filters</button></p>
             : <p className="cal-empty-note" role="status">No events this {viewLabel === "day" ? "day" : viewLabel}. {mode === "month" ? "Click a day to add one." : "Click a time to add one."}</p>)}
-          {(mode === "week" || mode === "day") && <TimeGrid days={days} occurrences={visibleOccurrences} zone={zone} today={today} nowMs={nowMs} highlightId={highlightId} onCreate={openCreate} onSelect={(occurrence, rect) => { setQuick(null); setSelected({ occurrence, anchor: rect }); }} onOpenDay={openDay} onMove={moveDisabled} savingIds={savingIds}/>}
-          {mode === "month" && <MonthGrid from={range.from} to={range.to} month={anchor} occurrences={visibleOccurrences} zone={zone} today={today} highlightId={highlightId} onCreate={openCreate} onSelect={(occurrence, rect) => { setQuick(null); setSelected({ occurrence, anchor: rect }); }} onOpenDay={openDay} onMove={moveDisabled} savingIds={savingIds}/>}
+          {(mode === "week" || mode === "day") && <TimeGrid days={days} occurrences={visibleOccurrences} zone={zone} today={today} nowMs={nowMs} highlightId={highlightId} onCreate={openCreate} onSelect={(occurrence, rect) => { setQuick(null); setSelected({ occurrence, anchor: rect }); }} onOpenDay={openDay} onMove={moveDisabled} onInvalidMove={disabled ? undefined : handleInvalidMove} savingIds={savingIds} restoringIds={restoringIds}/>}
+          {mode === "month" && <MonthGrid from={range.from} to={range.to} month={anchor} occurrences={visibleOccurrences} zone={zone} today={today} highlightId={highlightId} onCreate={openCreate} onSelect={(occurrence, rect) => { setQuick(null); setSelected({ occurrence, anchor: rect }); }} onOpenDay={openDay} onMove={moveDisabled} onInvalidMove={disabled ? undefined : handleInvalidMove} savingIds={savingIds} restoringIds={restoringIds}/>}
           {mode === "agenda" && (rangeReady || loadState !== "loading"
             ? <AgendaList from={range.from} to={range.to} occurrences={visibleOccurrences} zone={zone} today={today} nowMs={nowMs} highlightId={highlightId} onSelect={(occurrence, rect) => setSelected({ occurrence, anchor: rect })} onCreate={openNewEvent} filtered={occurrences.length > visibleOccurrences.length} onResetFilters={resetFilters} savingIds={savingIds}/>
             : <div className="cal-agenda-loading" role="status">Loading events…</div>)}
@@ -622,7 +657,7 @@ export default function CalendarView({ user, notify, focusRequest }: Props) {
       <p className="cal-hint">This can’t be undone.</p>
       <div className="cal-popover-actions">
         <button type="button" className="quiet-button" onClick={() => setConfirmDelete(null)} disabled={busy} data-autofocus>Cancel</button>
-        <button type="button" className="cal-danger-button" onClick={() => performDelete(confirmDelete, null)} disabled={busy}>{busy ? <><span className="spinner"/> Deleting…</> : "Delete"}</button>
+        <button type="button" className="cal-danger-button" onClick={() => performDelete(confirmDelete, null)} disabled={busy}>{busy ? <><Spinner className="size-3.5"/> Deleting…</> : "Delete"}</button>
       </div>
     </CalPopover>}
   </div>;

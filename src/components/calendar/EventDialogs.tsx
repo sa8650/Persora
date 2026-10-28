@@ -10,6 +10,8 @@ import { addDays, daysBetween, describeRecurrence, localDateOf, localTimeOf, zon
 import type { CalendarCategory, CalendarItemType } from "../../../cloudflare/calendar-rules.js";
 import type { CalendarEvent, CalendarInterval, CalendarMeta, ConflictIgnore } from "../../lib/calendar-api";
 import { parseQuickAdd, quickAddToInput, resolveQuickAdd } from "../../lib/calendar-nlp.js";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Spinner } from "@/components/ui/spinner";
 import type { QuickAddPatch, QuickAddQuestion } from "../../lib/calendar-nlp.js";
 import {
   CATEGORY_OPTIONS, DEFAULT_DURATION, DURATION_OPTIONS, REMINDER_OPTIONS, WEEK_STARTS_ON, addMinutesToTime, draftDuration, draftError, draftFromInput, draftToInput,
@@ -48,7 +50,7 @@ export function EventDetails({ occurrence, series, zone, anchor, busy, onEdit, o
       </div>
     </div>
     {event.itemType === "task" && onToggleComplete && <button type="button" className={`cal-complete-button ${done ? "is-done" : ""}`} onClick={onToggleComplete} disabled={busy} aria-pressed={done}>
-      {busy ? <span className="spinner"/> : done ? <CircleCheck size={16} aria-hidden="true"/> : <Circle size={16} aria-hidden="true"/>}
+      {busy ? <Spinner className="size-4"/> : done ? <CircleCheck size={16} aria-hidden="true"/> : <Circle size={16} aria-hidden="true"/>}
       <span>{done ? "Completed" : "Mark complete"}</span>
       {done && <small>Reopen</small>}
     </button>}
@@ -64,7 +66,7 @@ export function EventDetails({ occurrence, series, zone, anchor, busy, onEdit, o
       <span>Delete this {noun}?</span>
       <div>
         <button type="button" className="quiet-button" onClick={() => setConfirming(false)} disabled={busy}>Cancel</button>
-        <button type="button" className="cal-danger-button" onClick={onDelete} disabled={busy}>{busy ? <><span className="spinner"/> Deleting…</> : "Delete"}</button>
+        <button type="button" className="cal-danger-button" onClick={onDelete} disabled={busy}>{busy ? <><Spinner className="size-3.5"/> Deleting…</> : "Delete"}</button>
       </div>
     </div>}
   </CalPopover>;
@@ -96,10 +98,11 @@ export function SmartCreate({ zone, context, initialText = "", initialType = "ev
   const [edits, setEdits] = useState<Partial<EventDraft>>({});
   const [submitted, setSubmitted] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const nowAnchor = useMemo(() => Date.now(), []);
 
   const result = useMemo(
-    () => parseQuickAdd(text, { now: Date.now(), zone, context, itemType: typeChosen ? type : null, weekStartsOn: WEEK_STARTS_ON }),
-    [text, zone, context, type, typeChosen],
+    () => parseQuickAdd(text, { now: nowAnchor, zone, context, itemType: typeChosen ? type : null, weekStartsOn: WEEK_STARTS_ON }),
+    [text, nowAnchor, zone, context, type, typeChosen],
   );
   const effectiveType: CalendarItemType = typeChosen ? type : result.itemType || type;
   const touched = useMemo(() => [...new Set(Object.keys(edits).map((key) => QUESTION_FIELDS[key]).filter(Boolean))], [edits]);
@@ -114,9 +117,20 @@ export function SmartCreate({ zone, context, initialText = "", initialType = "ev
   if (edits.title === undefined) draft.title = result.title || (result.hasSchedule ? "" : text.trim());
   const open = resolved.open;
   const showPreview = Boolean(text.trim()) && (result.hasSchedule || open.length > 0 || !context || expanded || Object.keys(edits).length > 0);
-  const local = submitted ? draftError(draft) : null;
-  const canCheck = !open.length && !draftError(draft) && !draft.allDay;
-  const conflictInput = useMemo(() => (canCheck ? draftToInput(draft, true) : null), [canCheck, JSON.stringify(draft)]); // eslint-disable-line react-hooks/exhaustive-deps
+  const hasQuickTitle = Boolean(draft.title.trim());
+  const scheduleError = useMemo(() => draftError({ ...draft, title: "Draft" }), [
+    draft.itemType, draft.allDay, draft.timeZone, draft.startDate, draft.startTime,
+    draft.endDate, draft.endTime, draft.repeat, draft.ends, draft.until,
+  ]); // eslint-disable-line react-hooks/exhaustive-deps
+  const local = submitted ? (!hasQuickTitle ? { field: "title", message: "Add a title." } : scheduleError) : null;
+  const canCheck = !open.length && hasQuickTitle && !scheduleError && !draft.allDay;
+  const conflictInput = useMemo(
+    () => (canCheck ? draftToInput({ ...draft, title: "Draft" }, true) : null),
+    [
+      canCheck, draft.itemType, draft.allDay, draft.timeZone, draft.startDate, draft.startTime,
+      draft.endDate, draft.endTime, draft.repeat, draft.interval, draft.ends, draft.until, draft.count,
+    ],
+  ); // eslint-disable-line react-hooks/exhaustive-deps
   const conflicts = useConflictCheck(conflictInput, { enabled: canCheck });
   const noun = itemNoun(effectiveType);
 
@@ -143,7 +157,9 @@ export function SmartCreate({ zone, context, initialText = "", initialType = "ev
   };
   const when = draft.allDay
     ? `${formatDay(draft.startDate, { weekday: "long", month: "long", day: "numeric" })} · ${effectiveType === "task" ? "Due" : "All day"}`
-    : `${formatDay(draft.startDate, { weekday: "long", month: "long", day: "numeric" })} · ${timeLabel(draft.startTime)} – ${timeLabel(draft.endTime)}`;
+    : draft.endDate && draft.endDate !== draft.startDate
+      ? `${formatDay(draft.startDate, { weekday: "short", month: "short", day: "numeric" })}, ${timeLabel(draft.startTime)} – ${formatDay(draft.endDate, { weekday: "short", month: "short", day: "numeric" })}, ${timeLabel(draft.endTime)}`
+      : `${formatDay(draft.startDate, { weekday: "long", month: "long", day: "numeric" })} · ${timeLabel(draft.startTime)} – ${timeLabel(draft.endTime)}`;
   const heading = effectiveType === "task" ? "New task" : effectiveType === "appointment" ? "New appointment" : "New event";
 
   return <CalPopover anchor={anchor} onClose={onClose} labelledBy="cal-quick-title" className={`cal-quick ${showPreview ? "is-expanded" : ""}`}>
@@ -174,9 +190,10 @@ export function SmartCreate({ zone, context, initialText = "", initialType = "ev
         <label className="field-label"><span>{effectiveType === "task" && draft.allDay ? "Due date" : "Date"}</span>
           <input type="date" value={draft.startDate} onChange={(event) => editStart({ startDate: event.target.value })}/>
         </label>
-        {effectiveType !== "appointment" && <label className="cal-switch cal-preview-allday"><input type="checkbox" checked={draft.allDay}
-          onChange={(event) => {
-            if (event.target.checked) { edit({ allDay: true, endDate: draft.startDate }); return; }
+        {effectiveType !== "appointment" && <label className="cal-switch cal-preview-allday"><Checkbox checked={draft.allDay}
+          aria-label={effectiveType === "task" ? "No set time" : "All day"}
+          onCheckedChange={(checked) => {
+            if (checked === true) { edit({ allDay: true, endDate: draft.startDate }); return; }
             const timed = setDraftDuration({ ...draft, allDay: false }, DEFAULT_DURATION[effectiveType]);
             edit({ allDay: false, endDate: timed.endDate, endTime: timed.endTime });
           }}/>
@@ -188,9 +205,13 @@ export function SmartCreate({ zone, context, initialText = "", initialType = "ev
           <label className="field-label"><span>End</span>
             <input type="time" step={300} value={draft.endTime} onChange={(event) => {
               const endTime = event.target.value;
-              edit({ endTime, endDate: endTime <= draft.startTime ? addDays(draft.startDate, 1) : draft.startDate });
+              const currentSpan = draft.endDate > draft.startDate ? daysBetween(draft.startDate, draft.endDate) : 0;
+              edit({ endTime, endDate: endTime <= draft.startTime ? addDays(draft.startDate, Math.max(1, currentSpan)) : (currentSpan > 1 ? draft.endDate : draft.startDate) });
             }}/>
           </label>
+          {effectiveType === "event" && <label className="field-label"><span>End date</span>
+            <input type="date" value={draft.endDate} min={draft.startDate || undefined} onChange={(event) => edit({ endDate: event.target.value })}/>
+          </label>}
         </>}
         {effectiveType === "event" && <label className="field-label"><span>Repeat</span>
           <select value={draft.repeat} onChange={(event) => edit({ repeat: event.target.value as EventDraft["repeat"] })}>
@@ -217,7 +238,7 @@ export function SmartCreate({ zone, context, initialText = "", initialType = "ev
       {error && <p className="cal-field-error" role="alert">{error}</p>}
       <div className="cal-popover-actions">
         <button type="button" className="quiet-button" onClick={() => onMore(draft)} disabled={busy}>More options</button>
-        <button type="submit" className="editor-submit" disabled={busy}>{busy ? <><span className="spinner"/> Saving…</> : "Save"}</button>
+        <button type="submit" className="editor-submit" disabled={busy}>{busy ? <><Spinner className="size-3.5"/> Saving…</> : "Save"}</button>
       </div>
     </form>
   </CalPopover>;
@@ -258,7 +279,12 @@ export function EventEditor({ mode, scope, initialDraft, displayZone, meta, busy
   const [submitted, setSubmitted] = useState(false);
   const [permission, setPermission] = useState<PermissionState>(readPermission);
   const titleRef = useRef<HTMLInputElement>(null);
-  const local = submitted ? draftError(draft) : null;
+  const hasTitle = Boolean(draft.title.trim());
+  const scheduleError = useMemo(() => draftError({ ...draft, title: "Draft" }), [
+    draft.itemType, draft.allDay, draft.timeZone, draft.startDate, draft.startTime,
+    draft.endDate, draft.endTime, draft.repeat, draft.ends, draft.until,
+  ]); // eslint-disable-line react-hooks/exhaustive-deps
+  const local = submitted ? (!hasTitle ? { field: "title", message: "Add a title." } : scheduleError) : null;
   const fieldError = (field: string) => (local?.field === field ? local.message : errorField === field ? error : null);
   const allowRepeat = scope !== "occurrence" && draft.itemType === "event";
   const noun = itemNoun(draft.itemType);
@@ -304,16 +330,30 @@ export function EventEditor({ mode, scope, initialDraft, displayZone, meta, busy
     return updated;
   });
 
-  // Live overlap warning (timed items only; never blocks saving).
-  const valid = !draftError(draft);
-  const conflictInput = useMemo(() => (valid && !draft.allDay ? draftToInput(draft, allowRepeat) : null), [valid, JSON.stringify(draft), allowRepeat]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Live overlap warning (timed items only; never blocks saving). Memoized by
+  // schedule primitives so typing in title/location/notes stays O(1).
+  const valid = hasTitle && !scheduleError;
+  const conflictInput = useMemo(
+    () => (valid && !draft.allDay ? draftToInput({ ...draft, title: "Draft" }, allowRepeat) : null),
+    [
+      valid, allowRepeat, draft.itemType, draft.allDay, draft.timeZone,
+      draft.startDate, draft.startTime, draft.endDate, draft.endTime,
+      draft.repeat, draft.interval, draft.ends, draft.until, draft.count,
+    ],
+  ); // eslint-disable-line react-hooks/exhaustive-deps
   const conflicts = useConflictCheck(conflictInput, { ignore: conflictIgnore, completed: draft.itemType === "task" && completed, enabled: valid && !draft.allDay });
   const pickSlot = (slot: CalendarInterval) => {
     const startMs = Date.parse(slot.startAt); const endMs = Date.parse(slot.endAt);
     update({ startDate: localDateOf(startMs, draft.timeZone), startTime: localTimeOf(startMs, draft.timeZone), endDate: localDateOf(endMs, draft.timeZone), endTime: localTimeOf(endMs, draft.timeZone) });
   };
-  const duration = draftDuration(draft);
-  const durations = [...new Set([...DURATION_OPTIONS, ...(duration > 0 ? [duration] : [])])].sort((a, b) => a - b);
+  const duration = useMemo(
+    () => draftDuration(draft),
+    [draft.allDay, draft.startDate, draft.startTime, draft.endDate, draft.endTime, draft.timeZone],
+  ); // eslint-disable-line react-hooks/exhaustive-deps
+  const durations = useMemo(
+    () => [...new Set([...DURATION_OPTIONS, ...(duration > 0 ? [duration] : [])])].sort((a, b) => a - b),
+    [duration],
+  );
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -326,12 +366,12 @@ export function EventEditor({ mode, scope, initialDraft, displayZone, meta, busy
     if (!allowRepeat || draft.repeat === "none" || !draft.startDate) return null;
     try {
       return describeRecurrence({
-        id: "draft", title: draft.title, allDay: draft.allDay, timeZone: draft.timeZone,
+        id: "draft", title: "Draft", allDay: draft.allDay, timeZone: draft.timeZone,
         startAt: null, endAt: null, startDate: draft.startDate, endDate: draft.startDate,
         recurrence: { freq: draft.repeat, interval: draft.interval || 1, until: draft.ends === "until" ? draft.until || null : null, count: draft.ends === "count" ? draft.count || null : null },
       });
     } catch { return null; }
-  }, [allowRepeat, draft]);
+  }, [allowRepeat, draft.allDay, draft.timeZone, draft.startDate, draft.repeat, draft.interval, draft.ends, draft.until, draft.count]);
 
   const unit = draft.repeat === "daily" ? "day" : draft.repeat === "weekly" ? "week" : "month";
   const title = mode === "create" ? `New ${noun}` : scope === "occurrence" ? `Edit this ${noun}` : scope === "series" ? `Edit all ${noun}s` : `Edit ${noun}`;
@@ -347,10 +387,10 @@ export function EventEditor({ mode, scope, initialDraft, displayZone, meta, busy
               <input ref={titleRef} value={draft.title} onChange={(event) => update({ title: event.target.value })} maxLength={200} placeholder="Add title" aria-invalid={Boolean(fieldError("title"))} aria-describedby={fieldError("title") ? "cal-err-title" : undefined}/>
               {fieldError("title") && <span id="cal-err-title" className="cal-field-error" role="alert">{fieldError("title")}</span>}
             </label>
-            {draft.itemType === "task" && mode === "edit" && <label className="cal-switch"><input type="checkbox" checked={completed} onChange={(event) => setCompleted(event.target.checked)}/><span>Completed</span></label>}
+            {draft.itemType === "task" && mode === "edit" && <label className="cal-switch"><Checkbox checked={completed} aria-label="Completed" onCheckedChange={(checked) => setCompleted(checked === true)}/><span>Completed</span></label>}
 
             {durationMode ? <div className="cal-field-wide cal-when">
-              {!timedOnly && <label className="cal-switch"><input type="checkbox" checked={draft.allDay} onChange={(event) => toggleAllDay(event.target.checked)}/><span>No set time (due date only)</span></label>}
+              {!timedOnly && <label className="cal-switch"><Checkbox checked={draft.allDay} aria-label="No set time (due date only)" onCheckedChange={(checked) => toggleAllDay(checked === true)}/><span>No set time (due date only)</span></label>}
               <div className="cal-when-row">
                 <label className="field-label"><span>{draft.allDay ? "Due date" : "Date"}</span>
                   <input type="date" value={draft.startDate} onChange={(event) => moveStart({ startDate: event.target.value })} aria-invalid={Boolean(fieldError("start"))} required/>
@@ -369,7 +409,7 @@ export function EventEditor({ mode, scope, initialDraft, displayZone, meta, busy
               {!draft.allDay && draft.timeZone !== displayZone && <p className="cal-hint"><Clock size={13} aria-hidden="true"/> Times are in {draft.timeZone.replace(/_/g, " ")}, the {noun}’s time zone.</p>}
               <ConflictNotice state={conflicts} zone={displayZone} onPick={pickSlot}/>
             </div> : <div className="cal-field-wide cal-when">
-              <label className="cal-switch"><input type="checkbox" checked={draft.allDay} onChange={(event) => toggleAllDay(event.target.checked)}/><span>All day</span></label>
+              <label className="cal-switch"><Checkbox checked={draft.allDay} aria-label="All day" onCheckedChange={(checked) => toggleAllDay(checked === true)}/><span>All day</span></label>
               <div className="cal-when-row">
                 <label className="field-label"><span>{draft.allDay ? "Starts" : "Start"}</span>
                   <input type="date" value={draft.startDate} onChange={(event) => moveStart({ startDate: event.target.value })} aria-invalid={Boolean(fieldError("start"))} required/>
@@ -432,7 +472,7 @@ export function EventEditor({ mode, scope, initialDraft, displayZone, meta, busy
               </label>
               {draft.reminderMinutes !== "" && <>
                 <label className={`cal-switch ${emailAvailable ? "" : "is-disabled"}`}>
-                  <input type="checkbox" checked={emailAvailable && draft.reminderEmail} disabled={!emailAvailable} onChange={(event) => update({ reminderEmail: event.target.checked })}/>
+                  <Checkbox checked={emailAvailable && draft.reminderEmail} disabled={!emailAvailable} aria-label="Also email me" onCheckedChange={(checked) => update({ reminderEmail: checked === true })}/>
                   <span><Mail size={13} aria-hidden="true"/> Also email me</span>
                 </label>
                 {!emailAvailable && meta?.email.reason && <p className="cal-hint">{meta.email.reason}</p>}
@@ -465,7 +505,7 @@ export function EventEditor({ mode, scope, initialDraft, displayZone, meta, busy
           {onDelete ? <button type="button" className="cal-text-danger" onClick={onDelete} disabled={busy}><Trash2 size={14}/> Delete</button> : <span/>}
           <div className="editor-actions">
             <button type="button" className="quiet-button" onClick={onClose} disabled={busy}>Cancel</button>
-            <button type="submit" className="editor-submit" disabled={busy}>{busy ? <><span className="spinner"/> Saving…</> : "Save"}</button>
+            <button type="submit" className="editor-submit" disabled={busy}>{busy ? <><Spinner className="size-3.5"/> Saving…</> : "Save"}</button>
           </div>
         </div>
       </form>

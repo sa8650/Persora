@@ -274,5 +274,6 @@ test('every template builds valid content with labelled examples', () => {
     }
   }
   assert.equal(buildTemplate('nope', '2026-10-24'), null);
-  assert.equal(blankSpreadsheet().sheets[0].data.rowCount, 100);
+  assert.equal(blankSpreadsheet().sheets[0].data.rowCount, 200);
+  assert.equal(blankSpreadsheet().sheets[0].data.colCount, 52);
 });

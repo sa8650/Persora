@@ -207,7 +207,7 @@ test('a missing migration is reported clearly', async () => {
   mockDatabase({ pdf_studio_documents: () => Response.json({ code: '42P01', message: 'relation does not exist' }, { status: 404 }) });
   const response = await handlePdfStudio(new Request(`${ORIGIN}/api/pdf-studio/documents`), { id: OWNER }, env(), ORIGIN);
   assert.equal(response.status, 503);
-  assert.match((await response.json()).error, /202610230008_pdf_studio\.sql/);
+  assert.match((await response.json()).error, /supabase\/schema\.sql/);
 });
 
 test('input validation helpers', async () => {

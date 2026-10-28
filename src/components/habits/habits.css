@@ -23,26 +23,26 @@
   --hb-shadow: 0 10px 30px rgba(32, 33, 36, 0.16), 0 2px 6px rgba(32, 33, 36, 0.08);
 }
 .dark .hb-view, .dark .hb-editor, [data-theme="dark"] .hb-view, [data-theme="dark"] .hb-editor {
-  --hb-surface: #1f2124;
-  --hb-bg: #17181b;
-  --hb-line: #33363b;
-  --hb-line-strong: #43474d;
-  --hb-ink: #e8eaed;
-  --hb-text: #d4d7dc;
-  --hb-muted: #9aa0a6;
-  --hb-soft: #80868b;
-  --hb-accent: #8ab4f8;
-  --hb-accent-ink: #aecbfa;
-  --hb-accent-soft: rgba(138, 180, 248, 0.16);
+  --hb-surface: var(--ds-card-bg);
+  --hb-bg: var(--ds-canvas-bg);
+  --hb-line: var(--ds-border);
+  --hb-line-strong: var(--ds-border-strong);
+  --hb-ink: var(--ds-text);
+  --hb-text: var(--ds-text-secondary);
+  --hb-muted: var(--ds-text-muted);
+  --hb-soft: var(--ds-text-soft);
+  --hb-accent: var(--ds-primary);
+  --hb-accent-ink: var(--ds-sidebar-active-text);
+  --hb-accent-soft: var(--ds-primary-soft);
   --hb-hover: rgba(255, 255, 255, 0.06);
-  --hb-done: #81c995;
-  --hb-done-soft: rgba(129, 201, 149, 0.16);
-  --hb-partial: rgba(129, 201, 149, 0.45);
-  --hb-missed: rgba(242, 139, 130, 0.14);
-  --hb-missed-line: rgba(242, 139, 130, 0.45);
-  --hb-danger: #f28b82;
+  --hb-done: var(--ds-emerald);
+  --hb-done-soft: var(--ds-emerald-soft);
+  --hb-partial: rgba(52, 211, 153, 0.45);
+  --hb-missed: var(--ds-rose-soft);
+  --hb-missed-line: var(--ds-rose-border);
+  --hb-danger: var(--ds-rose);
   --hb-tint: 22%;
-  --hb-shadow: 0 12px 36px rgba(0, 0, 0, 0.5);
+  --hb-shadow: var(--ds-shadow-popover);
 }
 
 /* Curated habit colours (icon + check + cell). */
@@ -77,7 +77,7 @@
 .hb-date-nav, .hb-tools { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .hb-stepper { display: inline-flex; gap: 2px; }
 .hb-date-heading { margin: 0; font-size: 17px; font-weight: 600; color: var(--hb-ink); letter-spacing: -0.01em; white-space: nowrap; }
-.hb-today-pill { display: inline-flex; align-items: center; height: 22px; padding: 0 9px; border-radius: 999px; background: var(--hb-accent-soft); color: var(--hb-accent-ink); font-size: 11.5px; font-weight: 600; }
+.hb-today-pill { flex: none; }
 .hb-icon-button {
   display: inline-grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 999px; background: transparent; color: var(--hb-muted); cursor: pointer;
   transition: background .15s ease, color .15s ease;
@@ -102,7 +102,7 @@
 .hb-modes button.is-active { background: var(--hb-accent-soft); color: var(--hb-accent-ink); }
 .hb-view :focus-visible, .hb-editor :focus-visible { outline: 2px solid var(--hb-accent); outline-offset: 2px; }
 
-.hb-spinner { width: 16px; height: 16px; border: 2px solid var(--hb-line-strong); border-top-color: var(--hb-accent); border-radius: 50%; animation: hb-spin .8s linear infinite; display: inline-block; }
+.hb-spinner { flex: none; }
 .hb-spinner-small { width: 13px; height: 13px; }
 @keyframes hb-spin { to { transform: rotate(360deg); } }
 
@@ -122,8 +122,7 @@
 .hb-panel-head h2 { margin: 0; font-size: 14.5px; font-weight: 650; color: var(--hb-ink); }
 .hb-progress { display: inline-flex; align-items: center; gap: 10px; }
 .hb-progress-text { font-size: 12.5px; color: var(--hb-muted); font-variant-numeric: tabular-nums; }
-.hb-progress-bar { position: relative; width: 96px; height: 6px; border-radius: 999px; background: var(--hb-line); overflow: hidden; }
-.hb-progress-bar span { position: absolute; inset: 0 auto 0 0; border-radius: inherit; background: var(--hb-done); transition: width .35s ease; }
+.hb-progress-bar { width: 96px; flex: none; }
 .hb-month-rate { margin: -4px 0 8px; }
 
 .hb-filters { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
@@ -134,7 +133,7 @@
 }
 .hb-chips button:hover { background: var(--hb-hover); }
 .hb-chips button.is-active { border-color: transparent; background: var(--hb-accent-soft); color: var(--hb-accent-ink); }
-.hb-chip-count { min-width: 17px; height: 17px; padding: 0 5px; border-radius: 999px; background: var(--hb-line); color: var(--hb-muted); font-size: 10.5px; line-height: 17px; text-align: center; }
+.hb-chip-count { flex: none; }
 .hb-category-filter select {
   height: 30px; padding: 0 28px 0 10px; border: 1px solid var(--hb-line-strong); border-radius: 999px; background-color: var(--hb-surface); color: var(--hb-text); font-size: 12.5px;
 }
@@ -151,7 +150,7 @@
 .hb-row.is-archived { opacity: .85; }
 .hb-list.is-compact .hb-row { min-height: 50px; }
 .hb-glyph {
-  flex: none; display: inline-grid; place-items: center; width: 36px; height: 36px; border-radius: 11px;
+  flex: none;
   background: color-mix(in srgb, var(--hb-c) var(--hb-tint), var(--hb-surface)); color: var(--hb-c);
 }
 .hb-week .hb-glyph { width: 24px; height: 24px; border-radius: 7px; }
@@ -253,7 +252,7 @@
 .hb-empty p { margin: 0 0 8px; max-width: 360px; font-size: 13px; color: var(--hb-muted); }
 .hb-empty-small { padding: 18px 12px; }
 .hb-empty-small p { margin: 0 0 6px; }
-.hb-empty-icon { display: inline-grid; place-items: center; width: 44px; height: 44px; border-radius: 14px; background: var(--hb-accent-soft); color: var(--hb-accent); }
+.hb-empty-icon { flex: none; }
 .hb-gate { display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: 460px; margin: 40px auto; padding: 28px; border: 1px solid var(--hb-line); border-radius: 16px; background: var(--hb-surface); text-align: center; }
 .hb-gate h2 { margin: 4px 0 0; font-size: 17px; color: var(--hb-ink); }
 .hb-gate p { margin: 0; font-size: 13px; color: var(--hb-muted); }
@@ -352,7 +351,6 @@
 .hb-inline-field input[type="number"] { width: 72px; }
 .hb-target-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 10px; }
 .hb-switch { display: inline-flex; align-items: center; gap: 8px; width: fit-content; font-size: 13px; font-weight: 500; color: var(--hb-ink); cursor: pointer; }
-.hb-switch input { width: 16px; height: 16px; accent-color: var(--hb-accent); }
 .hb-switch.is-disabled { color: var(--hb-soft); cursor: not-allowed; }
 .hb-hint { display: flex; align-items: flex-start; gap: 6px; margin: 0; font-size: 12px; color: var(--hb-muted); line-height: 1.45; }
 .hb-hint svg { flex: none; margin-top: 2px; }

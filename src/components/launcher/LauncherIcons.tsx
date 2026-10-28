@@ -108,6 +108,43 @@ const ICONS: Record<LauncherModuleId, Draw> = {
     <path d="M31.5 38.5v-3.2M35 38.5v-6.4M38.5 38.5v-4.6" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
   </>,
 
+  forms: (id) => <>
+    <defs>
+      <Lg id={id("a")} from="#a78bfa" to="#6d28d9" />
+      <Lg id={id("b")} from="#7c3aed" to="#4c1d95" vertical />
+      <Lg id={id("c")} from="#34d399" to="#059669" />
+    </defs>
+    {/* Form sheet matching Persora Table geometry (6..38 sheet + 27..43 corner chip). */}
+    <rect x="6" y="7" width="32" height="32" rx="6" fill={`url(#${id("a")})`} />
+    <path d="M6 13a6 6 0 0 1 6-6h20a6 6 0 0 1 6 6v3H6z" fill={`url(#${id("b")})`} />
+    <circle cx="12.5" cy="21" r="2.1" fill="#fff" />
+    <rect x="17" y="19.5" width="14.5" height="3" rx="1.5" fill="#fff" />
+    <circle cx="12.5" cy="27.5" r="2.1" stroke="#fff" strokeWidth="1.5" fill="none" />
+    <rect x="17" y="26" width="11" height="3" rx="1.5" fill="#fff" fillOpacity=".78" />
+    <rect x="10.7" y="32.2" width="3.6" height="3.6" rx="1" fill="#fff" fillOpacity=".82" />
+    <rect x="17" y="32.5" width="7.5" height="3" rx="1.5" fill="#fff" fillOpacity=".62" />
+    {/* Response verified corner chip matching tables chart chip. */}
+    <rect x="27" y="27" width="16" height="16" rx="4.5" fill={`url(#${id("c")})`} style={gap} strokeWidth="2" />
+    <path d="M31.6 35.2l2.3 2.4 4.5-4.8" stroke="#fff" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" />
+  </>,
+
+  docs: (id) => <>
+    <defs>
+      <Lg id={id("a")} from="#5ca5ff" to="#1a73e8" />
+      <Lg id={id("b")} from="#1d4ed8" to="#1e3a8a" vertical />
+      <Lg id={id("c")} from="#38bdf8" to="#0284c7" />
+    </defs>
+    {/* Document sheet matching Persora Table & Forms geometry (6..38 sheet + 27..43 corner chip). */}
+    <rect x="6" y="7" width="32" height="32" rx="6" fill={`url(#${id("a")})`} />
+    <path d="M6 13a6 6 0 0 1 6-6h20a6 6 0 0 1 6 6v3H6z" fill={`url(#${id("b")})`} />
+    <rect x="11" y="19.5" width="15" height="3.1" rx="1.55" fill="#fff" />
+    <rect x="11" y="25.5" width="21" height="2.8" rx="1.4" fill="#fff" fillOpacity=".86" />
+    <rect x="11" y="31.2" width="12.5" height="2.8" rx="1.4" fill="#fff" fillOpacity=".68" />
+    {/* Writing nib corner chip. */}
+    <rect x="27" y="27" width="16" height="16" rx="4.5" fill={`url(#${id("c")})`} style={gap} strokeWidth="2" />
+    <path d="M32 38l1.2-4 4.4-4.4 2.8 2.8-4.4 4.4-4 1.2z" fill="#fff" />
+  </>,
+
   timeline: (id) => <>
     <defs>
       <Lg id={id("a")} from="#b49cff" to="#7c3aed" />

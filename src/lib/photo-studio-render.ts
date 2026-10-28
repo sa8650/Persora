@@ -2,7 +2,10 @@
 // rotate, straighten, flip, resize, adjustments, background colour) runs here,
 // locally, on in-memory canvases. Nothing is uploaded by this module.
 import { withImageDpi } from "../../cloudflare/photo-metadata.js";
-import { applyAdjustments, coverScale, isNeutral, type Adjustments, type PhotoUnit } from "./photo-studio";
+import {
+  PHOTO_FILTER_PRESETS, applyAdjustments, applyPhotoFilter, coverScale, isFilterNeutral, isNeutral,
+  type Adjustments, type PhotoFilterId, type PhotoFilterSelection, type PhotoUnit,
+} from "./photo-studio";
 import { decontaminateEdges, stretchAlpha } from "./photo-matte";
 
 /** Longest edge kept for the in-memory working copy (ample for official photos). */
@@ -27,6 +30,7 @@ export interface EditState {
   flipH: boolean;
   flipV: boolean;
   adjustments: Adjustments;
+  filter?: PhotoFilterSelection;
   background: BackgroundMode;
   backgroundColor: string;
   format: OutputFormat;
@@ -91,8 +95,9 @@ export function renderComposite(target: HTMLCanvasElement, source: HTMLCanvasEle
   if (target.width !== outW) target.width = outW;
   if (target.height !== outH) target.height = outH;
   const subject = state.background !== "original" && cutout ? cutout : source;
+  const needsPixelPass = !isNeutral(state.adjustments) || !isFilterNeutral(state.filter);
   const layer = createCanvas(outW, outH);
-  const lctx = context2d(layer, !isNeutral(state.adjustments));
+  const lctx = context2d(layer, needsPixelPass);
   lctx.imageSmoothingEnabled = true;
   lctx.imageSmoothingQuality = "high";
   const totalRotation = ((state.quarterTurns % 4) * 90) + state.rotation;
@@ -104,9 +109,10 @@ export function renderComposite(target: HTMLCanvasElement, source: HTMLCanvasEle
   const drawH = subject.height * scale;
   lctx.drawImage(subject, -drawW / 2, -drawH / 2, drawW, drawH);
   lctx.setTransform(1, 0, 0, 1, 0, 0);
-  if (!isNeutral(state.adjustments)) {
+  if (needsPixelPass) {
     const pixels = lctx.getImageData(0, 0, outW, outH);
-    applyAdjustments(pixels.data, outW, outH, state.adjustments);
+    if (!isNeutral(state.adjustments)) applyAdjustments(pixels.data, outW, outH, state.adjustments);
+    if (state.filter && !isFilterNeutral(state.filter)) applyPhotoFilter(pixels.data, state.filter);
     lctx.putImageData(pixels, 0, 0);
   }
 
@@ -179,6 +185,37 @@ export function buildCutout(source: HTMLCanvasElement, mask: CanvasImageSource):
   image.data.set(refined);
   cctx.putImageData(image, 0, 0);
   return cutout;
+}
+
+/**
+ * Generates compact in-memory preview thumbnails (data URLs) for the original
+ * image ("none") and all 10 color-grading presets. Zero network / R2 usage.
+ */
+export function renderFilterThumbnails(source: HTMLCanvasElement, size = 68): Partial<Record<PhotoFilterId, string>> {
+  const thumb = createCanvas(size, size);
+  try {
+    const ctx = context2d(thumb, true);
+    const minSide = Math.max(1, Math.min(source.width, source.height));
+    const sx = Math.max(0, (source.width - minSide) / 2);
+    const sy = Math.max(0, (source.height - minSide) / 2);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "medium";
+    ctx.drawImage(source, sx, sy, minSide, minSide, 0, 0, size, size);
+    const base = ctx.getImageData(0, 0, size, size);
+    const urls: Partial<Record<PhotoFilterId, string>> = {
+      none: thumb.toDataURL("image/jpeg", 0.82),
+    };
+    const work = ctx.createImageData(size, size);
+    for (const preset of PHOTO_FILTER_PRESETS) {
+      work.data.set(base.data);
+      applyPhotoFilter(work.data, { id: preset.id, intensity: 100 });
+      ctx.putImageData(work, 0, 0);
+      urls[preset.id] = thumb.toDataURL("image/jpeg", 0.82);
+    }
+    return urls;
+  } finally {
+    releaseCanvas(thumb);
+  }
 }
 
 /** Reads RGBA pixels of a (downscaled) canvas copy for quick analysis. */

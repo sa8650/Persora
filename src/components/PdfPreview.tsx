@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { ExternalLink, ZoomIn, ZoomOut } from "lucide-react";
+import { FileType } from "@/components/reui/file-type";
 import "../pdf-preview.css";
 
 interface Props {
@@ -33,7 +34,7 @@ export default function PdfPreview({ src, name, onReady }: Props) {
   return <section className="pdf-preview-viewer" aria-label={`PDF preview: ${label}`}>
     <div className="pdf-preview-toolbar">
       <div className="pdf-preview-file">
-        <span className="pdf-preview-file-icon"><span>PDF</span></span>
+        <FileType type="pdf" size="sm" variant="light" aria-hidden/>
         <span className="pdf-preview-file-copy"><b title={label}>{label}</b><small>PDF preview</small></span>
       </div>
       <div className="pdf-preview-controls" role="group" aria-label="PDF preview controls">

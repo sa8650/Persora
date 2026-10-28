@@ -9,10 +9,14 @@ import "./public-pages.css";
 import "./admin-portal.css";
 import "./persora-theme.css";
 import "./console-refinements.css";
+import "./design-system/system.css";
+import { PersoraThemeProvider } from "./design-system";
 import App from "./App";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <App />
+    <PersoraThemeProvider>
+      <App />
+    </PersoraThemeProvider>
   </React.StrictMode>,
 );

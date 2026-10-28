@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
-import { Check, Loader2 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Spinner } from "@/components/ui/spinner";
 import {
   TEXT_ASCENT, TEXT_LINE_HEIGHT, WATERMARK_FONTS, arrowHead, makeId, markupSegments, viewSize, watermarkOnPage,
   type BoxOverlay, type ImageOverlay, type LineOverlay, type MarkupOverlay, type Overlay, type TextOverlay, type TextRun, type Watermark, type WorkingPage,
@@ -379,7 +380,7 @@ export const PdfPageView = memo(function PdfPageView({ page, index, total, zoom,
   return <div className="pdfs-page-shell" data-page-id={page.id}>
     <div ref={wrapRef} className={`pdfs-page pdfs-tool-${tool}`} style={{ width: view.width * zoom, height: view.height * zoom } as CSSProperties} aria-label={`Page ${index + 1} of ${total}`} role="group">
       <canvas ref={canvasRef} className="pdfs-page-canvas" aria-hidden="true"/>
-      {!rendered && !renderError && <span className="pdfs-page-loading"><Loader2 size={18} className="pdfs-spin"/></span>}
+      {!rendered && !renderError && <span className="pdfs-page-loading"><Spinner className="size-4"/></span>}
       {renderError && <span className="pdfs-page-error">{renderError}</span>}
       <svg
         ref={svgRef}
@@ -509,9 +510,15 @@ export const PdfThumbnail = memo(function PdfThumbnail({ page, index, source, cu
       </span>
       <span className="pdfs-thumb-label">{index + 1}</span>
     </button>
-    <label className="pdfs-thumb-check" title={selected ? "Deselect page" : "Select page"}>
-      <input type="checkbox" checked={selected} onChange={(event) => onToggle(page.id, (event.nativeEvent as MouseEvent).shiftKey)} aria-label={`Select page ${index + 1}`}/>
-      <span aria-hidden="true">{selected && <Check size={11}/>}</span>
-    </label>
+    <span className="pdfs-thumb-check" title={selected ? "Deselect page" : "Select page"}>
+      <Checkbox
+        checked={selected}
+        aria-label={`Select page ${index + 1}`}
+        onClick={(event) => {
+          event.preventDefault();
+          onToggle(page.id, event.shiftKey);
+        }}
+      />
+    </span>
   </li>;
 });

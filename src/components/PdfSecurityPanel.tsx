@@ -1,6 +1,10 @@
 import { useEffect, useId, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from "react";
-import { AlertTriangle, CheckCircle2, Download, Eye, EyeOff, FileLock2, FileText, Info, KeyRound, Loader2, LockKeyhole, LockKeyholeOpen, RotateCcw, Upload, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, Eye, EyeOff, FileLock2, Info, KeyRound, LockKeyhole, LockKeyholeOpen, RotateCcw, Upload, X } from "lucide-react";
 import { PDF_ACCEPT, errorMessage, formatBytes, pageCountLabel } from "../lib/pdf-studio";
+import { StageProgressIndicator } from "./ProgressIndicator";
+import { FileType } from "@/components/reui/file-type";
+import { IconTile } from "@/components/reui/icon-tile";
+import { Spinner } from "@/components/ui/spinner";
 import {
   MIN_PASSWORD_LENGTH, PdfSecurityError, SECURITY_MAX_BYTES, checkSecurityInput, classifyQpdfFailure, describeEncryption, inspectPdf, lockPdf, passwordStrength, unlockPdf, unlockRequirement, validateNewPassword,
   type EncryptionReport, type QpdfEngine, type SecurityResult, type SecurityStage,
@@ -162,7 +166,7 @@ export default function PdfSecurityPanel({ mode, onModeChange, droppedFiles, onD
 
   const check = chosen?.check;
   const fileStatus = !check ? null
-    : check.status === "checking" ? <span className="pdfs-sec-status"><Loader2 size={12} className="pdfs-spin"/> Checking…</span>
+    : check.status === "checking" ? <span className="pdfs-sec-status"><Spinner className="size-3"/> Checking…</span>
     : check.status === "plain" ? <span className="pdfs-sec-status">{pageCountLabel(check.pageCount)} · not password-protected</span>
     : check.status === "needs-password" ? <span className="pdfs-sec-status is-locked"><LockKeyhole size={12}/> Needs a password to open</span>
     : check.status === "restricted" ? <span className="pdfs-sec-status is-locked"><LockKeyhole size={12}/> {describeEncryption(check.report)} · restricted by its author</span>
@@ -204,7 +208,11 @@ export default function PdfSecurityPanel({ mode, onModeChange, droppedFiles, onD
     </div>
     : <form className="pdfs-sec-form" onSubmit={(event) => void submit(event)} noValidate>
       {chosen ? <div className="pdfs-sec-file">
-        <span className="pdfs-sec-file-icon">{check?.status === "needs-password" || check?.status === "restricted" ? <FileLock2 size={17}/> : <FileText size={17}/>}</span>
+        {check?.status === "needs-password" || check?.status === "restricted" ? (
+          <IconTile variant="soft" size="sm" className="text-amber-600 dark:text-amber-300"><FileLock2 size={17}/></IconTile>
+        ) : (
+          <FileType type="pdf" size="sm" variant="light" aria-hidden/>
+        )}
         <div className="pdfs-sec-file-copy"><b title={chosen.file.name}>{chosen.file.name}</b><small>{formatBytes(chosen.file.size)}{fileStatus && <> · {fileStatus}</>}</small></div>
         <button type="button" className="quiet-button pdfs-sec-change" onClick={() => inputRef.current?.click()} disabled={busy}>Change</button>
         <button type="button" className="pdfs-icon-button" onClick={reset} disabled={busy} aria-label="Remove file"><X size={15}/></button>
@@ -231,10 +239,10 @@ export default function PdfSecurityPanel({ mode, onModeChange, droppedFiles, onD
 
       {showLockError && <p id={ids.error} className="pdfs-field-error" role="alert">{lockProblem}</p>}
       {error && <p className="pdfs-sec-note is-error" role="alert"><AlertTriangle size={13}/>{error}</p>}
-      {stage && <div className="pdfs-sec-progress" role="status" aria-live="polite"><span><Loader2 size={13} className="pdfs-spin"/>{STAGE_LABELS[mode][stage]}{percent !== null ? ` ${percent}%` : ""}</span><span className="pdfs-progress"><i className={percent === null ? "is-indeterminate" : ""} style={percent === null ? undefined : { width: `${percent}%` }}/></span></div>}
+      {stage && <StageProgressIndicator label={STAGE_LABELS[mode][stage]} percent={percent}/>}
 
       <div className="pdfs-sec-actions">
-        <button type="submit" className="section-add-button" disabled={!canSubmit} aria-disabled={!canSubmit}>{busy ? <><Loader2 size={14} className="pdfs-spin"/> Working…</> : mode === "lock" ? <><LockKeyhole size={14}/> Lock PDF</> : <><KeyRound size={14}/> Unlock PDF</>}</button>
+        <button type="submit" className="section-add-button" disabled={!canSubmit} aria-disabled={!canSubmit}>{busy ? <><Spinner className="size-3.5"/> Working…</> : mode === "lock" ? <><LockKeyhole size={14}/> Lock PDF</> : <><KeyRound size={14}/> Unlock PDF</>}</button>
         <span className="pdfs-sec-private"><Info size={12}/> {mode === "lock" ? "Real AES-256 encryption" : "Removes the password"}, done on this device — your file isn't uploaded.</span>
       </div>
     </form>}

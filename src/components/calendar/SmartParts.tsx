@@ -2,7 +2,7 @@
 // the create menu, item type controls and the Reschedule dialog.
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
-import { ArrowRight, CalendarClock, CalendarPlus, Circle, CircleCheck, ListFilter, TriangleAlert } from "lucide-react";
+import { ArrowRight, Calendar, CalendarClock, CalendarPlus, ChevronDown, CircleCheck, ListFilter, TriangleAlert } from "lucide-react";
 import { CalPopover, rectOf } from "./CalendarParts";
 import type { AnchorRect } from "./CalendarParts";
 import { hiddenFilterCount, localDateOf, localTimeOf, normalizeCalendarFilters, zonedTimeToInstant, addDays, daysBetween } from "../../../cloudflare/calendar-rules.js";
@@ -10,6 +10,8 @@ import type { CalendarFilters, CalendarItemType, EventInput, FilterCategory, Mov
 import { PagesApiError } from "../../lib/cloud";
 import { checkCalendarConflicts } from "../../lib/calendar-api";
 import type { CalendarConflict, CalendarEvent, CalendarInterval, ConflictIgnore, ConflictReport } from "../../lib/calendar-api";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Spinner } from "@/components/ui/spinner";
 import {
   CATEGORY_OPTIONS, DURATION_OPTIONS, ITEM_TYPE_OPTIONS, durationLabel, formatDay, formatTime, intervalLabel, itemNoun, targetLabel,
 } from "../../lib/calendar-view";
@@ -20,11 +22,13 @@ import type { Occurrence } from "../../lib/calendar-view";
 // ---------------------------------------------------------------------------
 
 export function ItemTypeIcon({ event, size = 12 }: { event: Pick<CalendarEvent, "itemType" | "completedAt">; size?: number }) {
-  if (event.itemType === "task") return event.completedAt
-    ? <CircleCheck size={size} className="cal-type-icon" aria-hidden="true"/>
-    : <Circle size={size} className="cal-type-icon" aria-hidden="true"/>;
-  if (event.itemType === "appointment") return <CalendarClock size={size} className="cal-type-icon" aria-hidden="true"/>;
-  return null;
+  if (event.itemType === "task") {
+    return <CircleCheck size={size} className={`cal-type-icon${event.completedAt ? " is-checked" : ""}`} aria-hidden="true"/>;
+  }
+  if (event.itemType === "appointment") {
+    return <CalendarClock size={size} className="cal-type-icon" aria-hidden="true"/>;
+  }
+  return <Calendar size={size} className="cal-type-icon" aria-hidden="true"/>;
 }
 
 /** CSS classes for an item's type and state. */
@@ -145,7 +149,7 @@ export function ConflictDialog({ title, target, report, zone, busy, onKeep, onPi
     </div>}
     <div className="cal-popover-actions">
       <button type="button" className="quiet-button" onClick={onCancel} disabled={busy}>Keep original time</button>
-      <button type="button" className="editor-submit" onClick={onKeep} disabled={busy} data-autofocus>{busy ? <><span className="spinner"/> Moving…</> : "Move anyway"}</button>
+      <button type="button" className="editor-submit" onClick={onKeep} disabled={busy} data-autofocus>{busy ? <><Spinner className="size-3.5"/> Moving…</> : "Move anyway"}</button>
     </div>
   </CalPopover>;
 }
@@ -190,18 +194,18 @@ export function FilterMenu({ filters, onChange, sync }: { filters: CalendarFilte
       <fieldset className="cal-filter-group">
         <legend className="sr-only">Item types</legend>
         {(Object.keys(TYPE_FILTER_LABELS) as CalendarItemType[]).map((type, index) => <label key={type} className="cal-filter-option">
-          <input type="checkbox" checked={filters.types[type]} onChange={(event) => set({ types: { ...filters.types, [type]: event.target.checked } })} data-autofocus={index === 0 ? true : undefined}/>
+          <Checkbox checked={filters.types[type]} aria-label={TYPE_FILTER_LABELS[type]} onCheckedChange={(checked) => set({ types: { ...filters.types, [type]: checked === true } })} data-autofocus={index === 0 ? true : undefined}/>
           <span>{TYPE_FILTER_LABELS[type]}</span>
         </label>)}
         <label className={`cal-filter-option cal-filter-sub ${filters.types.task ? "" : "is-disabled"}`}>
-          <input type="checkbox" checked={filters.completed} disabled={!filters.types.task} onChange={(event) => set({ completed: event.target.checked })}/>
+          <Checkbox checked={filters.completed} disabled={!filters.types.task} aria-label="Completed tasks" onCheckedChange={(checked) => set({ completed: checked === true })}/>
           <span>Completed tasks</span>
         </label>
       </fieldset>
       <fieldset className="cal-filter-group cal-filter-colors">
         <legend>Colors</legend>
         {CATEGORY_FILTERS.map((entry) => <label key={entry.id} className={`cal-filter-option cal-cat-${entry.id}`}>
-          <input type="checkbox" checked={filters.categories[entry.id]} onChange={(event) => set({ categories: { ...filters.categories, [entry.id]: event.target.checked } })}/>
+          <Checkbox checked={filters.categories[entry.id]} aria-label={entry.label} onCheckedChange={(checked) => set({ categories: { ...filters.categories, [entry.id]: checked === true } })}/>
           <span className="cal-filter-swatch" aria-hidden="true"/><span>{entry.label}</span>
         </label>)}
       </fieldset>
@@ -231,7 +235,7 @@ export function CreateMenu({ onQuickAdd, onCreate, disabled }: {
   return <>
     <button ref={buttonRef} type="button" className="cal-primary-button cal-split-toggle" aria-label="More create options" aria-haspopup="dialog" aria-expanded={open} disabled={disabled}
       onClick={() => { setAnchor(rectOf(buttonRef.current)); setOpen((value) => !value); }} title="Quick add, task or appointment">
-      <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+      <ChevronDown size={12} strokeWidth={2.4} aria-hidden="true" />
     </button>
     {open && <CalPopover anchor={anchor} onClose={() => setOpen(false)} labelledBy="cal-create-title" className="cal-create-menu">
       <h2 id="cal-create-title" className="sr-only">Create</h2>
@@ -296,7 +300,7 @@ export function RescheduleDialog({ occurrence, zone, busy, onSave, onClose }: {
       {error && <p className="cal-field-error" role="alert">{error}</p>}
       <div className="cal-popover-actions">
         <button type="button" className="quiet-button" onClick={onClose} disabled={busy}>Cancel</button>
-        <button type="submit" className="editor-submit" disabled={busy}>{busy ? <><span className="spinner"/> Moving…</> : "Move"}</button>
+        <button type="submit" className="editor-submit" disabled={busy}>{busy ? <><Spinner className="size-3.5"/> Moving…</> : "Move"}</button>
       </div>
     </form>
   </CalPopover>;

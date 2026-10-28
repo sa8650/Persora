@@ -1,21 +1,22 @@
-// In-memory Postgres (PGlite + real pgcrypto) loaded with Persora's real
-// supabase/schema.sql and every migration in filename order, so the Password
-// Manager SQL (bcrypt verifier, vault sessions, OTP reset, RLS/privileges) is
-// exercised exactly as it is deployed. Supabase's API roles and its default
-// privileges (new tables/functions granted to anon/authenticated) are recreated
-// so the migrations' REVOKE statements are actually tested.
-import { readFile, readdir } from 'node:fs/promises';
+// In-memory Postgres (PGlite + real pgcrypto) loaded with Persora's standalone
+// supabase/schema.sql so database tables, constraints, triggers, RLS, and
+// security-definer RPCs are exercised exactly as deployed. Supabase's API roles
+// and default privileges are recreated so REVOKE statements are tested too.
+import { readdir, readFile } from 'node:fs/promises';
 import { PGlite } from '@electric-sql/pglite';
 import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto';
 
 const root = new URL('../supabase/', import.meta.url);
 const read = (path) => readFile(new URL(path, root), 'utf8');
-export const migrationNames = async () => (await readdir(new URL('migrations/', root))).filter((name) => name.endsWith('.sql')).sort();
+export const migrationNames = async () => {
+  try {
+    return (await readdir(new URL('migrations/', root))).filter((name) => name.endsWith('.sql')).sort();
+  } catch {
+    return [];
+  }
+};
 
-/**
- * @param {{ stopBefore?: string }} options apply migrations up to (not including) `stopBefore`
- */
-export async function createVaultDatabase({ stopBefore } = {}) {
+export async function createVaultDatabase() {
   const db = new PGlite({ extensions: { pgcrypto } });
   await db.exec(`
     create schema if not exists extensions;
@@ -33,16 +34,12 @@ export async function createVaultDatabase({ stopBefore } = {}) {
     set search_path = public, extensions;
   `);
   await db.exec(await read('schema.sql'));
-  const pending = [];
   for (const name of await migrationNames()) {
-    if (stopBefore && name >= stopBefore) { pending.push(name); continue; }
     await db.exec(await read(`migrations/${name}`));
   }
+  const pending = [];
 
-  /** Applies the next not-yet-applied migration(s) up to and including `name`. */
-  async function applyThrough(name) {
-    while (pending.length && pending[0] <= name) await db.exec(await read(`migrations/${pending.shift()}`));
-  }
+  async function applyThrough() {}
 
   /** PostgREST-compatible RPC as the service role: named arguments in, JSON out. */
   async function rpc(fn, args = {}) {

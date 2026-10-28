@@ -1,7 +1,7 @@
 // Persora Projects — worker module for personal + shared projects.
 // Reads are shaped here (service role + explicit membership gate, so project
 // existence is never leaked to non-members); every mutation goes through the
-// security-definer RPCs in 202610220003_projects.sql which enforce the full
+// security-definer RPCs in supabase/schema.sql which enforce the full
 // permission matrix atomically inside Postgres:
 //   owner            → everything (settings, members, folders, fields, moderation)
 //   editor + grant   → create fields & folders, edit/delete own fields
@@ -13,6 +13,8 @@ export const PROJECTS_ROUTE_PREFIX = "/projects";
 
 const FIELD_STATUSES = new Set(["planning", "in-progress", "in-review", "blocked", "completed"]);
 const TASK_STATUSES = new Set(["todo", "in-progress", "in-review", "complete"]);
+const PRIORITIES = new Set(["high", "medium", "normal", "low"]);
+const PROJECT_SELECT_COLUMNS = "id,owner_id,name,description,kind,category,tags,start_date,due_date,priority,paused,archived,created_at,updated_at";
 const MEMBER_ROLES = new Set(["editor", "commenter", "viewer"]);
 const FOLDER_COLORS = new Set(["cyan", "purple", "pink", "blue", "orange", "green"]);
 const MAX_PROJECTS_PER_USER = 200;
@@ -113,6 +115,11 @@ export function sanitizeProjectTaskInput(body, { allowPartial = false } = {}) {
     if (!allowPartial && body.status === "complete") throw new ProjectError("New tasks cannot start as Complete; move a task through In Review first.", 400);
     result.status = body.status;
   }
+  if (body.priority !== undefined) {
+    const priority = typeof body.priority === "string" ? body.priority.trim().toLowerCase() : "";
+    if (!PRIORITIES.has(priority)) throw new ProjectError("Choose a valid task priority.", 400);
+    result.priority = priority;
+  }
   if (!allowPartial && (result.name === undefined || result.field_id === undefined)) throw new ProjectError("A task name and field are required.", 400);
   if (allowPartial && !Object.keys(result).length) throw new ProjectError("There is nothing to update on this task.", 400);
   return result;
@@ -181,13 +188,98 @@ async function rpc(name, args, env) {
 // ---------------------------------------------------------------------------
 // Input sanitising (pure — mirrored in tests)
 // ---------------------------------------------------------------------------
+function parseIsoDateField(raw, label) {
+  if (raw === null || raw === "") return null;
+  const value = String(raw || "").trim();
+  if (!value) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(`${value}T00:00:00Z`))) {
+    throw new ProjectError(`Choose a valid ${label}.`, 400);
+  }
+  return value;
+}
+
+export function sanitizeProjectOptions(body, { allowPartial = false } = {}) {
+  const options = {};
+  if (!body || typeof body !== "object" || Array.isArray(body)) return options;
+  if (body.category !== undefined) {
+    const category = typeof body.category === "string" ? body.category.trim() : "";
+    if (category.length > 80) throw new ProjectError("Keep the project category under 80 characters.", 400);
+    options.category = category;
+  } else if (!allowPartial) {
+    options.category = "";
+  }
+  if (body.tags !== undefined) {
+    const rawTags = typeof body.tags === "string" ? body.tags.split(",") : Array.isArray(body.tags) ? body.tags : null;
+    if (!rawTags) throw new ProjectError("Provide project tags as a list.", 400);
+    const seen = new Set();
+    const cleaned = [];
+    for (const item of rawTags) {
+      const tag = String(item ?? "").trim().replace(/^#+/, "").trim();
+      if (!tag) continue;
+      if (tag.length > 40) throw new ProjectError("Keep each project tag under 40 characters.", 400);
+      const key = tag.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      cleaned.push(tag);
+      if (cleaned.length > 12) throw new ProjectError("Add up to 12 project tags.", 400);
+    }
+    options.tags = cleaned;
+  } else if (!allowPartial) {
+    options.tags = [];
+  }
+  const hasStartDate = body.startDate !== undefined || body.start_date !== undefined;
+  const hasDueDate = body.dueDate !== undefined || body.due_date !== undefined;
+  if (hasStartDate) options.start_date = parseIsoDateField(body.startDate !== undefined ? body.startDate : body.start_date, "start date");
+  else if (!allowPartial) options.start_date = null;
+  if (hasDueDate) options.due_date = parseIsoDateField(body.dueDate !== undefined ? body.dueDate : body.due_date, "target due date");
+  else if (!allowPartial) options.due_date = null;
+  if (options.start_date && options.due_date && options.due_date < options.start_date) {
+    throw new ProjectError("Target due date cannot be earlier than the start date.", 400);
+  }
+  if (body.priority !== undefined) {
+    const priority = typeof body.priority === "string" ? body.priority.trim().toLowerCase() : "";
+    if (!PRIORITIES.has(priority)) throw new ProjectError("Choose a valid project priority.", 400);
+    options.priority = priority;
+  } else if (!allowPartial) {
+    options.priority = "normal";
+  }
+  if (body.paused !== undefined) {
+    if (typeof body.paused !== "boolean") throw new ProjectError("Choose Pause or Resume for this project.", 400);
+    options.paused = body.paused;
+  } else if (!allowPartial) {
+    options.paused = false;
+  }
+  if (body.archived !== undefined) {
+    if (typeof body.archived !== "boolean") throw new ProjectError("Choose Archive or Unarchive for this project.", 400);
+    options.archived = body.archived;
+  } else if (!allowPartial) {
+    options.archived = false;
+  }
+  return options;
+}
+
 export function sanitizeProjectInput(body) {
   const name = typeof body?.name === "string" ? body.name.trim() : "";
   if (name.length < 1 || name.length > 120) throw new ProjectError("Give the project a name between 1 and 120 characters.", 400);
   let description = typeof body?.description === "string" ? body.description.trim() : "";
   if (description.length > 2000) throw new ProjectError("Keep the project description under 2,000 characters.", 400);
   const kind = body?.kind === "shared" ? "shared" : "personal";
-  return { name, description, kind };
+  const options = sanitizeProjectOptions(body, { allowPartial: false });
+  return { name, description, kind, options };
+}
+
+function projectRowView(project) {
+  if (!project || typeof project !== "object") return project;
+  return {
+    ...project,
+    category: typeof project.category === "string" ? project.category : "",
+    tags: Array.isArray(project.tags) ? project.tags : [],
+    start_date: project.start_date || null,
+    due_date: project.due_date || null,
+    priority: PRIORITIES.has(project.priority) ? project.priority : "normal",
+    paused: Boolean(project.paused),
+    archived: Boolean(project.archived),
+  };
 }
 
 export function sanitizeFieldPayload(body, { requireTitle = false } = {}) {
@@ -262,8 +354,9 @@ export async function resolveProjectRecipient(rawRecipient, ownerId, env) {
 // Access gate for worker reads (mirrors persora__project_access)
 // ---------------------------------------------------------------------------
 async function loadProjectAccess(projectId, userId, env) {
-  const project = await firstRow(`projects?id=eq.${encodeURIComponent(projectId)}&select=id,owner_id,name,description,kind,created_at,updated_at`, env);
-  if (!project) throw new ProjectError("That project is not available.", 404);
+  const rawProject = await firstRow(`projects?id=eq.${encodeURIComponent(projectId)}&select=${PROJECT_SELECT_COLUMNS}`, env);
+  if (!rawProject) throw new ProjectError("That project is not available.", 404);
+  const project = projectRowView(rawProject);
   const isOwner = project.owner_id === userId;
   let member = null;
   if (!isOwner) {
@@ -309,9 +402,9 @@ async function listProjects(userId, env) {
   const memberships = await listRows(`project_members?user_id=eq.${encodeURIComponent(userId)}&select=project_id,role,can_create_fields&order=created_at.desc`, env);
   const membershipByProject = new Map(memberships.map((member) => [member.project_id, member]));
   const memberIds = memberships.map((member) => member.project_id);
-  const owned = await listRows(`projects?owner_id=eq.${encodeURIComponent(userId)}&select=id,owner_id,name,description,kind,created_at,updated_at&order=updated_at.desc`, env);
+  const owned = (await listRows(`projects?owner_id=eq.${encodeURIComponent(userId)}&select=${PROJECT_SELECT_COLUMNS}&order=updated_at.desc`, env)).map(projectRowView);
   const memberProjects = memberIds.length
-    ? await listRows(`projects?id=${inList(memberIds)}&select=id,owner_id,name,description,kind,created_at,updated_at&order=updated_at.desc`, env)
+    ? (await listRows(`projects?id=${inList(memberIds)}&select=${PROJECT_SELECT_COLUMNS}&order=updated_at.desc`, env)).map(projectRowView)
     : [];
   const all = [...owned];
   for (const project of memberProjects) {
@@ -385,6 +478,7 @@ function projectTaskView(task, profiles, fieldTitle = "") {
   return {
     id: task.id, project_id: task.project_id, field_id: task.field_id,
     name: task.name, description: task.description || "", status: task.status,
+    priority: PRIORITIES.has(task.priority) ? task.priority : "normal",
     assignee_id: task.assignee_id || null, paused: Boolean(task.paused),
     created_by: task.created_by, updated_by: task.updated_by || null, sort_order: Number(task.sort_order) || 0,
     created_at: task.created_at, updated_at: task.updated_at,
@@ -411,7 +505,7 @@ async function projectDetail(projectId, userId, env) {
       ? listRows(`project_field_requests?project_id=eq.${encodeURIComponent(projectId)}&select=id,project_id,requester_id,requester_name,note,payload,status,resolution_note,field_id,created_at,resolved_at&order=created_at.desc&limit=50`, env)
       : listRows(`project_field_requests?project_id=eq.${encodeURIComponent(projectId)}&requester_id=eq.${encodeURIComponent(userId)}&select=id,project_id,requester_id,requester_name,note,payload,status,resolution_note,field_id,created_at,resolved_at&order=created_at.desc&limit=25`, env),
     listRows(`project_activity?project_id=eq.${encodeURIComponent(projectId)}&select=id,actor_id,actor_name,action,target,created_at&order=created_at.desc&limit=40`, env),
-    listRows(`project_tasks?project_id=eq.${encodeURIComponent(projectId)}&select=id,project_id,field_id,name,description,status,assignee_id,paused,created_by,updated_by,sort_order,created_at,updated_at&order=status.asc,sort_order.asc,created_at.asc`, env),
+    listRows(`project_tasks?project_id=eq.${encodeURIComponent(projectId)}&select=id,project_id,field_id,name,description,status,priority,assignee_id,paused,created_by,updated_by,sort_order,created_at,updated_at&order=status.asc,sort_order.asc,created_at.asc`, env),
     listRows(`project_field_attachments?project_id=eq.${encodeURIComponent(projectId)}&select=id,project_id,field_id,uploader_id,file_name,file_size,file_type,created_at&order=created_at.desc`, env),
   ]);
   const fieldIds = fields.map((field) => field.id);
@@ -528,7 +622,7 @@ async function accessibleProjects(userId, env) {
 async function listProjectNotifications(userId, env) {
   await rpc("persora__project_overdue_notifications", { p_user: userId }, env);
   const [rows, accessible] = await Promise.all([
-    listRows(`project_notifications?recipient_id=eq.${encodeURIComponent(userId)}&select=id,actor_id,actor_name,project_id,field_id,subtask_id,task_id,kind,title,message,created_at,read_at&order=created_at.desc&limit=100`, env),
+    listRows(`project_notifications?recipient_id=eq.${encodeURIComponent(userId)}&select=id,actor_id,actor_name,project_id,field_id,task_id,kind,title,message,created_at,read_at&order=created_at.desc&limit=100`, env),
     accessibleProjects(userId, env),
   ]);
   return rows.flatMap((row) => {
@@ -558,9 +652,9 @@ async function getEditableProjectField(projectId, fieldId, userId, env) {
 
 async function getProjectTaskRecord(projectId, taskId, env) {
   if (!isUuid(taskId)) throw new ProjectError("That task is not available.", 404);
-  const task = await firstRow(`project_tasks?id=eq.${encodeURIComponent(taskId)}&project_id=eq.${encodeURIComponent(projectId)}&select=id,project_id,field_id,name,description,status,assignee_id,paused,created_by,updated_by,sort_order,created_at,updated_at`, env);
+  const task = await firstRow(`project_tasks?id=eq.${encodeURIComponent(taskId)}&project_id=eq.${encodeURIComponent(projectId)}&select=id,project_id,field_id,name,description,status,priority,assignee_id,paused,created_by,updated_by,sort_order,created_at,updated_at`, env);
   if (!task) throw new ProjectError("That task is not available.", 404);
-  const field = await firstRow(`project_fields?id=eq.${encodeURIComponent(task.field_id)}&project_id=eq.${encodeURIComponent(projectId)}&select=id,project_id,title,assignee_id`, env);
+  const field = await firstRow(`project_fields?id=eq.${encodeURIComponent(task.field_id)}&project_id=eq.${encodeURIComponent(projectId)}&select=id,project_id,title,status,assignee_id`, env);
   if (!field) throw new ProjectError("That task is not available.", 404);
   return { task, field };
 }
@@ -579,14 +673,17 @@ async function assertCanMoveProjectTask(projectId, taskId, status, userId, env) 
   const access = await loadProjectAccess(projectId, userId, env);
   const { task, field } = await getProjectTaskRecord(projectId, taskId, env);
   const manager = access.isOwner || field.assignee_id === userId;
-  if (manager) {
-    if (status === "complete" && task.status !== "in-review" && task.status !== "complete") {
-      throw new ProjectError("Move the task to In Review before completing it.", 409);
-    }
-    return { ...access, task, field };
+  if (!manager && !(task.assignee_id === userId && task.status !== "complete" && status !== "complete")) {
+    throw new ProjectError("Task assignees can move active tasks among To Do, In Progress, and In Review only.", 403);
   }
-  if (task.assignee_id === userId && task.status !== "complete" && status !== "complete") return { ...access, task, field };
-  throw new ProjectError("Task assignees can move active tasks among To Do, In Progress, and In Review only.", 403);
+  if (status !== task.status) {
+    if (task.paused) throw new ProjectError("Resume this paused task before moving it to another column.", 409);
+    if (field.status === "blocked") throw new ProjectError("This task’s field is paused. Resume the field before moving its tasks to another column.", 409);
+  }
+  if (manager && status === "complete" && task.status !== "in-review" && task.status !== "complete") {
+    throw new ProjectError("Move the task to In Review before completing it.", 409);
+  }
+  return { ...access, task, field };
 }
 
 async function loadProjectTaskDetail(projectId, taskId, userId, env) {
@@ -830,7 +927,13 @@ export async function handleProjects(request, identity, env, origin, services = 
         const ownedCount = existing.filter((project) => project.access.owner).length;
         if (ownedCount >= MAX_PROJECTS_PER_USER) throw new ProjectError(`You can own up to ${MAX_PROJECTS_PER_USER} projects.`, 409);
         const input = sanitizeProjectInput(await readBody());
-        const createdResult = await rpc("persora_project_create", { p_user: userId, p_name: input.name, p_description: input.description, p_kind: input.kind }, env);
+        const createdResult = await rpc("persora_project_create", {
+          p_user: userId,
+          p_name: input.name,
+          p_description: input.description,
+          p_kind: input.kind,
+          p_options: input.options,
+        }, env);
         // PostgREST normally returns the scalar jsonb object directly; tolerate
         // a one-row wrapper as well, but always verify the canonical persisted
         // row and return its database UUID rather than trusting a UI/local ID.
@@ -839,11 +942,11 @@ export async function handleProjects(request, identity, env, origin, services = 
           console.error("Persora project creation returned no valid database ID", { responseType: Array.isArray(createdResult) ? "array" : typeof createdResult });
           throw new ProjectError("The project save did not return a valid database ID. Refresh Projects and try again.", 502);
         }
-        const persisted = await firstRow(`projects?id=eq.${encodeURIComponent(created.id)}&owner_id=eq.${encodeURIComponent(userId)}&select=id,owner_id,name,description,kind,created_at,updated_at`, env);
+        const persisted = await firstRow(`projects?id=eq.${encodeURIComponent(created.id)}&owner_id=eq.${encodeURIComponent(userId)}&select=${PROJECT_SELECT_COLUMNS}`, env);
         if (!persisted) {
           throw new ProjectError("The project was created, but its saved record could not be verified. Refresh Projects before retrying.", 502);
         }
-        return json({ project: persisted }, 201, origin);
+        return json({ project: projectRowView(persisted) }, 201, origin);
       }
       return json({ error: "Method not allowed." }, 405, origin);
     }
@@ -871,9 +974,20 @@ export async function handleProjects(request, identity, env, origin, services = 
           if (body.kind !== "personal" && body.kind !== "shared") throw new ProjectError("Choose Personal or Shared for this project.", 400);
           kind = body.kind;
         }
-        if (name === null && description === null && kind === null) throw new ProjectError("There is nothing to update on this project.", 400);
-        const project = await rpc("persora_project_update", { p_user: userId, p_project: projectId, p_name: name, p_description: description, p_kind: kind }, env);
-        return json({ project }, 200, origin);
+        const options = sanitizeProjectOptions(body, { allowPartial: true });
+        const hasOptions = Object.keys(options).length > 0;
+        if (name === null && description === null && kind === null && !hasOptions) {
+          throw new ProjectError("There is nothing to update on this project.", 400);
+        }
+        const project = await rpc("persora_project_update", {
+          p_user: userId,
+          p_project: projectId,
+          p_name: name,
+          p_description: description,
+          p_kind: kind,
+          ...(hasOptions ? { p_options: options } : {}),
+        }, env);
+        return json({ project: projectRowView(project) }, 200, origin);
       }
       if (request.method === "DELETE") {
         const { project } = await loadProjectAccess(projectId, userId, env);
@@ -902,7 +1016,15 @@ export async function handleProjects(request, identity, env, origin, services = 
           if (request.method === "GET") return json({ task: await loadProjectTaskDetail(projectId, taskId, userId, env) }, 200, origin);
           if (request.method === "PATCH") {
             const payload = sanitizeProjectTaskInput(await readBody(), { allowPartial: true });
-            await assertCanManageProjectTask(projectId, taskId, userId, env);
+            const { task: existingTask, field: existingField } = await assertCanManageProjectTask(projectId, taskId, userId, env);
+            if (payload.status !== undefined && payload.status !== existingTask.status) {
+              if (existingTask.paused) throw new ProjectError("Resume this paused task before moving it to another column.", 409);
+              if (existingField.status === "blocked") throw new ProjectError("This task’s field is paused. Resume the field before moving its tasks to another column.", 409);
+              if (payload.field_id && payload.field_id !== existingField.id) {
+                const destField = await firstRow(`project_fields?id=eq.${encodeURIComponent(payload.field_id)}&project_id=eq.${encodeURIComponent(projectId)}&select=id,status`, env);
+                if (destField?.status === "blocked") throw new ProjectError("This task’s field is paused. Resume the field before moving its tasks to another column.", 409);
+              }
+            }
             const task = await rpc("persora_project_task_update", { p_user: userId, p_task: taskId, p_payload: payload }, env);
             return json({ task }, 200, origin);
           }
@@ -920,8 +1042,17 @@ export async function handleProjects(request, identity, env, origin, services = 
         if (segments.length === 4 && action === "move" && request.method === "POST") {
           const body = await readBody();
           const status = typeof body?.status === "string" ? body.status : "";
+          const hasSortOrder = body?.sortOrder !== undefined && body?.sortOrder !== null;
+          let sortOrder = null;
+          if (hasSortOrder) {
+            const parsedOrder = Number(body.sortOrder);
+            if (!Number.isFinite(parsedOrder)) throw new ProjectError("Choose a valid task order.", 400);
+            sortOrder = Math.max(-1_000_000_000, Math.min(1_000_000_000, Math.trunc(parsedOrder)));
+          }
           await assertCanMoveProjectTask(projectId, taskId, status, userId, env);
-          const task = await rpc("persora_project_task_move", { p_user: userId, p_task: taskId, p_status: status }, env);
+          const task = hasSortOrder
+            ? await rpc("persora_project_task_position", { p_user: userId, p_task: taskId, p_status: status, p_sort_order: sortOrder }, env)
+            : await rpc("persora_project_task_move", { p_user: userId, p_task: taskId, p_status: status }, env);
           return json({ task }, 200, origin);
         }
         if (segments.length === 4 && action === "pause" && request.method === "PATCH") {

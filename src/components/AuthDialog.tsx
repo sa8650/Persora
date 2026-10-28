@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { ArrowLeft, ArrowRight, Eye, EyeOff, KeyRound, LockKeyhole, Mail, ShieldCheck, X } from "lucide-react";
 import { ShimmerButton } from "./magic-ui";
 import { sendPasswordRecoveryCode, resetPasswordWithRecoveryCode } from "../lib/cloud";
+import { Spinner } from "@/components/ui/spinner";
 
 export type AuthMode = "signin" | "signup" | "recover";
 
@@ -160,7 +161,7 @@ export default function AuthDialog({ initialMode, connected, variant = "user", b
                 {error && <div className="form-alert error-alert" role="alert">{error}</div>}
                 {message && <div className="form-alert success-alert" role="status">{message}</div>}
                 <ShimmerButton type="submit" disabled={recoveryBusy || !connected} className="auth-submit">
-                  {recoveryBusy ? <><span className="spinner" /> Sending code…</> : <>Send recovery code <Mail size={16} /></>}
+                  {recoveryBusy ? <><Spinner className="size-3.5" /> Sending code…</> : <>Send recovery code <Mail size={16} /></>}
                 </ShimmerButton>
                 <button type="button" className="auth-back" onClick={() => changeMode("signin")}>
                   <ArrowLeft size={14} /> Back to sign in
@@ -213,7 +214,7 @@ export default function AuthDialog({ initialMode, connected, variant = "user", b
                 {error && <div className="form-alert error-alert" role="alert">{error}</div>}
                 {message && <div className="form-alert success-alert" role="status">{message}</div>}
                 <ShimmerButton type="submit" disabled={recoveryBusy || !connected} className="auth-submit">
-                  {recoveryBusy ? <><span className="spinner" /> Updating…</> : <>Set new password <KeyRound size={16} /></>}
+                  {recoveryBusy ? <><Spinner className="size-3.5" /> Updating…</> : <>Set new password <KeyRound size={16} /></>}
                 </ShimmerButton>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
                   <button type="button" className="auth-switch-link" onClick={() => setRecoveryStep("request")} style={{ background: "none", border: "none", color: "#1a73e8", fontSize: "11px", cursor: "pointer", padding: 0 }}>
@@ -258,7 +259,7 @@ export default function AuthDialog({ initialMode, connected, variant = "user", b
               {error && <div className="form-alert error-alert" role="alert">{error}</div>}
               {message && <div className="form-alert success-alert" role="status">{message}</div>}
               <ShimmerButton type="submit" disabled={busy || !connected} className="auth-submit">
-                {busy ? <><span className="spinner" /> Working…</> : <>{admin && mode === "signin" ? "Continue securely" : mode === "signin" ? "Sign in" : "Create account"}<ArrowRight size={17} /></>}
+                {busy ? <><Spinner className="size-3.5" /> Working…</> : <>{admin && mode === "signin" ? "Continue securely" : mode === "signin" ? "Sign in" : "Create account"}<ArrowRight size={17} /></>}
               </ShimmerButton>
             </form>
           )}

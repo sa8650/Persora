@@ -4,7 +4,7 @@
 // Habits, loans and subscriptions have their own Persora modules, so there are
 // deliberately no templates for them here.
 
-import { emptySheetData, makeChoices, newField, newLocalId, newView } from "./table-rules.js";
+import { DEFAULT_SHEET_SIZE, emptySheetData, makeChoices, newField, newLocalId, newView } from "./table-rules.js";
 
 const choices = (...labels) => makeChoices(labels.map((entry) => (Array.isArray(entry) ? { label: entry[0], color: entry[1] } : { label: entry })));
 
@@ -50,7 +50,7 @@ function smart(spec) {
 }
 
 /** Builds a spreadsheet sheet from rows of raw inputs (numbers, text, "=formulas") plus styles. */
-function sheet(name, { rows, header = true, widths = [], money = [], percent = [], date = [], totalRow = null, cols = 26, rowCount = 100, currency = "BDT" }) {
+function sheet(name, { rows, header = true, widths = [], money = [], percent = [], date = [], totalRow = null, cols = DEFAULT_SHEET_SIZE.cols, rowCount = DEFAULT_SHEET_SIZE.rows, currency = "BDT" }) {
   const data = emptySheetData(Math.max(rowCount, rows.length + 10), cols);
   rows.forEach((line, r) => line.forEach((input, c) => {
     if (input === null || input === undefined || input === "") return;

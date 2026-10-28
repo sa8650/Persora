@@ -5,6 +5,7 @@ import ModalPortal from "../ModalPortal";
 import { addDays, addMonths, parseDate, startOfMonth, startOfWeek } from "../../../cloudflare/calendar-rules.js";
 import { WEEK_STARTS_ON, datesBetween, formatDay } from "../../lib/calendar-view";
 import type { CalendarCategory } from "../../../cloudflare/calendar-rules.js";
+import { Spinner } from "@/components/ui/spinner";
 
 export interface AnchorRect { top: number; left: number; width: number; height: number }
 export const rectOf = (element: Element | null | undefined): AnchorRect | null => {
@@ -163,7 +164,7 @@ export function ScopeDialog({ action, onChoose, onClose, busy, seriesNote }: {
       {scope === "series" && seriesNote && <p className="cal-hint cal-hint-warn cal-scope-note">{seriesNote}</p>}
       <div className="cal-popover-actions">
         <button type="button" className="quiet-button" onClick={onClose} disabled={busy}>Cancel</button>
-        <button type="submit" className={action === "delete" ? "cal-danger-button" : "editor-submit"} disabled={busy}>{busy ? <><span className="spinner"/> Working…</> : submitLabel}</button>
+        <button type="submit" className={action === "delete" ? "cal-danger-button" : "editor-submit"} disabled={busy}>{busy ? <><Spinner className="size-3.5"/> Working…</> : submitLabel}</button>
       </div>
     </form>
   </CalPopover>;

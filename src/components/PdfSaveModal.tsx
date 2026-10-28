@@ -5,6 +5,8 @@ import { VAULT_FOLDER_COLORS } from "../lib/folders";
 import { formatBytes, pageCountLabel } from "../lib/pdf-studio";
 import ModalPortal from "./ModalPortal";
 import ItemModalShell from "./ItemModalShell";
+import { StageProgressIndicator } from "./ProgressIndicator";
+import { Spinner } from "@/components/ui/spinner";
 
 const NEW_FOLDER = "__new__";
 
@@ -117,10 +119,7 @@ export default function PdfSaveModal({ mode, folders, defaults, linkedDocument =
             </>}
             {mode === "save" && <div className="field-wide pdfs-save-summary"><FileText size={14}/><span>{pageCount ? pageCountLabel(pageCount) : "Your PDF"} · built on this device{linkedDocument ? ` · saved version ${formatBytes(linkedDocument.fileSize)}` : ""}</span></div>}
             {!canSave && <div className="form-alert pdfs-plan-alert field-wide" role="note"><Lock size={13}/><span>{saveBlockedReason || "Saving is unavailable."}</span>{onUpgrade && <button type="button" className="quiet-button" onClick={onUpgrade}>View plans</button>}</div>}
-            {saving && progress && <div className="field-wide pdfs-save-progress" role="status" aria-live="polite">
-              <span>{progress.label}</span>
-              <span className="pdfs-progress" aria-hidden="true"><i style={{ width: `${progress.percent ?? 30}%` }} className={progress.percent === null ? "is-indeterminate" : ""}/></span>
-            </div>}
+            {saving && progress && <div className="field-wide"><StageProgressIndicator label={progress.label} percent={progress.percent}/></div>}
           </div>
         </div>
         {error && <div className="form-alert error-alert editor-error" role="alert">{error}{saving ? null : <span className="pdfs-error-retry"> Press {saveLabel} to try again.</span>}</div>}
@@ -128,7 +127,7 @@ export default function PdfSaveModal({ mode, folders, defaults, linkedDocument =
           <div className="editor-footnote"><ShieldCheck size={14}/><span>{mode === "details" ? "Only the details change — the PDF file stays as it is." : "The PDF is uploaded only now, when you press Save."}</span></div>
           <div className="editor-actions">
             <button type="button" className="quiet-button" onClick={onCancel} disabled={saving}>Cancel</button>
-            <button type="submit" className="editor-submit" disabled={saving || !canSave}>{saving ? <><span className="spinner"/> Saving…</> : saveLabel}</button>
+            <button type="submit" className="editor-submit" disabled={saving || !canSave}>{saving ? <><Spinner className="size-3.5"/> Saving…</> : saveLabel}</button>
           </div>
         </div>
       </form>

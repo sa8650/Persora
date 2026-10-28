@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Check, CircleAlert, Copy, KeyRound, Link2, Plug, RefreshCw, ShieldCheck, Store, Wand2 } from "lucide-react";
 import { formatDate } from "../../lib/utils";
 import { loadIntegrationStatus, saveIntegration, testIntegration, type IntegrationStatus } from "../../lib/connections-api";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type Notify = (message: string, kind?: "success" | "error") => void;
 
@@ -65,7 +66,7 @@ export default function AdminIntegrationsPanel({ notify }: { notify: Notify }) {
       <div className="admin-card-heading"><div><span>CONNECTIONS · DEXTER STUDIO</span><h2>EMS integration</h2></div><Store size={18}/></div>
       <p className="admin-section-copy">Lets members connect their EMS administrator account inside Persora and browse their Vaultium files read-only. Access works only while this integration <b>and</b> the EMS Owner Console integration are both enabled with matching shared secrets.</p>
       <form className="admin-form" onSubmit={(e) => void save(e)} autoComplete="off">
-        <label className="admin-toggle-row admin-form-wide"><span><b>Enable EMS connections</b><small>{enabled ? "Members can connect EMS and browse Vaultium files." : "Disabled — existing connections are kept but blocked."}</small></span><input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)}/></label>
+        <label className="admin-toggle-row admin-form-wide"><span><b>Enable EMS connections</b><small>{enabled ? "Members can connect EMS and browse Vaultium files." : "Disabled — existing connections are kept but blocked."}</small></span><Checkbox checked={enabled} aria-label="Enable EMS connections" onCheckedChange={(checked) => setEnabled(checked === true)}/></label>
         <label className="admin-form-wide">EMS address (HTTPS)<input type="url" inputMode="url" value={baseUrl} maxLength={300} onChange={(e) => setBaseUrl(e.target.value)} placeholder={status.baseUrlSource === "environment" ? `${status.baseUrl} (from EMS_API_BASE_URL)` : "https://ems.example.com"}/></label>
         <label className="admin-form-wide">{status.secretConfigured ? "Replace shared secret" : "Shared secret"}
           <span style={{ display: "flex", gap: 6 }}>

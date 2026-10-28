@@ -214,8 +214,8 @@ test('backup export and merge-restore: idempotent, never overwrites, foreign ids
   await rejects(rpc('persora_habits_import', { p_owner: target.id, p_habits: { not: 'an array' }, p_checkins: [] }), 'P0400');
 });
 
-test('the migration is safe to apply again and keeps existing data', async () => {
+test('schema.sql is safe to apply again and keeps existing data', async () => {
   const before = await count('select count(*) from public.habits');
-  await db.exec(await readFile(new URL('../supabase/migrations/202610280001_habits.sql', import.meta.url), 'utf8'));
+  await db.exec(await readFile(new URL('../supabase/schema.sql', import.meta.url), 'utf8'));
   assert.equal(await count('select count(*) from public.habits'), before);
 });

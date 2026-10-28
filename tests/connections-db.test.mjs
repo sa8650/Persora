@@ -42,8 +42,8 @@ test('deleting a Persora account removes its connections', async () => {
   assert.equal(Number((await db.query('select count(*) from public.user_connections where user_id = $1', [bob.id])).rows[0].count), 0);
 });
 
-test('the migration is safe to apply again and keeps existing data', async () => {
+test('schema.sql is safe to apply again and keeps existing data', async () => {
   const before = Number((await db.query('select count(*) from public.user_connections')).rows[0].count);
-  await db.exec(await readFile(new URL('../supabase/migrations/202610310001_connections.sql', import.meta.url), 'utf8'));
+  await db.exec(await readFile(new URL('../supabase/schema.sql', import.meta.url), 'utf8'));
   assert.equal(Number((await db.query('select count(*) from public.user_connections')).rows[0].count), before);
 });

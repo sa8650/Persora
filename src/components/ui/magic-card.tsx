@@ -4,10 +4,10 @@ import {
   useMotionTemplate,
   useMotionValue,
   useSpring,
+  type MotionStyle,
 } from "motion/react"
-import { useTheme } from "next-themes"
-
 import { cn } from "@/lib/utils"
+import { usePersoraTheme } from "@/design-system/theme"
 
 interface MagicCardBaseProps {
   children?: React.ReactNode
@@ -70,11 +70,9 @@ export function MagicCard(props: MagicCardProps) {
   const glowSize = isOrbMode(props) ? (props.glowSize ?? 420) : 420
   const glowBlur = isOrbMode(props) ? (props.glowBlur ?? 60) : 60
   const glowOpacity = isOrbMode(props) ? (props.glowOpacity ?? 0.9) : 0.9
-  const { theme, systemTheme } = useTheme()
-  const [mounted, setMounted] = useState(false)
+  const { resolvedTheme } = usePersoraTheme()
   const [reducedMotion, setReducedMotion] = useState(false)
 
-  useEffect(() => setMounted(true), [])
   useEffect(() => {
     const media = window.matchMedia("(prefers-reduced-motion: reduce)")
     const sync = () => setReducedMotion(media.matches)
@@ -83,11 +81,7 @@ export function MagicCard(props: MagicCardProps) {
     return () => media.removeEventListener?.("change", sync)
   }, [])
 
-  const isDarkTheme = useMemo(() => {
-    if (!mounted) return true
-    const currentTheme = theme === "system" ? systemTheme : theme
-    return currentTheme === "dark"
-  }, [theme, systemTheme, mounted])
+  const isDarkTheme = useMemo(() => resolvedTheme === "dark", [resolvedTheme])
 
   const mouseX = useMotionValue(-gradientSize)
   const mouseY = useMotionValue(-gradientSize)
@@ -176,7 +170,7 @@ export function MagicCard(props: MagicCardProps) {
       onPointerEnter={() => reset("enter")}
       style={{
         background: useMotionTemplate`
-          linear-gradient(var(--color-background) 0 0) padding-box,
+          linear-gradient(var(--color-card) 0 0) padding-box,
           radial-gradient(${gradientSize}px circle at ${gradientX}px ${gradientY}px,
             ${gradientFrom},
             ${gradientTo},
@@ -185,21 +179,23 @@ export function MagicCard(props: MagicCardProps) {
         `,
       }}
     >
-      <div className="bg-background absolute inset-px z-20 rounded-[inherit]" />
+      <div className="bg-card pointer-events-none absolute inset-px z-0 rounded-[inherit]" />
 
-      {mode === "gradient" && (
+      {mode === "gradient" && !reducedMotion && (
         <motion.div
           suppressHydrationWarning
-          className="pointer-events-none absolute inset-px z-30 rounded-[inherit] opacity-0 transition-opacity duration-300 group-hover:opacity-100"
-          style={{
-            background: useMotionTemplate`
-              radial-gradient(${gradientSize}px circle at ${gradientX}px ${gradientY}px,
-                ${gradientColor},
-                transparent 100%
-              )
-            `,
-            opacity: reducedMotion ? 0 : gradientOpacity,
-          }}
+          className="pointer-events-none absolute inset-px z-[1] rounded-[inherit] opacity-0 transition-opacity duration-300 group-hover:opacity-(--mc-opacity)"
+          style={
+            {
+              "--mc-opacity": gradientOpacity,
+              background: useMotionTemplate`
+                radial-gradient(${gradientSize}px circle at ${gradientX}px ${gradientY}px,
+                  ${gradientColor},
+                  transparent 100%
+                )
+              `,
+            } as unknown as MotionStyle
+          }
         />
       )}
 
@@ -207,7 +203,7 @@ export function MagicCard(props: MagicCardProps) {
         <motion.div
           suppressHydrationWarning
           aria-hidden="true"
-          className="pointer-events-none absolute z-30"
+          className="pointer-events-none absolute z-[1]"
           style={{
             width: glowSize,
             height: glowSize,
@@ -225,7 +221,7 @@ export function MagicCard(props: MagicCardProps) {
           }}
         />
       )}
-      <div className="relative z-40">{children}</div>
+      <div className="relative z-10 h-full">{children}</div>
     </motion.div>
   )
 }

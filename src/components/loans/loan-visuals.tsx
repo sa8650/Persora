@@ -1,5 +1,9 @@
 // Loan Tracker — shared labels, formatters and small presentational pieces.
 import type { InstallmentStatus, InterestMethod, LoanDirection, LoanFrequency, LoanState } from "../../../cloudflare/loan-rules.js";
+import { ArrowDownLeft, ArrowUpRight } from "lucide-react";
+import { Badge } from "@/components/reui/badge";
+import { IconTile } from "@/components/reui/icon-tile";
+import { Progress } from "@/components/ui/progress";
 
 export const FREQUENCY_LABELS: Record<LoanFrequency, string> = { daily: "Daily", weekly: "Weekly", monthly: "Monthly", yearly: "Yearly" };
 export const FREQUENCY_UNITS: Record<LoanFrequency, [string, string]> = { daily: ["day", "days"], weekly: ["week", "weeks"], monthly: ["month", "months"], yearly: ["year", "years"] };
@@ -48,21 +52,23 @@ export function relativeDay(date: string, today: string): string {
 
 export function StatusBadge({ status, className = "" }: { status: InstallmentStatus | LoanState; className?: string }) {
   const label = status in INSTALLMENT_STATUS_LABELS ? INSTALLMENT_STATUS_LABELS[status as InstallmentStatus] : LOAN_STATE_LABELS[status as LoanState];
-  return <span className={`ln-badge ln-badge-${status} ${className}`}>{label}</span>;
+  const variant = status === "paid" || status === "completed" ? "success-light"
+    : status === "overdue" ? "destructive-light"
+    : status === "partial" ? "warning-light"
+    : status === "due" || status === "active" ? "info-light"
+    : "secondary";
+  return <Badge variant={variant} size="xs" radius="full" className={`ln-badge ln-badge-${status} ${className}`}>{label}</Badge>;
 }
 
 export function ProgressBar({ value, label }: { value: number; label: string }) {
   const percent = Math.max(0, Math.min(100, Math.round(value * 1000) / 10));
-  return <span className="ln-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} aria-label={label}>
-    <span style={{ width: `${percent}%` }}/>
-  </span>;
+  return <Progress value={percent} aria-label={label} className="ln-progress h-1.5"/>;
 }
 
-/** Colourful direction mark (borrowed = money in, lent = money out). Inline SVG, no external assets. */
+/** Colourful direction mark (borrowed = money in, lent = money out) using ReUI IconTile + Lucide icons. */
 export function DirectionGlyph({ direction, size = 36 }: { direction: LoanDirection; size?: number }) {
-  return <span className={`ln-glyph ln-glyph-${direction}`} style={{ width: size, height: size }} aria-hidden="true">
-    <svg viewBox="0 0 24 24" width={size * 0.5} height={size * 0.5} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-      {direction === "borrowed" ? <><path d="M17 7 7 17"/><path d="M15 17H7V9"/></> : <><path d="M7 17 17 7"/><path d="M9 7h8v8"/></>}
-    </svg>
-  </span>;
+  const Icon = direction === "borrowed" ? ArrowDownLeft : ArrowUpRight;
+  return <IconTile variant="soft" size={size >= 40 ? "default" : "sm"} className={`ln-glyph ln-glyph-${direction}`} aria-hidden="true">
+    <Icon size={size * 0.5} strokeWidth={2.2} />
+  </IconTile>;
 }

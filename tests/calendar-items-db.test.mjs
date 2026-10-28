@@ -1,15 +1,14 @@
-// Calendar item types migration (202610260001) on PGlite: a real upgrade from
-// the first Calendar schema with existing data, idempotency, constraints, the
+// Calendar item types on PGlite (standalone supabase/schema.sql): backward-compatible
+// defaults when item_type is omitted, idempotent schema rerun, constraints, the
 // task-completion RPC, reminders for completed tasks, and preference privacy.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { createVaultDatabase } from './password-vault-db.mjs';
+import { createVaultDatabase, migrationNames } from './password-vault-db.mjs';
 import { nextReminder, normalizeEventInput, reminderDedupeKey } from '../cloudflare/calendar-rules.js';
 
-const MIGRATION = '202610260001_calendar_items.sql';
-const ctx = await createVaultDatabase({ stopBefore: MIGRATION });
-const { db, rpc, addMember, applyThrough } = ctx;
+const ctx = await createVaultDatabase();
+const { db, rpc, addMember } = ctx;
 const alice = await addMember('items-alice');
 const bob = await addMember('items-bob');
 
@@ -49,12 +48,12 @@ const row = async (id) => (await db.query('select * from public.calendar_events 
 const scheduled = async (id) => (await db.query(`select * from public.calendar_reminders where event_id = $1 and status = 'scheduled'`, [id])).rows;
 const timed = (title, date, from, to, extra = {}) => ({ title, allDay: false, start: { date, time: from }, end: { date, time: to }, ...extra });
 
-// Data written by the first Calendar release, before the upgrade.
+// Data written without explicit item_type defaults cleanly to event.
 const legacy = {};
 
-test('before the upgrade: the first Calendar schema stores events, a series with an exception, and reminders', async () => {
+test('standalone schema stores events, a series with an exception, and reminders when item_type is omitted', async () => {
   const columns = (await db.query(`select column_name from information_schema.columns where table_name = 'calendar_events'`)).rows.map((r) => r.column_name);
-  assert.ok(!columns.includes('item_type'), 'the new migration is not applied yet');
+  assert.ok(columns.includes('item_type'), 'standalone schema includes item_type');
   legacy.single = await save(alice, timed('Dentist', '2026-11-20', '10:00', '10:30', { reminderMinutes: 30, location: 'Clinic' }), { withType: false });
   legacy.series = await save(alice, timed('Gym', '2026-11-02', '18:00', '19:00', { recurrence: { freq: 'weekly', count: 6 }, reminderMinutes: 15 }), { withType: false });
   legacy.allDay = await save(alice, { title: 'Holiday', allDay: true, start: { date: '2026-12-16' }, end: { date: '2026-12-16' } }, { withType: false });
@@ -70,9 +69,9 @@ test('before the upgrade: the first Calendar schema stores events, a series with
   assert.ok(legacy.reminders >= 2);
 });
 
-test('upgrade keeps every row and reminder, marks them as events, and reruns cleanly', async () => {
+test('schema.sql keeps every row and reminder, marks omitted item_type rows as events, and reruns cleanly', async () => {
   const before = (await db.query('select * from public.calendar_events order by id')).rows;
-  await applyThrough(MIGRATION);
+  await db.exec(await readFile(new URL('../supabase/schema.sql', import.meta.url), 'utf8'));
   const after = (await db.query('select * from public.calendar_events order by id')).rows;
   assert.equal(after.length, before.length, 'no rows lost');
   for (const [index, old] of before.entries()) {
@@ -82,10 +81,7 @@ test('upgrade keeps every row and reminder, marks them as events, and reruns cle
     assert.equal(now.completed_at, null);
   }
   assert.equal((await db.query(`select count(*)::int as n from public.calendar_reminders where status = 'scheduled'`)).rows[0].n, legacy.reminders, 'reminders untouched');
-  // Rerunnable (e.g. applied twice by a deployment script).
-  await db.exec(await readFile(new URL(`../supabase/migrations/${MIGRATION}`, import.meta.url), 'utf8'));
   assert.equal((await db.query('select count(*)::int as n from public.calendar_events')).rows[0].n, legacy.counts);
-  // Old clients that don't send item_type still create events.
   const old = await save(alice, timed('Old client', '2026-11-21', '09:00', '09:30'), { withType: false });
   assert.equal(old.result.event.item_type, 'event');
 });
@@ -155,4 +151,77 @@ test('preferences: one private row per member, size-limited, removed with the ac
   await db.query(`insert into public.calendar_preferences (user_id, filters) values ($1, '{}'::jsonb)`, [temp.id]);
   await db.query('delete from public.profiles where id = $1', [temp.id]);
   assert.equal((await db.query('select count(*)::int as n from public.calendar_preferences where user_id = $1', [temp.id])).rows[0].n, 0);
+});
+
+test('multi-day & resize migration: span indexes, Asia/Dhaka cross-midnight range RPC, and occurrence item_type preservation', async () => {
+  const names = await migrationNames();
+  assert.ok(names.includes('20261026000000_calendar_multiday_resize.sql'), 'new calendar migration file is present');
+  await db.exec(await readFile(new URL('../supabase/migrations/20261026000000_calendar_multiday_resize.sql', import.meta.url), 'utf8'));
+
+  const idx = await db.query(`
+    select indexname from pg_indexes
+    where schemaname = 'public' and tablename = 'calendar_events'
+      and indexname in ('calendar_events_owner_span_at_idx', 'calendar_events_owner_span_date_idx')
+    order by indexname
+  `);
+  assert.deepEqual(idx.rows.map((r) => r.indexname), [
+    'calendar_events_owner_span_at_idx',
+    'calendar_events_owner_span_date_idx',
+  ]);
+
+  // Cross-midnight timed event in Asia/Dhaka: Oct 26 23:00 -> Oct 27 01:00 (+06:00).
+  const cross = await save(alice, {
+    itemType: 'event',
+    title: 'Late Night Deploy',
+    allDay: false,
+    timeZone: 'Asia/Dhaka',
+    start: { date: '2026-10-26', time: '23:00' },
+    end: { date: '2026-10-27', time: '01:00' },
+  });
+  assert.equal(cross.result.event.all_day, false);
+
+  // Querying Day 2 only (2026-10-27 00:00 +06:00 = 2026-10-26T18:00:00Z) still returns the cross-midnight event.
+  const day2Rows = await rpc('persora_calendar_events_in_range', {
+    p_owner: alice.id,
+    p_from: '2026-10-26T18:00:00.000Z',
+    p_to: '2026-10-27T18:00:00.000Z',
+    p_from_date: '2026-10-27',
+    p_to_date: '2026-10-28',
+  });
+  assert.ok(day2Rows.some((r) => r.id === cross.id && r.all_day === false), 'cross-midnight timed event returned on Day 2');
+
+  // Recurring timed series starting at 01:00 Asia/Dhaka on 2026-10-28 (= 2026-10-27T19:00:00Z)
+  // and recurring occurrence exception preserving master item_type on resize.
+  const series = await save(alice, {
+    itemType: 'event',
+    title: 'Standup Dhaka',
+    allDay: false,
+    timeZone: 'Asia/Dhaka',
+    start: { date: '2026-10-28', time: '01:00' },
+    end: { date: '2026-10-28', time: '01:30' },
+    recurrence: { freq: 'daily', interval: 1, count: 5 },
+  });
+
+  const resizedOcc = values({
+    itemType: 'event',
+    title: 'Standup Dhaka',
+    allDay: false,
+    timeZone: 'Asia/Dhaka',
+    start: { date: '2026-10-28', time: '01:00' },
+    end: { date: '2026-10-28', time: '02:15' },
+  });
+  const savedOcc = await rpc('persora_calendar_save_occurrence', {
+    p_owner: alice.id,
+    p_series_id: series.id,
+    p_exception_id: crypto.randomUUID(),
+    p_original_start_at: series.normalized.startAt,
+    p_original_start_date: null,
+    p_status: 'confirmed',
+    p_event: resizedOcc.json,
+    p_expected_revision: null,
+    p_reminder: null,
+    p_series_reminder: null,
+  });
+  assert.equal(savedOcc.event.item_type, 'event');
+  assert.equal(savedOcc.event.all_day, false);
 });

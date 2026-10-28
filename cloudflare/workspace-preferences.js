@@ -5,7 +5,7 @@
 //
 // api.js authorizes the member first; every query is scoped to that member's
 // id. Favorites are validated with the shared rules in workspace-modules.js and
-// again by the table constraints (supabase/migrations/202610270001_workspace_preferences.sql).
+// again by the table constraints (supabase/schema.sql).
 // `launcherFavorites: null` means "not customized" and the app shows its defaults.
 
 import { normalizeLauncherFavorites } from "./workspace-modules.js";
@@ -46,7 +46,7 @@ async function databaseError(response) {
   try { payload = await response.json(); } catch { /* generic below */ }
   const code = typeof payload?.code === "string" ? payload.code : "";
   if (code === "42P01" || code === "PGRST205") {
-    return new WorkspacePreferencesError("Saving favorites needs the workspace preferences migration (202610270001_workspace_preferences.sql).", 503);
+    return new WorkspacePreferencesError("Saving favorites needs the Persora database schema (supabase/schema.sql).", 503);
   }
   if (code === "23514") return new WorkspacePreferencesError("Those favorites aren't valid.", 400);
   console.error("Persora workspace preferences request failed", response.status, code, payload?.message || "");

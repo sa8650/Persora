@@ -161,3 +161,93 @@ test('profileAvatar recognises photos, emojis, and DiceBear avatars and rejects 
     assert.deepEqual(helpers.profileAvatar(unsafe), { kind: 'initials' }, `${String(unsafe)} falls back to initials`);
   }
 });
+
+test('Kanban width math, drop sort ordering, and rejection messages match specification', () => {
+  assert.deepEqual(helpers.PROJECT_STATUSES.map((s) => s.label), ['Planning', 'In Progress', 'Paused', 'In Review', 'Complete']);
+  assert.equal(helpers.calculateKanbanColumnWidth(1139, 17), 272, '(1139 - 3*17) / 4 = 272px');
+  assert.equal(helpers.calculateKanbanColumnWidth(1120, 16), 268, '(1120 - 3*16) / 4 = 268px');
+  assert.equal(helpers.calculateKanbanColumnWidth(640, 17, 232), 232, 'narrow viewports retain readable minimum column width');
+
+  const peers = [{ id: 'a', sort_order: 0 }, { id: 'b', sort_order: 100 }, { id: 'c', sort_order: 200 }];
+  assert.equal(helpers.computeDropSortOrder(peers, 0, 'x'), -100, 'inserting before sort_order 0 yields a lower signed integer');
+  assert.equal(helpers.computeDropSortOrder(peers, 1, 'x'), 50, 'inserting between two cards picks midpoint');
+  assert.equal(helpers.computeDropSortOrder(peers, 3, 'x'), 300, 'inserting at end appends past max sort_order');
+
+  const ownerAccess = { owner: true, role: 'owner', canCreateFields: true };
+  const memberAccess = { owner: false, role: 'editor', canCreateFields: false };
+  const field = { assignee_id: 'field-lead' };
+  assert.match(helpers.moveTaskRejectionMessage(ownerAccess, field, { status: 'todo', assignee_id: 'u2' }, 'owner-1', 'complete'), /In Review/);
+  assert.equal(helpers.moveTaskRejectionMessage(ownerAccess, field, { status: 'in-review', assignee_id: 'u2' }, 'owner-1', 'complete'), null);
+  assert.match(helpers.moveTaskRejectionMessage(memberAccess, field, { status: 'in-review', assignee_id: 'u2' }, 'u2', 'complete'), /owner or field assignee/);
+  assert.match(helpers.moveTaskRejectionMessage(memberAccess, field, { status: 'complete', assignee_id: 'u2' }, 'u2', 'in-review'), /reopen/);
+  assert.match(helpers.moveTaskRejectionMessage(memberAccess, field, { status: 'todo', assignee_id: 'u2' }, 'viewer-9', 'in-progress'), /assigned member/);
+});
+
+test('Cult UI motion presets stay smooth/unhurried and shared attachment helpers validate consistently', () => {
+  for (const spring of [
+    helpers.CULT_KANBAN_LAYOUT_SPRING,
+    helpers.CULT_KANBAN_ENTER_SPRING,
+    helpers.CULT_KANBAN_INDICATOR_SPRING,
+    helpers.CULT_MODAL_TRANSITION,
+  ]) {
+    assert.equal(spring.type, 'spring');
+    assert.ok(spring.stiffness <= 260, `stiffness ${spring.stiffness} stays unhurried`);
+    assert.ok(spring.damping >= 24, `damping ${spring.damping} prevents snappy overshoot`);
+  }
+  assert.equal(helpers.CULT_POPOVER_TRANSITION.type, 'spring');
+  assert.ok(helpers.CULT_POPOVER_TRANSITION.duration >= 0.25);
+
+  assert.equal(helpers.formatProjectFileSize(-1), '—');
+  assert.equal(helpers.formatProjectFileSize(512), '512 B');
+  assert.equal(helpers.formatProjectFileSize(2048), '2.0 KB');
+  assert.equal(helpers.formatProjectFileSize(3 * 1024 * 1024), '3.0 MB');
+  assert.ok(helpers.PROJECT_ATTACHMENT_ACCEPT.includes('.pdf') && helpers.PROJECT_ATTACHMENT_ACCEPT.includes('.docx'));
+
+  assert.equal(helpers.validateProjectAttachmentFile({ name: 'spec.pdf', size: 1024, type: 'application/pdf' }, 10), '');
+  assert.match(helpers.validateProjectAttachmentFile({ name: 'bad.exe', size: 10, type: 'application/octet-stream' }, 10), /PDF, image/);
+  assert.match(helpers.validateProjectAttachmentFile({ name: 'empty.pdf', size: 0, type: 'application/pdf' }, 10), /empty/);
+  assert.match(helpers.validateProjectAttachmentFile({ name: 'huge.pdf', size: 3 * 1024 * 1024, type: 'application/pdf' }, 2), /2 MB/);
+  assert.match(helpers.validateProjectAttachmentFile({ name: 'spoof.pdf', size: 64, type: 'image/png' }, 10), /do not match/);
+});
+
+test('priority metadata, tag parsing, priority filtering, and task/field pause movement locks work consistently', () => {
+  assert.deepEqual(helpers.PROJECT_PRIORITIES.map((p) => p.value), ['high', 'medium', 'normal', 'low']);
+  assert.equal(helpers.priorityMeta('high').label, 'High');
+  assert.equal(helpers.priorityMeta(undefined).value, 'normal');
+
+  assert.deepEqual(helpers.parseProjectTags('#Design, q4 , design, Launch Plan'), ['Design', 'q4', 'Launch Plan']);
+
+  const activeField = { id: 'fld-1', status: 'in-progress', assignee_id: 'owner-1' };
+  const pausedField = { id: 'fld-1', status: 'blocked', assignee_id: 'owner-1' };
+  assert.equal(helpers.isFieldPaused(activeField), false);
+  assert.equal(helpers.isFieldPaused(pausedField), true);
+
+  const ownerAccess = { owner: true, role: 'owner', canCreateFields: true };
+  const activeTask = { id: 't-1', status: 'todo', assignee_id: 'owner-1', paused: false };
+  const pausedTask = { id: 't-2', status: 'todo', assignee_id: 'owner-1', paused: true };
+
+  // Paused task locks cross-column moves even for project owner, while allowing intra-column reorder.
+  assert.equal(helpers.isTaskMoveLockedByPause(activeField, pausedTask), 'task');
+  assert.equal(helpers.canMoveTask(ownerAccess, activeField, pausedTask, 'owner-1', 'in-progress'), false);
+  assert.equal(helpers.canMoveTask(ownerAccess, activeField, pausedTask, 'owner-1', 'todo'), true);
+  assert.match(helpers.moveTaskRejectionMessage(ownerAccess, activeField, pausedTask, 'owner-1', 'in-progress'), /paused task/i);
+
+  // Paused field ('blocked') locks cross-column moves for linked tasks until field is resumed.
+  assert.equal(helpers.isTaskMoveLockedByPause(pausedField, activeTask), 'field');
+  assert.equal(helpers.canMoveTask(ownerAccess, pausedField, activeTask, 'owner-1', 'in-progress'), false);
+  assert.equal(helpers.canMoveTask(ownerAccess, pausedField, activeTask, 'owner-1', 'todo'), true);
+  assert.match(helpers.moveTaskRejectionMessage(ownerAccess, pausedField, activeTask, 'owner-1', 'in-progress'), /field is paused/i);
+
+  // Priority filter narrows Task List results cleanly.
+  const tasks = [
+    { id: '1', field_id: 'fld-1', name: 'Critical fix', description: '', status: 'todo', priority: 'high', assignee_id: 'owner-1', paused: false, sort_order: 10, created_at: '2026-10-26T00:00:00Z' },
+    { id: '2', field_id: 'fld-1', name: 'Routine polish', description: '', status: 'todo', priority: 'low', assignee_id: 'owner-1', paused: false, sort_order: 20, created_at: '2026-10-26T00:00:00Z' },
+  ];
+  const highOnly = helpers.filterProjectTasks(tasks, [{ id: 'fld-1', title: 'Core' }], {
+    query: '', fieldId: 'all', assigneeId: 'all', status: 'all', priority: 'high', paused: 'all',
+  }, 'all', 'owner-1');
+  assert.deepEqual(highOnly.map((t) => t.id), ['1']);
+});
+
+
+

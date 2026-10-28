@@ -9,6 +9,8 @@ import { CSV_DELIMITERS, buildSheetImport, buildSmartImport } from "../../../clo
 import type { CreateTableBody } from "../../lib/table/table-api";
 import { ImportFileError, readImportFile, reparseCsv, type ParsedImport } from "../../lib/table/table-files";
 import { TableDialog, plural } from "./table-ui";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Spinner } from "@/components/ui/spinner";
 
 type Mode = "smart" | "spreadsheet";
 
@@ -85,7 +87,7 @@ export default function ImportDialog({ busy, onClose, onImport }: {
   return <TableDialog id="tb-import-title" title="Import a file" icon={<FileUp size={18}/>} wide busy={busy} onClose={onClose}
     footer={<>
       <button type="button" className="quiet-button" onClick={onClose} disabled={busy}>Cancel</button>
-      <button type="button" className="editor-submit" onClick={() => void submit()} disabled={busy || !plan?.ok || Boolean(nameProblem)}>{busy ? <><span className="spinner"/> Importing…</> : "Import"}</button>
+      <button type="button" className="editor-submit" onClick={() => void submit()} disabled={busy || !plan?.ok || Boolean(nameProblem)}>{busy ? <><Spinner className="size-3.5"/> Importing…</> : "Import"}</button>
     </>}>
     <div className="tb-form">
       <div className="tb-file-pick">
@@ -112,8 +114,8 @@ export default function ImportDialog({ busy, onClose, onImport }: {
           </label>}
         </div>
         <div className="tb-check-row">
-          <label><input type="checkbox" checked={headerRow} onChange={(event) => setHeaderRow(event.target.checked)}/> First row is a header</label>
-          {mode === "spreadsheet" && parsed.format === "csv" && <label><input type="checkbox" checked={formulas} onChange={(event) => setFormulas(event.target.checked)}/> Treat cells starting with “=” as formulas</label>}
+          <label><Checkbox checked={headerRow} onCheckedChange={(checked) => setHeaderRow(checked === true)}/> First row is a header</label>
+          {mode === "spreadsheet" && parsed.format === "csv" && <label><Checkbox checked={formulas} onCheckedChange={(checked) => setFormulas(checked === true)}/> Treat cells starting with “=” as formulas</label>}
         </div>
 
         {previewCols > 0 ? <div className="tb-preview-wrap">

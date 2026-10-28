@@ -7,6 +7,7 @@ import { groupForBoard, isEmptyValue, type AttachmentRef, type Field, type Field
 import { AttachmentThumb, isImage } from "./attachments";
 import { ChoiceChip, ValueView, editTextOf } from "./smart-cells";
 import { Menu, plural } from "./table-ui";
+import { Badge } from "@/components/reui/badge";
 
 const CARD_FIELDS = 4;
 
@@ -48,7 +49,7 @@ export function BoardView({ view, fields, records, primaryField, readOnly, onOpe
       <div className="tb-board-cards">
         {group.records.map((record) => <article key={record.id} className={`tb-card ${record.example ? "is-example" : ""}`} draggable={!readOnly}
           onDragStart={(event) => { event.dataTransfer.setData("text/x-persora-record", record.id); event.dataTransfer.effectAllowed = "move"; }}>
-          <button type="button" className="tb-card-open" onClick={() => onOpenRecord(record.id)}><b>{cardTitle(record, primary)}</b>{record.example && <span className="tb-example-badge">Example</span>}</button>
+          <button type="button" className="tb-card-open" onClick={() => onOpenRecord(record.id)}><b>{cardTitle(record, primary)}</b>{record.example && <Badge variant="warning-light" size="xs" className="tb-example-badge">Example</Badge>}</button>
           <CardFields record={record} fields={fields} skip={skip}/>
           {!readOnly && <Menu label={`Move “${cardTitle(record, primary)}” to another column`} icon={<MoveRight size={13}/>} buttonClassName="tb-card-move" align="end"
             items={[...(field.choices || []).map((choice) => ({ id: choice.id, label: choice.label, checked: record.values[field.id] === choice.id, onSelect: () => onSetValue(record.id, field.id, choice.id) })),
@@ -144,7 +145,7 @@ export function GalleryView({ view, fields, records, primaryField, tableId, onOp
         <button type="button" className="tb-gallery-open" onClick={() => onOpenRecord(record.id)}>
           {cover && <span className="tb-gallery-cover">{image ? <AttachmentThumb tableId={tableId} file={image} className="tb-gallery-img"/> : <span className="tb-muted">{files.length ? plural(files.length, "file") : "No image"}</span>}</span>}
           <b>{cardTitle(record, primary)}</b>
-          {record.example && <span className="tb-example-badge">Example</span>}
+          {record.example && <Badge variant="warning-light" size="xs" className="tb-example-badge">Example</Badge>}
         </button>
         <CardFields record={record} fields={fields} skip={skip}/>
       </li>;

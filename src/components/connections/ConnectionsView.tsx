@@ -4,6 +4,8 @@ import type { AppUser } from "../../types";
 import { connectionsAvailable, disconnectEms, loadConnections, type ConnectionProvider } from "../../lib/connections-api";
 import { ConfirmDisconnectDialog, ConnectionStatusPill, EmsConnectDialog, ProviderLogo } from "./ConnectionParts";
 import EmsConnectionView from "./EmsConnectionView";
+import { Badge } from "@/components/reui/badge";
+import { PersoraEmptyState } from "@/design-system";
 import "./connections.css";
 
 type Notify = (message: string, kind?: "success" | "error") => void;
@@ -177,7 +179,7 @@ export default function ConnectionsView({ user, notify, canUpload, onUpgrade, on
 
     <div className="cn-tabs" role="tablist" aria-label="Connections" ref={tabsRef} onKeyDown={onTabKey}>
       {TABS.map((t) => <button key={t.id} role="tab" id={`cn-tab-${t.id}`} aria-selected={tab === t.id} aria-controls={`cn-panel-${t.id}`} tabIndex={tab === t.id ? 0 : -1} className={`cn-tab ${tab === t.id ? "is-active" : ""}`} onClick={() => setTab(t.id)}>
-        {t.label}{t.id === "connected" && <span className="cn-count" aria-label={`${connected.length} connected`}>{connected.length}</span>}
+        {t.label}{t.id === "connected" && <Badge variant={tab === t.id ? "invert" : "secondary"} size="xs" radius="full" className="cn-count" aria-label={`${connected.length} connected`}>{connected.length}</Badge>}
       </button>)}
     </div>
 
@@ -195,17 +197,17 @@ export default function ConnectionsView({ user, notify, canUpload, onUpgrade, on
         </div>
         {!providers ? <ul className="cn-rows">{[0, 1, 2, 3].map((i) => <li className="cn-row cn-skeleton" key={i}><i/><i/></li>)}</ul>
           : filtered.length ? listFor(filtered)
-            : <div className="cn-empty"><Search size={20}/><b>No connections match {query.trim() ? `“${query.trim()}”` : "these filters"}.</b><button className="cn-link-button" onClick={clearFilters}>Clear filters</button></div>}
+            : <PersoraEmptyState className="cn-empty" moduleId="connections" tone="cyan" compact title={`No connections match ${query.trim() ? `“${query.trim()}”` : "these filters"}.`} action={<button className="cn-link-button" onClick={clearFilters}>Clear filters</button>}/>}
         {providers && filtering && filtered.length > 0 && <p className="cn-result-count">{filtered.length} of {all.length} services · <button className="cn-link-button" onClick={clearFilters}>Clear filters</button></p>}
       </>}
 
       {tab === "connected" && (!providers ? <ul className="cn-rows">{[0, 1].map((i) => <li className="cn-row cn-skeleton" key={i}><i/><i/></li>)}</ul>
         : connected.length ? listFor(connected)
-          : <div className="cn-empty"><b>No services connected yet.</b><span>Connect EMS to browse your shops' Vaultium files from Persora.</span><button className="cn-button cn-button-small" onClick={() => setTab("browse")}>Browse connections</button></div>)}
+          : <PersoraEmptyState className="cn-empty" moduleId="connections" tone="cyan" title="No services connected yet." description="Connect EMS to browse your shops' Vaultium files from Persora." action={<button className="cn-button cn-button-small" onClick={() => setTab("browse")}>Browse connections</button>}/>)}
 
       {tab === "manage" && (!providers ? <ul className="cn-rows">{[0].map((i) => <li className="cn-row cn-skeleton" key={i}><i/><i/></li>)}</ul>
         : connected.length ? <ManageList providers={connected} {...handlers} onDisconnect={setDisconnectFor}/>
-          : <div className="cn-empty"><b>Nothing to manage yet.</b><span>Connected accounts, their status and disconnect options appear here.</span><button className="cn-button cn-button-small" onClick={() => setTab("browse")}>Browse connections</button></div>)}
+          : <PersoraEmptyState className="cn-empty" moduleId="connections" tone="cyan" title="Nothing to manage yet." description="Connected accounts, their status and disconnect options appear here." action={<button className="cn-button cn-button-small" onClick={() => setTab("browse")}>Browse connections</button>}/>)}
     </section>
 
     <p className="cn-footnote"><ShieldCheck size={13}/> Connections run between Persora's servers and the service. Access tokens are encrypted and never reach your browser.</p>

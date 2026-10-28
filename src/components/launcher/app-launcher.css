@@ -1,26 +1,26 @@
 /* Persora app launcher — top-bar button and floating module drawer. */
 
 /* Button: same footprint and treatment as the notifications button beside it. */
-.app-launcher-button { display: inline-grid; place-items: center; flex: 0 0 auto; width: 39px; height: 39px; border: 1px solid #e8eaed; border-radius: 50%; padding: 0; color: #5f6368; background: #fff; cursor: pointer; transition: color .15s ease, background .15s ease, border-color .15s ease, box-shadow .15s ease; }
-.app-launcher-button:hover { color: #174ea6; border-color: var(--p-line); background: #f8fafd; }
-.app-launcher-button:active { background: #eef3fd; }
-.app-launcher-button.is-open { color: #174ea6; border-color: #d2e3fc; background: #e8f0fe; }
+.app-launcher-button { display: inline-grid; place-items: center; flex: 0 0 auto; width: 38px; height: 38px; border: 1px solid var(--ds-border); border-radius: 50%; padding: 0; color: var(--ds-text-secondary); background: var(--ds-card-bg); cursor: pointer; transition: color .15s ease, background .15s ease, border-color .15s ease, box-shadow .15s ease; }
+.app-launcher-button:hover { color: var(--ds-sidebar-active-text); border-color: var(--ds-primary-border); background: var(--ds-primary-soft); }
+.app-launcher-button:active { background: var(--ds-primary-soft); }
+.app-launcher-button.is-open { color: var(--ds-sidebar-active-text); border-color: var(--ds-primary-border); background: var(--ds-primary-soft); }
 .app-launcher-button:focus-visible { outline: 2px solid var(--p-blue); outline-offset: 2px; }
 .app-launcher-button svg { transition: transform .2s var(--p-ease); }
 .app-launcher-button.is-open svg { transform: scale(.92); }
 
 /* Drawer: portaled to <body> so it overlays the page without shifting layout. */
 .app-launcher-panel {
-  --li-gap: #fff;
-  --launcher-surface: #fff;
-  --launcher-tint: #f5f7fb;
-  --launcher-hover: #f0f3f8;
+  --li-gap: var(--ds-overlay-bg);
+  --launcher-surface: var(--ds-overlay-bg);
+  --launcher-tint: var(--ds-subtle-bg);
+  --launcher-hover: var(--ds-sidebar-hover);
   z-index: 90; position: fixed; top: var(--launcher-top, 72px); right: var(--launcher-right, 16px);
   display: flex; flex-direction: column; box-sizing: border-box;
   width: 360px; max-width: calc(100vw - 16px); max-height: min(640px, calc(100dvh - var(--launcher-top, 72px) - 12px));
-  border: 1px solid rgba(218, 220, 224, .85); border-radius: 26px;
-  color: var(--p-text, #202124); background: var(--launcher-surface);
-  box-shadow: 0 18px 50px rgba(31, 45, 72, .16), 0 2px 8px rgba(31, 45, 72, .06);
+  border: 1px solid var(--ds-border-strong); border-radius: 24px;
+  color: var(--ds-text); background: var(--launcher-surface);
+  box-shadow: var(--ds-shadow-popover);
   transform-origin: top right; animation: app-launcher-in .17s var(--p-ease) both; overflow: hidden;
 }
 .app-launcher-panel.is-closing { animation: app-launcher-out .13s ease-in both; pointer-events: none; }
@@ -28,12 +28,12 @@
 @keyframes app-launcher-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(-4px) scale(.98); } }
 
 .app-launcher-head { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 10px; min-height: 30px; padding: 15px 14px 6px 22px; }
-.app-launcher-head h2 { margin: 0; color: #202124; font-size: 14.5px; font-weight: 600; letter-spacing: -.005em; }
-.app-launcher-edit,.app-launcher-done { display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 30px; border: 0; border-radius: 999px; color: #5f6368; background: transparent; font: inherit; cursor: pointer; transition: color .15s ease, background .15s ease; }
+.app-launcher-head h2 { margin: 0; color: var(--ds-text); font-size: 14.5px; font-weight: 650; letter-spacing: -.005em; }
+.app-launcher-edit,.app-launcher-done { display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 30px; border: 0; border-radius: 999px; color: var(--ds-text-muted); background: transparent; font: inherit; cursor: pointer; transition: color .15s ease, background .15s ease; }
 .app-launcher-edit { width: 30px; padding: 0; }
-.app-launcher-done { padding: 0 12px 0 10px; color: #174ea6; background: #e8f0fe; font-size: 12.5px; font-weight: 600; }
-.app-launcher-edit:hover { color: #174ea6; background: var(--launcher-hover); }
-.app-launcher-done:hover { background: #dce8fd; }
+.app-launcher-done { padding: 0 12px 0 10px; color: var(--ds-sidebar-active-text); background: var(--ds-primary-soft); font-size: 12.5px; font-weight: 600; }
+.app-launcher-edit:hover { color: var(--ds-sidebar-active-text); background: var(--launcher-hover); }
+.app-launcher-done:hover { background: var(--ds-primary-border); }
 .app-launcher-edit:focus-visible,.app-launcher-done:focus-visible,.app-launcher-reset:focus-visible { outline: 2px solid var(--p-blue); outline-offset: 1px; }
 
 /* Normally only "More" scrolls; if the favorites plus its minimum height can't fit (e.g. 12 favorites while editing), the body scrolls as a whole instead of overlapping the footer. */
@@ -41,45 +41,45 @@
 .app-launcher-favorites { flex: 0 0 auto; padding: 2px 10px 10px; }
 .app-launcher-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; margin: 0; padding: 0; list-style: none; }
 .app-launcher-cell { position: relative; min-width: 0; }
-.app-launcher-empty { margin: 6px 12px 4px; color: #70757a; font-size: 12.5px; line-height: 1.5; }
-.app-launcher-hint { margin: 8px 12px 0; color: #70757a; font-size: 11.5px; }
+.app-launcher-empty { margin: 6px 12px 4px; color: var(--ds-text-muted); font-size: 12.5px; line-height: 1.5; }
+.app-launcher-hint { margin: 8px 12px 0; color: var(--ds-text-muted); font-size: 11.5px; }
 
 /* Module tiles */
-.app-launcher-tile { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; min-width: 0; border: 0; border-radius: 16px; padding: 10px 4px 8px; color: #3c4043; background: transparent; font: inherit; text-align: center; cursor: pointer; -webkit-tap-highlight-color: transparent; transition: background .14s ease, transform .14s ease; }
+.app-launcher-tile { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; min-width: 0; border: 0; border-radius: 16px; padding: 10px 4px 8px; color: var(--ds-text-secondary); background: transparent; font: inherit; text-align: center; cursor: pointer; -webkit-tap-highlight-color: transparent; transition: background .14s ease, transform .14s ease; }
 .app-launcher-tile:hover { --li-gap: var(--launcher-hover); background: var(--launcher-hover); }
 .app-launcher-tile:active { transform: scale(.97); }
 .app-launcher-tile:focus-visible { --li-gap: var(--launcher-hover); outline: 2px solid var(--p-blue); outline-offset: -2px; background: var(--launcher-hover); }
-.app-launcher-tile.is-active { --li-gap: #eef3fd; background: #eef3fd; }
-.app-launcher-tile.is-active .app-launcher-label { color: #174ea6; font-weight: 600; }
+.app-launcher-tile.is-active { --li-gap: var(--ds-primary-soft); background: var(--ds-primary-soft); }
+.app-launcher-tile.is-active .app-launcher-label { color: var(--ds-sidebar-active-text); font-weight: 600; }
 .app-launcher-icon { display: grid; place-items: center; width: 44px; height: 44px; transition: transform .18s var(--p-ease); }
 .app-launcher-icon svg { display: block; width: 100%; height: 100%; }
 .app-launcher-tile:hover .app-launcher-icon { transform: translateY(-1px); }
-.app-launcher-label { display: -webkit-box; overflow: hidden; width: 100%; min-height: 2.5em; color: #3c4043; font-size: 12px; font-weight: 500; line-height: 1.25; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.app-launcher-label { display: -webkit-box; overflow: hidden; width: 100%; min-height: 2.5em; color: var(--ds-text-secondary); font-size: 12px; font-weight: 500; line-height: 1.25; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 
 /* Remaining modules: their own scroll area, so the drawer never grows too tall. */
-.app-launcher-more { --li-gap: var(--launcher-tint); display: flex; flex: 1 1 auto; flex-direction: column; min-height: 128px; margin: 0 8px 8px; border-radius: 20px; background: var(--launcher-tint); }
-.app-launcher-more h3 { flex: 0 0 auto; margin: 0; padding: 12px 16px 2px; color: #5f6368; font-size: 11.5px; font-weight: 600; letter-spacing: .01em; }
-.app-launcher-more-grid { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 2px 4px 6px; scrollbar-width: thin; scrollbar-color: #c8ced8 transparent; }
-.app-launcher-more .app-launcher-tile:hover,.app-launcher-more .app-launcher-tile:focus-visible { --li-gap: #e9edf4; background: #e9edf4; }
-.app-launcher-more .app-launcher-tile.is-active { --li-gap: #e5edfc; background: #e5edfc; }
+.app-launcher-more { --li-gap: var(--launcher-tint); display: flex; flex: 1 1 auto; flex-direction: column; min-height: 128px; margin: 0 8px 8px; border-radius: 18px; border: 1px solid var(--ds-border); background: var(--launcher-tint); }
+.app-launcher-more h3 { flex: 0 0 auto; margin: 0; padding: 12px 16px 2px; color: var(--ds-text-muted); font-size: 11.5px; font-weight: 600; letter-spacing: .01em; }
+.app-launcher-more-grid { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 2px 4px 6px; scrollbar-width: thin; scrollbar-color: var(--ds-border-strong) transparent; }
+.app-launcher-more .app-launcher-tile:hover,.app-launcher-more .app-launcher-tile:focus-visible { --li-gap: var(--launcher-hover); background: var(--launcher-hover); }
+.app-launcher-more .app-launcher-tile.is-active { --li-gap: var(--ds-primary-soft); background: var(--ds-primary-soft); }
 
 /* Editing favorites */
 .app-launcher-tile.is-editing { --li-gap: var(--launcher-tint); background: var(--launcher-tint); cursor: grab; touch-action: none; user-select: none; }
 .app-launcher-tile.is-editing:active { cursor: grabbing; transform: none; }
-.app-launcher-tile.is-editing:hover,.app-launcher-tile.is-editing:focus-visible { --li-gap: #e9edf4; background: #e9edf4; }
+.app-launcher-tile.is-editing:hover,.app-launcher-tile.is-editing:focus-visible { --li-gap: var(--launcher-hover); background: var(--launcher-hover); }
 .app-launcher-cell.is-dragging .app-launcher-tile { opacity: .55; transform: scale(.95); }
 .app-launcher-tile.is-addable[aria-disabled="true"] { cursor: not-allowed; opacity: .55; }
-.app-launcher-badge { position: absolute; top: 4px; right: calc(50% - 32px); display: grid; place-items: center; width: 20px; height: 20px; border: 1px solid #dadce0; border-radius: 50%; padding: 0; color: #5f6368; background: #fff; box-shadow: 0 1px 3px rgba(60, 64, 67, .16); cursor: pointer; transition: color .14s ease, background .14s ease, border-color .14s ease; }
-.app-launcher-badge.is-remove:hover { color: #c5221f; border-color: #f4c7c3; background: #fce8e6; }
+.app-launcher-badge { position: absolute; top: 4px; right: calc(50% - 32px); display: grid; place-items: center; width: 20px; height: 20px; border: 1px solid var(--ds-border-strong); border-radius: 50%; padding: 0; color: var(--ds-text-muted); background: var(--ds-card-bg); box-shadow: var(--ds-shadow-xs); cursor: pointer; transition: color .14s ease, background .14s ease, border-color .14s ease; }
+.app-launcher-badge.is-remove:hover { color: var(--ds-rose); border-color: var(--ds-rose-border); background: var(--ds-rose-soft); }
 .app-launcher-badge.is-remove:focus-visible { outline: 2px solid var(--p-blue); outline-offset: 1px; }
-.app-launcher-badge.is-add { color: #174ea6; pointer-events: none; }
-.app-launcher-tile.is-addable:hover .app-launcher-badge.is-add { border-color: #aecbfa; background: #e8f0fe; }
+.app-launcher-badge.is-add { color: var(--ds-primary); pointer-events: none; }
+.app-launcher-tile.is-addable:hover .app-launcher-badge.is-add { border-color: var(--ds-primary-border); background: var(--ds-primary-soft); }
 
-.app-launcher-foot { position: relative; z-index: 1; display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 10px; border-top: 1px solid #eef0f3; padding: 9px 14px 11px 20px; background: var(--launcher-surface); }
-.app-launcher-sync { min-width: 0; color: #70757a; font-size: 11.5px; line-height: 1.35; }
-.app-launcher-sync.is-saved::before { content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 6px 1px 0; border-radius: 50%; background: #1e8e3e; }
-.app-launcher-reset { flex: 0 0 auto; border: 0; border-radius: 999px; padding: 5px 10px; color: #174ea6; background: transparent; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
-.app-launcher-reset:hover { background: #e8f0fe; }
+.app-launcher-foot { position: relative; z-index: 1; display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 10px; border-top: 1px solid var(--ds-border); padding: 9px 14px 11px 20px; background: var(--launcher-surface); }
+.app-launcher-sync { min-width: 0; color: var(--ds-text-muted); font-size: 11.5px; line-height: 1.35; }
+.app-launcher-sync.is-saved::before { content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 6px 1px 0; border-radius: 50%; background: var(--ds-emerald); }
+.app-launcher-reset { flex: 0 0 auto; border: 0; border-radius: 999px; padding: 5px 10px; color: var(--ds-primary); background: transparent; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.app-launcher-reset:hover { background: var(--ds-primary-soft); }
 .app-launcher-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* Tablet */

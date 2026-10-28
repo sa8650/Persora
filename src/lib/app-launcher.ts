@@ -36,6 +36,8 @@ const VIEW_MODULES: Partial<Record<LauncherModuleId, { label: string; hint: stri
   habits: { label: "Habit Tracker", hint: "Daily routines, streaks and reminders" },
   loans: { label: "Loan Tracker", hint: "Loans, installments and repayments" },
   tables: { label: "Persora Table", hint: "Spreadsheets and Smart Tables" },
+  forms: { label: "Persora Forms", hint: "Surveys, quizzes and registrations" },
+  docs: { label: "Persora Docs", hint: "Personal documents and writing" },
   timeline: { label: "Life Timeline", hint: "Milestones and memories in order" },
   "medical-records": { label: "Medical Records", hint: "Health history and reports" },
   contacts: { label: "Contacts", hint: "The people in your life" },

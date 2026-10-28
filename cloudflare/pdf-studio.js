@@ -1,6 +1,6 @@
 // Persora PDF Studio — worker routes for saved PDF documents.
 //
-// Persistence guarantees (see supabase/migrations/202610230008_pdf_studio.sql):
+// Persistence guarantees (see supabase/schema.sql):
 //   * PDFs are created, opened and edited entirely in the browser (PDF.js +
 //     pdf-lib). Nothing reaches R2 or the database while a member works.
 //   * POST /pdf-studio/documents (Save to Persora → save as a new PDF) and
@@ -71,7 +71,7 @@ async function databaseError(response) {
     return new PdfStudioError(message, status >= 400 && status < 600 ? status : 400);
   }
   if (code === "42P01" || code === "PGRST205" || code === "PGRST202") {
-    return new PdfStudioError("PDF Studio needs its database migration (202610230008_pdf_studio.sql). Ask an administrator to apply it.", 503);
+    return new PdfStudioError("PDF Studio needs the Persora database schema (supabase/schema.sql). Ask an administrator to apply it.", 503);
   }
   console.error("Persora PDF Studio database request failed", response.status, code, message);
   return new PdfStudioError("The PDF Studio database could not complete the request. Please try again shortly.", 502);

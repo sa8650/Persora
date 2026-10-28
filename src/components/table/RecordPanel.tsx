@@ -8,8 +8,22 @@ import {
   type AttachmentRef, type Choice, type Field, type FieldValue, type PersonRef, type TableRecord,
 } from "../../../cloudflare/table-rules.js";
 import type { TablePerson } from "../../lib/table/table-api";
+import type { TransferProgress } from "../../types";
 import { AttachmentThumb, downloadAttachment, formatBytes } from "./attachments";
 import { ChoiceChip, choiceOf, editTextOf } from "./smart-cells";
+import { TransferProgressIndicator } from "../ProgressIndicator";
+import {
+  Attachment,
+  AttachmentAction,
+  AttachmentActions,
+  AttachmentContent,
+  AttachmentDescription,
+  AttachmentMedia,
+  AttachmentTitle,
+} from "@/components/ui/attachment";
+import { Badge } from "@/components/reui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Spinner } from "@/components/ui/spinner";
 
 function TextValueEditor({ field, value, disabled, onCommit }: { field: Field; value: FieldValue | undefined; disabled: boolean; onCommit: (value: FieldValue, newChoices?: Choice[]) => void }) {
   const initial = editTextOf(field, value);
@@ -37,7 +51,7 @@ function TextValueEditor({ field, value, disabled, onCommit }: { field: Field; v
   </>;
 }
 
-export default function RecordPanel({ record, fields, primaryField, people, tableId, readOnly, uploading, onChange, onDuplicate, onDelete, onUpload, onClose, mobile }: {
+export default function RecordPanel({ record, fields, primaryField, people, tableId, readOnly, uploading, uploadProgress = null, onChange, onDuplicate, onDelete, onUpload, onClose, mobile }: {
   record: TableRecord;
   fields: Field[];
   primaryField: string;
@@ -45,6 +59,7 @@ export default function RecordPanel({ record, fields, primaryField, people, tabl
   tableId: string;
   readOnly: boolean;
   uploading: string | null;
+  uploadProgress?: TransferProgress | null;
   onChange: (fieldId: string, value: FieldValue, newChoices?: Choice[]) => void;
   onDuplicate: () => void;
   onDelete: () => void;
@@ -61,7 +76,7 @@ export default function RecordPanel({ record, fields, primaryField, people, tabl
     const value = record.values[field.id];
     switch (field.type) {
       case "checkbox":
-        return <label className="tb-switch"><input type="checkbox" aria-label={field.name} checked={value === true} disabled={readOnly} onChange={(event) => onChange(field.id, event.target.checked)}/> {value === true ? "Yes" : "No"}</label>;
+        return <label className="tb-switch"><Checkbox aria-label={field.name} checked={value === true} disabled={readOnly} onCheckedChange={(checked) => onChange(field.id, checked === true)}/> {value === true ? "Yes" : "No"}</label>;
       case "select": case "status": {
         const known = typeof value === "string" && choiceOf(field, value);
         return <>
@@ -75,8 +90,8 @@ export default function RecordPanel({ record, fields, primaryField, people, tabl
         const ids = Array.isArray(value) ? (value as string[]) : [];
         return <div className="tb-multi-pick" role="group" aria-label={field.name}>
           {(field.choices || []).map((choice) => <label key={choice.id} className={ids.includes(choice.id) ? "is-on" : ""}>
-            <input type="checkbox" checked={ids.includes(choice.id)} disabled={readOnly}
-              onChange={(event) => onChange(field.id, event.target.checked ? [...ids, choice.id] : ids.filter((id) => id !== choice.id))}/>
+            <Checkbox checked={ids.includes(choice.id)} disabled={readOnly}
+              onCheckedChange={(checked) => onChange(field.id, checked === true ? [...ids, choice.id] : ids.filter((id) => id !== choice.id))}/>
             <ChoiceChip choice={choice}/>
           </label>)}
           {!(field.choices || []).length && <small className="tb-muted">No options yet — add them in the field settings.</small>}
@@ -94,17 +109,36 @@ export default function RecordPanel({ record, fields, primaryField, people, tabl
         const files = Array.isArray(value) ? (value as AttachmentRef[]) : [];
         const inputId = `tb-upload-${record.id}-${field.id}`;
         return <div className="tb-attach-list">
-          {files.map((file) => <div key={file.id} className="tb-attach-item">
-            <AttachmentThumb tableId={tableId} file={file}/>
-            <span className="tb-attach-name"><b>{file.name}</b><small>{formatBytes(file.size)}</small></span>
-            <button type="button" className="tb-icon-button" aria-label={`Download ${file.name}`} title="Download" onClick={() => void downloadAttachment(tableId, file).catch(() => undefined)}><Download size={14}/></button>
-            <button type="button" className="tb-icon-button" aria-label={`Remove ${file.name}`} title="Remove from this record (undo is available)" disabled={readOnly}
-              onClick={() => onChange(field.id, files.filter((entry) => entry.id !== file.id))}><X size={14}/></button>
-          </div>)}
+          {files.map((file) => (
+            <Attachment key={file.id} size="sm" className="w-full justify-between">
+              <AttachmentMedia>
+                <AttachmentThumb tableId={tableId} file={file}/>
+              </AttachmentMedia>
+              <AttachmentContent>
+                <AttachmentTitle>{file.name}</AttachmentTitle>
+                <AttachmentDescription>{formatBytes(file.size)}</AttachmentDescription>
+              </AttachmentContent>
+              <AttachmentActions>
+                <AttachmentAction type="button" aria-label={`Download ${file.name}`} title="Download" onClick={() => void downloadAttachment(tableId, file).catch(() => undefined)}>
+                  <Download className="size-3.5"/>
+                </AttachmentAction>
+                <AttachmentAction type="button" aria-label={`Remove ${file.name}`} title="Remove from this record (undo is available)" disabled={readOnly} onClick={() => onChange(field.id, files.filter((entry) => entry.id !== file.id))}>
+                  <X className="size-3.5"/>
+                </AttachmentAction>
+              </AttachmentActions>
+            </Attachment>
+          ))}
+          {uploading === field.id && uploadProgress ? (
+            <TransferProgressIndicator
+              progress={uploadProgress}
+              label="Uploading attachment…"
+              detail={uploadProgress.total ? `${formatBytes(uploadProgress.loaded)} of ${formatBytes(uploadProgress.total)}` : undefined}
+            />
+          ) : null}
           <input id={inputId} type="file" className="tb-visually-hidden" multiple disabled={readOnly || Boolean(uploading)}
             onChange={(event) => { if (event.target.files?.length) onUpload(field.id, event.target.files); event.target.value = ""; }}/>
           <label htmlFor={inputId} className={`tb-secondary-button ${readOnly || uploading ? "is-disabled" : ""}`} aria-disabled={readOnly || Boolean(uploading)}>
-            {uploading === field.id ? <><span className="spinner"/> Uploading…</> : <><Upload size={14}/> Add file</>}
+            {uploading === field.id ? <><Spinner className="size-3.5"/> Uploading…</> : <><Upload size={14}/> Add file</>}
           </label>
           {files.length >= TABLE_LIMITS.attachmentsPerCell && <small className="tb-muted">Up to {TABLE_LIMITS.attachmentsPerCell} files per field.</small>}
         </div>;
@@ -118,7 +152,7 @@ export default function RecordPanel({ record, fields, primaryField, people, tabl
     <header className="tb-record-head">
       <button type="button" className="tb-icon-button" onClick={onClose} aria-label={mobile ? "Back to records" : "Close record"}>{mobile ? <ArrowLeft size={17}/> : <X size={17}/>}</button>
       <h3 ref={heading} tabIndex={-1}>{title || "Untitled record"}</h3>
-      {record.example && <span className="tb-example-badge">Example</span>}
+      {record.example && <Badge variant="warning-light" size="xs" className="tb-example-badge">Example</Badge>}
       <button type="button" className="tb-icon-button" onClick={onDuplicate} disabled={readOnly} aria-label="Duplicate record" title="Duplicate record"><Copy size={15}/></button>
       <button type="button" className="tb-icon-button is-danger" onClick={onDelete} disabled={readOnly} aria-label="Delete record" title="Delete record"><Trash2 size={15}/></button>
     </header>

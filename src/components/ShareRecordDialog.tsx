@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { ArrowRight, Check, CircleAlert, Clock, ShieldCheck, Trash2, UserCheck, UsersRound } from "lucide-react";
 import ItemModalShell from "./ItemModalShell";
 import type { RecordShareEntry, SharedVaultEntry, SharePermission } from "../types";
+import { Spinner } from "./ui/spinner";
+import { Badge } from "./reui/badge";
 
 const RECENT_RECIPIENTS_STORAGE_KEY = "persora_recent_share_recipients";
 
@@ -230,7 +232,7 @@ export default function ShareRecordDialog({
               Close
             </button>
             <button type="submit" className="editor-submit record-share-submit" disabled={busy || !recipient.trim()}>
-              {busy ? "Sharing…" : <>Share record <ArrowRight size={14} /></>}
+              {busy ? <><Spinner className="size-3.5"/> Sharing…</> : <>Share record <ArrowRight size={14} /></>}
             </button>
           </div>
         </form>
@@ -239,7 +241,7 @@ export default function ShareRecordDialog({
           <div className="record-share-access-area">
             <div className="record-share-access-head">
               <b>People with access</b>
-              <span>{existingShares.length}</span>
+              <Badge variant="secondary" size="xs" radius="full">{existingShares.length}</Badge>
             </div>
             <div className="record-share-access-list">
               {existingShares.map((share) => (
@@ -277,7 +279,7 @@ export default function ShareRecordDialog({
                       aria-label={`Revoke access for ${share.recipient.fullName}`}
                       title="Stop sharing"
                     >
-                      <Trash2 size={15} />
+                      {busyShareId === share.shareId ? <Spinner className="size-3.5" /> : <Trash2 size={15} />}
                     </button>
                   )}
                 </div>

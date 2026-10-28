@@ -7,6 +7,7 @@ import ItemModalShell from "../ItemModalShell";
 import { LOAN_LIMITS, LoanValidationError, fromCents, normalizePaymentInput, toCents } from "../../../cloudflare/loan-rules.js";
 import type { Loan, LoanInstallment, LoanPayment, PaymentInput } from "../../lib/loan-api";
 import { PAYMENT_METHODS, formatDay, formatMoney } from "./loan-visuals";
+import { Spinner } from "@/components/ui/spinner";
 
 const newId = () => (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
   ? crypto.randomUUID()
@@ -143,7 +144,7 @@ export default function PaymentDialog({ loan, today, target, busy, error, onReco
           <div className="editor-actions">
             <button type="button" className="quiet-button" onClick={onClose} disabled={busy}>Cancel</button>
             <button type="submit" className={target.mode === "reverse" ? "ln-danger-button" : "editor-submit"} disabled={busy}>
-              {busy ? <><span className="spinner"/> Saving…</> : target.mode === "pay" ? "Record Payment" : target.mode === "correct" ? "Save Correction" : "Reverse Payment"}
+              {busy ? <><Spinner className="size-3.5"/> Saving…</> : target.mode === "pay" ? "Record Payment" : target.mode === "correct" ? "Save Correction" : "Reverse Payment"}
             </button>
           </div>
         </div>
@@ -185,7 +186,7 @@ export function SettleDialog({ loan, busy, error, onConfirm, onClose }: {
           <div/>
           <div className="editor-actions">
             <button type="button" className="quiet-button" onClick={onClose} disabled={busy}>Cancel</button>
-            <button type="submit" className="editor-submit" disabled={busy}>{busy ? <><span className="spinner"/> Closing…</> : "Close Loan"}</button>
+            <button type="submit" className="editor-submit" disabled={busy}>{busy ? <><Spinner className="size-3.5"/> Closing…</> : "Close Loan"}</button>
           </div>
         </div>
       </form>

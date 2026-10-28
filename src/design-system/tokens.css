@@ -1,0 +1,246 @@
+/* ==========================================================================
+   Persora UI/UX Design System — Canonical Tokens (src/design-system/tokens.css)
+   Single source of truth for Light & Dark surface hierarchy, borders, dividers,
+   semantic tones, shadows, radii, and ReUI/shadcn + Persora CSS variable bridges.
+   ========================================================================== */
+
+:root {
+  color-scheme: light;
+
+  /* 1. Multi-layer Surface Hierarchy (distinct Sidebar, Canvas, Card, Overlay) */
+  --ds-sidebar-bg: #f7f9fc;
+  --ds-sidebar-hover: #edf2f8;
+  --ds-sidebar-active: #e4eefc;
+  --ds-sidebar-active-text: #1557b0;
+
+  --ds-canvas-bg: #eef2f7;
+  --ds-topbar-bg: rgba(255, 255, 255, 0.94);
+  --ds-footer-bg: #f7f9fc;
+
+  --ds-card-bg: #ffffff;
+  --ds-card-hover-bg: #fbfdff;
+  --ds-subtle-bg: #f6f8fc;
+  --ds-shelf-bg: #fafcff;
+  --ds-input-bg: #ffffff;
+
+  --ds-overlay-bg: #ffffff;
+  --ds-overlay-header-bg: #f8fafd;
+  --ds-overlay-footer-bg: #f8fafd;
+  --ds-scrim: rgba(15, 23, 42, 0.44);
+
+  /* 2. Structural Dividers & Hairline Borders */
+  --ds-divider: #cfd9e6;
+  --ds-border: #dce4ef;
+  --ds-border-strong: #c6d2e2;
+  --ds-border-hover: #9ec0f6;
+
+  /* 3. Typography & Ink Hierarchy */
+  --ds-text: #0f172a;
+  --ds-text-secondary: #334155;
+  --ds-text-muted: #5b687a;
+  --ds-text-soft: #8290a2;
+
+  /* 4. Brand & Semantic Accents */
+  --ds-primary: #1a73e8;
+  --ds-primary-hover: #155ec0;
+  --ds-primary-fg: #ffffff;
+  --ds-primary-soft: #e8f0fe;
+  --ds-primary-border: #c5dafc;
+  --ds-focus-ring: rgba(26, 115, 232, 0.16);
+
+  --ds-emerald: #137333;
+  --ds-emerald-soft: #e6f4ea;
+  --ds-emerald-border: #b7e1cd;
+
+  --ds-amber: #b06000;
+  --ds-amber-soft: #fef7e0;
+  --ds-amber-border: #fad293;
+
+  --ds-rose: #c5221f;
+  --ds-rose-soft: #fce8e6;
+  --ds-rose-border: #f6aea9;
+
+  --ds-violet: #7627bb;
+  --ds-violet-soft: #f3e8fd;
+  --ds-violet-border: #d7aefb;
+
+  --ds-cyan: #0b7285;
+  --ds-cyan-soft: #e3fafc;
+  --ds-cyan-border: #99e9f2;
+
+  /* 5. Elevation & Geometry */
+  --ds-shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --ds-shadow-card: 0 1px 3px rgba(15, 23, 42, 0.05), 0 4px 12px rgba(15, 23, 42, 0.025);
+  --ds-shadow-card-hover: 0 8px 22px rgba(15, 23, 42, 0.08);
+  --ds-shadow-popover: 0 12px 34px rgba(15, 23, 42, 0.14), 0 2px 6px rgba(15, 23, 42, 0.06);
+  --ds-shadow-drawer: -16px 0 48px rgba(15, 23, 42, 0.18);
+  --ds-shadow-modal: 0 24px 64px rgba(15, 23, 42, 0.22);
+  --ds-shadow-dialog: var(--ds-shadow-modal);
+
+  /* Semantic convenience aliases (automatically track Light & Dark modes) */
+  --ds-accent: var(--ds-primary);
+  --ds-accent-hover: var(--ds-primary-hover);
+  --ds-accent-ink: var(--ds-sidebar-active-text);
+  --ds-accent-soft: var(--ds-primary-soft);
+  --ds-accent-border: var(--ds-primary-border);
+  --ds-card-border: var(--ds-border);
+  --ds-card-border-strong: var(--ds-border-strong);
+  --ds-input-border: var(--ds-border-strong);
+  --ds-input-border-focus: var(--ds-primary);
+  --ds-surface-muted: var(--ds-subtle-bg);
+  --ds-text-subtle: var(--ds-text-soft);
+  --ds-divider-subtle: var(--ds-border);
+  --ds-drawer-header-bg: var(--ds-overlay-header-bg);
+  --ds-success: var(--ds-emerald);
+  --ds-success-soft: var(--ds-emerald-soft);
+  --ds-success-border: var(--ds-emerald-border);
+  --ds-danger: var(--ds-rose);
+  --ds-danger-soft: var(--ds-rose-soft);
+  --ds-danger-border: var(--ds-rose-border);
+
+  --ds-radius-xs: 6px;
+  --ds-radius-sm: 8px;
+  --ds-radius-md: 12px;
+  --ds-radius-lg: 16px;
+  --ds-radius-xl: 20px;
+
+  /* 6. Bridge to shadcn / ReUI tokens */
+  --radius: 0.75rem;
+  --background: var(--ds-canvas-bg);
+  --foreground: var(--ds-text);
+  --card: var(--ds-card-bg);
+  --card-foreground: var(--ds-text);
+  --popover: var(--ds-overlay-bg);
+  --popover-foreground: var(--ds-text);
+  --primary: var(--ds-primary);
+  --primary-foreground: var(--ds-primary-fg);
+  --secondary: var(--ds-subtle-bg);
+  --secondary-foreground: var(--ds-text-secondary);
+  --muted: var(--ds-subtle-bg);
+  --muted-foreground: var(--ds-text-muted);
+  --accent: var(--ds-primary-soft);
+  --accent-foreground: var(--ds-sidebar-active-text);
+  --destructive: #dc2626;
+  --destructive-foreground: #991b1b;
+  --border: var(--ds-border);
+  --input: var(--ds-border-strong);
+  --ring: var(--ds-primary);
+  --sidebar: var(--ds-sidebar-bg);
+  --sidebar-foreground: var(--ds-text-secondary);
+  --sidebar-border: var(--ds-divider);
+
+  /* 7. Bridge to Persora workspace & module variables */
+  --p-bg: var(--ds-canvas-bg);
+  --p-surface: var(--ds-card-bg);
+  --p-text: var(--ds-text);
+  --p-muted: var(--ds-text-muted);
+  --p-soft: var(--ds-text-soft);
+  --p-line: var(--ds-border);
+  --p-blue: var(--ds-primary);
+  --p-blue-pale: var(--ds-primary-soft);
+  --p-blue-line: var(--ds-primary-border);
+  --p-green: var(--ds-emerald);
+  --p-green-pale: var(--ds-emerald-soft);
+  --p-green-line: var(--ds-emerald-border);
+  --p-amber: var(--ds-amber);
+  --p-amber-pale: var(--ds-amber-soft);
+  --p-amber-line: var(--ds-amber-border);
+  --p-red: var(--ds-rose);
+  --p-red-pale: var(--ds-rose-soft);
+  --p-red-line: var(--ds-rose-border);
+  --p-violet: var(--ds-violet);
+  --p-violet-pale: var(--ds-violet-soft);
+  --p-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.dark,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --ds-sidebar-bg: #0b0f17;
+  --ds-sidebar-hover: #151d2b;
+  --ds-sidebar-active: rgba(59, 130, 246, 0.18);
+  --ds-sidebar-active-text: #93c5fd;
+
+  --ds-canvas-bg: #101622;
+  --ds-topbar-bg: rgba(16, 22, 34, 0.94);
+  --ds-footer-bg: #0d131d;
+
+  --ds-card-bg: #161f2e;
+  --ds-card-hover-bg: #1b2638;
+  --ds-subtle-bg: #111826;
+  --ds-shelf-bg: #131b29;
+  --ds-input-bg: #111826;
+
+  --ds-overlay-bg: #172032;
+  --ds-overlay-header-bg: #121a28;
+  --ds-overlay-footer-bg: #121a28;
+  --ds-scrim: rgba(2, 6, 14, 0.68);
+
+  --ds-divider: rgba(148, 163, 184, 0.22);
+  --ds-border: rgba(148, 163, 184, 0.16);
+  --ds-border-strong: rgba(148, 163, 184, 0.26);
+  --ds-border-hover: rgba(96, 165, 250, 0.48);
+
+  --ds-text: #f1f5f9;
+  --ds-text-secondary: #cbd5e1;
+  --ds-text-muted: #94a3b8;
+  --ds-text-soft: #64748b;
+
+  --ds-primary: #60a5fa;
+  --ds-primary-hover: #3b82f6;
+  --ds-primary-fg: #081120;
+  --ds-primary-soft: rgba(59, 130, 246, 0.16);
+  --ds-primary-border: rgba(96, 165, 250, 0.32);
+  --ds-focus-ring: rgba(96, 165, 250, 0.22);
+
+  --ds-emerald: #34d399;
+  --ds-emerald-soft: rgba(16, 185, 129, 0.16);
+  --ds-emerald-border: rgba(52, 211, 153, 0.3);
+
+  --ds-amber: #fbbf24;
+  --ds-amber-soft: rgba(245, 158, 11, 0.16);
+  --ds-amber-border: rgba(251, 191, 36, 0.3);
+
+  --ds-rose: #f87171;
+  --ds-rose-soft: rgba(239, 68, 68, 0.16);
+  --ds-rose-border: rgba(248, 113, 113, 0.3);
+
+  --ds-violet: #c084fc;
+  --ds-violet-soft: rgba(168, 85, 247, 0.16);
+  --ds-violet-border: rgba(192, 132, 252, 0.3);
+
+  --ds-cyan: #22d3ee;
+  --ds-cyan-soft: rgba(6, 182, 212, 0.16);
+  --ds-cyan-border: rgba(34, 211, 238, 0.3);
+
+  --ds-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.32);
+  --ds-shadow-card: 0 1px 3px rgba(0, 0, 0, 0.34), 0 6px 16px rgba(0, 0, 0, 0.22);
+  --ds-shadow-card-hover: 0 10px 26px rgba(0, 0, 0, 0.42);
+  --ds-shadow-popover: 0 16px 40px rgba(0, 0, 0, 0.55);
+  --ds-shadow-drawer: -18px 0 54px rgba(0, 0, 0, 0.6);
+  --ds-shadow-modal: 0 28px 72px rgba(0, 0, 0, 0.65);
+
+  --background: var(--ds-canvas-bg);
+  --foreground: var(--ds-text);
+  --card: var(--ds-card-bg);
+  --card-foreground: var(--ds-text);
+  --popover: var(--ds-overlay-bg);
+  --popover-foreground: var(--ds-text);
+  --primary: var(--ds-primary);
+  --primary-foreground: var(--ds-primary-fg);
+  --secondary: var(--ds-subtle-bg);
+  --secondary-foreground: var(--ds-text-secondary);
+  --muted: var(--ds-subtle-bg);
+  --muted-foreground: var(--ds-text-muted);
+  --accent: var(--ds-primary-soft);
+  --accent-foreground: var(--ds-sidebar-active-text);
+  --destructive: #ef4444;
+  --destructive-foreground: #fecaca;
+  --border: var(--ds-border);
+  --input: var(--ds-border-strong);
+  --ring: var(--ds-primary);
+  --sidebar: var(--ds-sidebar-bg);
+  --sidebar-foreground: var(--ds-text-secondary);
+  --sidebar-border: var(--ds-divider);
+}

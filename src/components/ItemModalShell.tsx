@@ -1,13 +1,17 @@
 import type { ReactNode } from "react";
 import { X } from "lucide-react";
 
+import ModalPortal from "./ModalPortal";
+import { cn } from "@/lib/utils";
+import { IconTile } from "@/components/reui/icon-tile";
+
 /**
  * Persora's single, centralized item-modal shell.
  *
  * Every item view / add / edit dialog across all spaces (vault records,
  * tasks & schedules, personal finance records) and the unified share modal
  * are rendered through this one standalone component, so every space shares
- * the exact same modal chrome: soft backdrop, rounded surface, icon tile +
+ * the exact same modal chrome: soft backdrop, rounded surface, ReUI IconTile +
  * eyebrow + title header, scrollable body and a footer strip.
  */
 export interface ItemModalShellProps {
@@ -17,14 +21,14 @@ export interface ItemModalShellProps {
   className?: string;
   /** Extra backdrop classes, e.g. "todo-editor-backdrop" or "record-share-backdrop". */
   backdropClassName?: string;
-  /** Icon element rendered inside the header icon tile. */
+  /** Icon element rendered inside the header ReUI IconTile. */
   icon?: ReactNode;
-  /** Extra classes for the icon tile (section colors, kind colors, …). */
+  /** Extra tone classes for the ReUI IconTile (section colors, kind colors, …). */
   iconClassName?: string;
   /** Small uppercase overline above the title. */
   eyebrow?: ReactNode;
   title: ReactNode;
-  /** Optional node rendered under the title (e.g. the shared/private pill). */
+  /** Optional node rendered under the title (e.g. the ReUI Badge pill). */
   headerMeta?: ReactNode;
   /** Optional extra header actions rendered before the close button. */
   headerExtra?: ReactNode;
@@ -53,31 +57,41 @@ export default function ItemModalShell({
   children,
 }: ItemModalShellProps) {
   return (
-    <div
-      className={`modal-backdrop ${backdropClassName}`.trim()}
-      role="presentation"
-      onMouseDown={(event) => { if (dismissable && event.target === event.currentTarget) onClose(); }}
-    >
-      <section
-        className={`vault-modal ${className}`.trim()}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={labelledBy}
+    <ModalPortal>
+      <div
+        className={`modal-backdrop ${backdropClassName}`.trim()}
+        role="presentation"
+        onMouseDown={(event) => { if (dismissable && event.target === event.currentTarget) onClose(); }}
       >
-        <header className="vault-modal-header">
-          {icon ? <span className={`vault-modal-icon ${iconClassName}`.trim()}>{icon}</span> : null}
-          <div className="vault-modal-title">
-            {eyebrow ? <small>{eyebrow}</small> : null}
-            <h2 id={labelledBy}>{title}</h2>
-            {headerMeta}
-          </div>
-          {headerExtra}
-          <button type="button" className="vault-modal-close" onClick={onClose} disabled={closeDisabled} aria-label={closeLabel}>
-            <X size={18} />
-          </button>
-        </header>
-        {children}
-      </section>
-    </div>
+        <section
+          className={`vault-modal ${className}`.trim()}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={labelledBy}
+        >
+          <header className="vault-modal-header">
+            {icon ? (
+              <IconTile
+                variant="soft"
+                size="default"
+                className={cn("vault-modal-icon", iconClassName)}
+              >
+                {icon}
+              </IconTile>
+            ) : null}
+            <div className="vault-modal-title">
+              {eyebrow ? <small>{eyebrow}</small> : null}
+              <h2 id={labelledBy}>{title}</h2>
+              {headerMeta}
+            </div>
+            {headerExtra}
+            <button type="button" className="vault-modal-close" onClick={onClose} disabled={closeDisabled} aria-label={closeLabel}>
+              <X size={18} />
+            </button>
+          </header>
+          {children}
+        </section>
+      </div>
+    </ModalPortal>
   );
 }

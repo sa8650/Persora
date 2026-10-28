@@ -11,7 +11,7 @@
 
 import { isFormulaError } from "./table-formula.js";
 import {
-  TABLE_LIMITS, TableValidationError, cleanText, coerceFieldInput, emptySheetData, isIsoDate, isValidUrl, newField, newView, parseCellInput,
+  DEFAULT_SHEET_SIZE, TABLE_LIMITS, TableValidationError, cleanText, coerceFieldInput, emptySheetData, isIsoDate, isValidUrl, newField, newView, parseCellInput,
   parseNumberText, sanitizeStyle, textOfValue, toIsoDate, uniqueSheetName, NUMERIC_TYPES,
 } from "./table-rules.js";
 
@@ -166,7 +166,7 @@ export function buildSheetImport(sources, { headerRow = true, formulas = false }
     assertImportFits(height, width, `Sheet “${source.name}”`);
     const name = uniqueSheetName(source.name || `Sheet${sheets.length + 1}`, names);
     names.push(name);
-    const data = emptySheetData(Math.min(TABLE_LIMITS.rows, Math.max(height + 20, 100)), Math.min(TABLE_LIMITS.cols, Math.max(width + 2, 26)));
+    const data = emptySheetData(Math.min(TABLE_LIMITS.rows, Math.max(height + 20, DEFAULT_SHEET_SIZE.rows)), Math.min(TABLE_LIMITS.cols, Math.max(width + 2, DEFAULT_SHEET_SIZE.cols)));
     let cells = 0;
     rows.forEach((row, r) => row.forEach((value, c) => {
       if (value === null) return;
@@ -221,6 +221,12 @@ export function usedBounds(data) {
     rowCount = Math.max(rowCount, row + 1);
     colCount = Math.max(colCount, col + 1);
   }
+  if (Array.isArray(data.merges)) {
+    for (const merge of data.merges) {
+      rowCount = Math.max(rowCount, merge.r2 + 1);
+      colCount = Math.max(colCount, merge.c2 + 1);
+    }
+  }
   return { rowCount, colCount };
 }
 
@@ -247,32 +253,44 @@ function xlsxStyle(style) {
   if (style.b) out.fontWeight = "bold";
   if (style.i) out.fontStyle = "italic";
   if (style.a) out.align = style.a === "l" ? "left" : style.a === "c" ? "center" : "right";
+  if (style.va) out.alignVertical = style.va === "t" ? "top" : style.va === "b" ? "bottom" : "center";
+  if (style.w === "wrap") out.wrap = true;
   if (style.c) out.textColor = style.c;
   if (style.bg) out.backgroundColor = style.bg;
   if (style.fs) out.fontSize = Math.round(style.fs * 0.85); // screen px → points
   if (style.bd) {
-    if (style.bd.includes("t")) out.topBorderStyle = "thin";
-    if (style.bd.includes("r")) out.rightBorderStyle = "thin";
-    if (style.bd.includes("b")) out.bottomBorderStyle = "thin";
-    if (style.bd.includes("l")) out.leftBorderStyle = "thin";
+    const borderStyle = style.bs || "thin";
+    const borderColor = style.bc;
+    if (style.bd.includes("t")) { out.topBorderStyle = borderStyle; if (borderColor) out.topBorderColor = borderColor; }
+    if (style.bd.includes("r")) { out.rightBorderStyle = borderStyle; if (borderColor) out.rightBorderColor = borderColor; }
+    if (style.bd.includes("b")) { out.bottomBorderStyle = borderStyle; if (borderColor) out.bottomBorderColor = borderColor; }
+    if (style.bd.includes("l")) { out.leftBorderStyle = borderStyle; if (borderColor) out.leftBorderColor = borderColor; }
   }
   return out;
 }
 
 /**
  * Spreadsheet → write-excel-file sheets: values, formulas (as Excel formulas), number formats,
- * bold/italic/alignment/colours/borders/font size, column widths and the frozen header.
+ * bold/italic/alignment/colours/borders/font size, merges, column widths and frozen panes.
  */
 export function workbookXlsxSheets(sheets) {
   return sheets.map((sheet) => {
     const { rowCount, colCount } = usedBounds(sheet.data);
+    const merges = Array.isArray(sheet.data.merges) ? sheet.data.merges : [];
     const data = [];
     for (let r = 0; r < Math.max(rowCount, 1); r += 1) {
       const line = [];
       for (let c = 0; c < Math.max(colCount, 1); c += 1) {
+        const merge = merges.find((entry) => entry.r1 === r && entry.c1 === c);
+        const spanProps = merge
+          ? { ...(merge.c2 > merge.c1 ? { span: merge.c2 - merge.c1 + 1 } : {}), ...(merge.r2 > merge.r1 ? { rowSpan: merge.r2 - merge.r1 + 1 } : {}) }
+          : {};
         const cell = sheet.data.cells[`${r}:${c}`];
-        if (!cell) { line.push(null); continue; }
-        const style = xlsxStyle(cell.s);
+        if (!cell) {
+          line.push(Object.keys(spanProps).length ? { value: "", type: String, ...spanProps } : null);
+          continue;
+        }
+        const style = { ...xlsxStyle(cell.s), ...spanProps };
         const format = numberFormat(cell.s);
         if (typeof cell.f === "string") {
           // OOXML stores formulas without the leading "=".
@@ -289,7 +307,13 @@ export function workbookXlsxSheets(sheets) {
       data.push(line);
     }
     const columns = Array.from({ length: Math.max(colCount, 1) }, (_, c) => ({ width: Math.max(6, Math.round((sheet.data.colWidths[c] || 110) / 7)) }));
-    return { sheet: sheet.name, data, columns, ...(sheet.data.frozenRows ? { stickyRowsCount: sheet.data.frozenRows } : {}) };
+    return {
+      sheet: sheet.name,
+      data,
+      columns,
+      ...(sheet.data.frozenRows ? { stickyRowsCount: sheet.data.frozenRows } : {}),
+      ...(sheet.data.frozenCols ? { stickyColumnsCount: sheet.data.frozenCols } : {}),
+    };
   });
 }
 

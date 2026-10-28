@@ -2,8 +2,11 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import type { PDFDocument } from "pdf-lib";
 import {
   AlertTriangle, ArrowDown, ArrowUp, ArrowUpRight, ChevronLeft, ChevronRight, Circle, CloudUpload, Copy, Download, FileImage, FilePlus2, FileStack, Files, Highlighter,
-  Image as ImageIcon, Info, Loader2, Minus, MousePointer2, PenLine, Pencil, Plus, Redo2, RotateCcw, RotateCw, Scissors, Signature, Square, Stamp, Strikethrough, Trash2, Type, Underline, Undo2, X, ZoomIn, ZoomOut,
+  Image as ImageIcon, Info, Minus, MousePointer2, PenLine, Pencil, Plus, Redo2, RotateCcw, RotateCw, Scissors, Signature, Square, Stamp, Strikethrough, Trash2, Type, Underline, Undo2, X, ZoomIn, ZoomOut,
 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Progress } from "@/components/ui/progress";
+import { Spinner } from "@/components/ui/spinner";
 import type { PdfStudioDocument, PdfStudioFileMeta, PdfStudioSaveInput, TransferProgress, VaultFolder } from "../types";
 import {
   HIGHLIGHT_COLORS, IMAGE_ACCEPT, OVERLAY_COLORS, PDF_MAX_TOTAL_PAGES, PDF_OPEN_MAX_BYTES, CREATE_ACCEPT, buildZip, decodeText, describePages, errorMessage, formatBytes, makeId,
@@ -832,7 +835,7 @@ export default function PdfEditorModal({ request, folders, defaultFolderId, canS
           <button type="button" className="vault-modal-close" onClick={requestClose} disabled={working} aria-label="Close editor"><X size={18}/></button>
         </header>
 
-        {phase === "loading" ? <div className="pdfs-editor-state" role="status"><Loader2 className="pdfs-spin" size={22}/><b>Opening your PDF</b><span>{loadMessage}</span><small>Everything happens on this device.</small></div>
+        {phase === "loading" ? <div className="pdfs-editor-state" role="status"><Spinner className="size-6"/><b>Opening your PDF</b><span>{loadMessage}</span><small>Everything happens on this device.</small></div>
         : phase === "error" ? <div className="pdfs-editor-state is-error" role="alert"><AlertTriangle size={24}/><b>This file couldn't be opened</b><span>{loadError}</span><button type="button" className="quiet-button" onClick={onClose}>Close</button></div>
         : <>
           <div className="pdfs-toolbar-row" role="toolbar" aria-label="PDF editor tools">
@@ -888,7 +891,7 @@ export default function PdfEditorModal({ request, folders, defaultFolderId, canS
               {(activeType === "highlight" ? HIGHLIGHT_COLORS : OVERLAY_COLORS).map((color) => <button key={color} type="button" role="radio" aria-checked={propColor === color} aria-label={`Colour ${color}`} className={`pdfs-swatch ${propColor === color ? "is-selected" : ""}`} style={{ background: color }} onClick={() => setColor(color)}/>)}
             </div>}
             {propStroke !== null && <label className="pdfs-prop">Line<select value={propStroke} onChange={(event) => setStroke(Number(event.target.value))} aria-label="Line width">{strokeOptions.map((value) => <option key={value} value={value}>{Math.round(value * 100) / 100} pt</option>)}</select></label>}
-            {fillProp !== null && <label className="pdfs-prop pdfs-prop-check"><input type="checkbox" checked={fillProp} onChange={(event) => setFill(event.target.checked)}/> Fill</label>}
+            {fillProp !== null && <label className="pdfs-prop pdfs-prop-check"><Checkbox checked={fillProp} onCheckedChange={(checked) => setFill(checked === true)}/> Fill</label>}
             {textProps && <>
               <label className="pdfs-prop">Size<select value={textProps.fontSize} onChange={(event) => setFont({ fontSize: Number(event.target.value) })} aria-label="Text size">{FONT_SIZES.map((value) => <option key={value} value={value}>{value} pt</option>)}</select></label>
               <button type="button" className={`pdfs-tool pdfs-bold ${textProps.bold ? "is-active" : ""}`} aria-pressed={textProps.bold} aria-label="Bold" data-tip="Bold" onClick={() => setFont({ bold: !textProps.bold })}><b>B</b></button>
@@ -929,7 +932,7 @@ export default function PdfEditorModal({ request, folders, defaultFolderId, canS
                 </div>
               </div>
               {fileDrag && <div className="pdfs-file-drop" aria-hidden="true"><FilePlus2 size={26}/><b>Drop to insert after page {currentIndex + 1}</b><span>PDFs, images or text files</span></div>}
-              {busy && <div className="pdfs-busy-overlay" role="status" aria-live="polite"><Loader2 className="pdfs-spin" size={20}/><b>{busy.label}</b>{busy.percent !== null && <span className="pdfs-progress"><i style={{ width: `${busy.percent}%` }}/></span>}</div>}
+              {busy && <div className="pdfs-busy-overlay" role="status" aria-live="polite"><Spinner className="size-5"/><b>{busy.label}</b>{busy.percent !== null && <Progress value={busy.percent} aria-label={busy.label} className="h-1.5 w-full max-w-[200px]"/>}</div>}
             </div>
             {wmOpen && wmDraft && <PdfWatermarkPanel
               draft={wmDraft} applied={watermark} pages={pages} currentIndex={currentIndex} imageUrl={imageUrl}

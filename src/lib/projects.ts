@@ -2,16 +2,16 @@
 // task-derived progress, filtering, sorting, and formatting. This module stays
 // free of DOM/network access so the same rules can be exercised in unit tests.
 import type {
-  ProjectField, ProjectFieldStatus, ProjectFolderColor, ProjectMemberRole, ProjectRecord,
+  ProjectField, ProjectFieldStatus, ProjectFolderColor, ProjectMemberRole, ProjectPriority, ProjectRecord,
   ProjectTask, ProjectTaskStatus,
 } from "../types";
 
 export const PROJECT_STATUSES: { value: ProjectFieldStatus; label: string; tone: "muted" | "accent" | "warning" | "danger" | "success" }[] = [
   { value: "planning", label: "Planning", tone: "muted" },
   { value: "in-progress", label: "In Progress", tone: "accent" },
-  { value: "in-review", label: "In Review", tone: "warning" },
   // Internal values remain stable so existing field records and APIs keep working.
   { value: "blocked", label: "Paused", tone: "danger" },
+  { value: "in-review", label: "In Review", tone: "warning" },
   { value: "completed", label: "Complete", tone: "success" },
 ];
 export const PROJECT_SORT_OPTIONS = [
@@ -34,6 +34,42 @@ export const PROJECT_MEMBER_ROLES: { value: ProjectMemberRole; label: string; hi
   { value: "commenter", label: "Commenter", hint: "Comments on fields and requests new ones." },
   { value: "viewer", label: "Viewer", hint: "Follows progress, pins and favourites." },
 ];
+
+export const PROJECT_PRIORITIES: { value: ProjectPriority; label: string; tone: "high" | "medium" | "normal" | "low" }[] = [
+  { value: "high", label: "High", tone: "high" },
+  { value: "medium", label: "Medium", tone: "medium" },
+  { value: "normal", label: "Normal", tone: "normal" },
+  { value: "low", label: "Low", tone: "low" },
+];
+export function priorityMeta(priority: ProjectPriority | string | null | undefined) {
+  return PROJECT_PRIORITIES.find((entry) => entry.value === priority) || PROJECT_PRIORITIES[2];
+}
+export function parseProjectTags(raw: string | ReadonlyArray<string> | null | undefined): string[] {
+  const parts = Array.isArray(raw) ? raw : String(raw || "").split(",");
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const entry of parts) {
+    const cleaned = String(entry || "").trim().replace(/^#+/, "").trim().slice(0, 40);
+    if (!cleaned) continue;
+    const key = cleaned.toLocaleLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(cleaned);
+    if (out.length >= 12) break;
+  }
+  return out;
+}
+export function isFieldPaused(field: Partial<Pick<ProjectField, "status">> | null | undefined): boolean {
+  return field?.status === "blocked";
+}
+export function isTaskMoveLockedByPause(
+  field: Partial<Pick<ProjectField, "status">> | null | undefined,
+  task: Partial<Pick<ProjectTask, "paused">> | null | undefined,
+): "task" | "field" | null {
+  if (task?.paused) return "task";
+  if (isFieldPaused(field)) return "field";
+  return null;
+}
 
 export const PROJECT_TASK_STATUSES: { value: ProjectTaskStatus; label: string; tone: "purple" | "amber" | "blue" | "green" }[] = [
   { value: "todo", label: "To Do", tone: "purple" },
@@ -134,21 +170,82 @@ export const canCreateTaskInField = canManageTask;
  * Status move rules: field assignee/project owner may manage/reopen tasks, but
  * completion can only follow In Review. A task assignee may move active tasks
  * among the first three statuses and cannot edit or reopen a completed task.
+ * Cross-column movement is locked while the task itself or its linked field is paused.
  */
 export function canMoveTask(
   access: ProjectAccessLike | null | undefined,
-  field: Pick<ProjectField, "assignee_id"> | null | undefined,
-  task: Pick<ProjectTask, "status" | "assignee_id">,
+  field: (Pick<ProjectField, "assignee_id"> & Partial<Pick<ProjectField, "status">>) | null | undefined,
+  task: (Pick<ProjectTask, "status" | "assignee_id"> & Partial<Pick<ProjectTask, "paused">>) | null | undefined,
   userId: string,
   nextStatus: ProjectTaskStatus,
 ): boolean {
   if (!access || !userId || !field || !task) return false;
+  if (nextStatus !== task.status && isTaskMoveLockedByPause(field, task)) return false;
   const manager = canManageTask(access, field, userId);
   if (manager) {
     if (nextStatus === "complete" && task.status !== "in-review" && task.status !== "complete") return false;
     return true;
   }
   return task.assignee_id === userId && task.status !== "complete" && nextStatus !== "complete";
+}
+
+export function moveTaskRejectionMessage(
+  access: ProjectAccessLike | null | undefined,
+  field: (Pick<ProjectField, "assignee_id"> & Partial<Pick<ProjectField, "status">>) | null | undefined,
+  task: (Pick<ProjectTask, "status" | "assignee_id"> & Partial<Pick<ProjectTask, "paused">>) | null | undefined,
+  userId: string,
+  nextStatus: ProjectTaskStatus,
+): string | null {
+  if (!access || !userId || !field || !task) return "You do not have permission to move this task.";
+  if (canMoveTask(access, field, task, userId, nextStatus)) return null;
+  if (nextStatus !== task.status) {
+    const lock = isTaskMoveLockedByPause(field, task);
+    if (lock === "task") return "Resume this paused task before moving it to another column.";
+    if (lock === "field") return "This task’s field is paused. Resume the field before moving its tasks to another column.";
+  }
+  const manager = canManageTask(access, field, userId);
+  if (nextStatus === "complete" && manager && task.status !== "in-review") {
+    return "Move this task to In Review before marking it Complete.";
+  }
+  if (nextStatus === "complete" && !manager) {
+    return "Only the project owner or field assignee can mark a task Complete.";
+  }
+  if (task.status === "complete" && !manager) {
+    return "Only the project owner or field assignee can reopen a completed task.";
+  }
+  return "Only the project owner, field assignee, or assigned member can move this task.";
+}
+
+export const KANBAN_COLUMN_GAP_PX = 17;
+export const KANBAN_MIN_COLUMN_WIDTH_PX = 232;
+
+/** Exact 4-column board width formula: (W - 3G) / 4, preserving readable columns on narrow viewports. */
+export function calculateKanbanColumnWidth(
+  boardInnerWidth: number,
+  gapPx: number = KANBAN_COLUMN_GAP_PX,
+  minColumnWidth: number = KANBAN_MIN_COLUMN_WIDTH_PX,
+): number {
+  const usable = Math.max(0, Number(boardInnerWidth) || 0);
+  const gap = Math.max(0, Number(gapPx) || 0);
+  const raw = (usable - 3 * gap) / 4;
+  return Math.max(minColumnWidth, Math.round(raw * 100) / 100);
+}
+
+/** Computes a sort_order integer when inserting a dragged task at `insertIndex` in a column. */
+export function computeDropSortOrder(
+  columnTasks: ReadonlyArray<Pick<ProjectTask, "id" | "sort_order">>,
+  insertIndex: number,
+  draggedTaskId: string,
+): number {
+  const peers = columnTasks.filter((entry) => entry.id !== draggedTaskId);
+  if (!peers.length) return 100;
+  const clamped = Math.max(0, Math.min(peers.length, insertIndex));
+  if (clamped === 0) return peers[0].sort_order - 100;
+  if (clamped >= peers.length) return peers[peers.length - 1].sort_order + 100;
+  const prev = peers[clamped - 1].sort_order;
+  const next = peers[clamped].sort_order;
+  if (next - prev >= 2) return Math.floor((prev + next) / 2);
+  return prev + 1;
 }
 
 export function projectKindLabel(kind: ProjectRecord["kind"]): string {
@@ -193,6 +290,7 @@ export interface TaskFilter {
   fieldId: string | "all";
   assigneeId: string | "all" | "unassigned";
   status: ProjectTaskStatus | "all";
+  priority?: ProjectPriority | "all";
   paused: "all" | "paused" | "active";
 }
 
@@ -206,12 +304,14 @@ export function filterProjectTasks(
 ): ProjectTask[] {
   const query = filter.query.trim().toLocaleLowerCase();
   const fieldNames = new Map(fields.map((field) => [field.id, field.title]));
+  const wantedPriority = filter.priority && filter.priority !== "all" ? filter.priority : null;
   return tasks.filter((task) => {
     if (mode === "mine" && (!userId || task.assignee_id !== userId)) return false;
     if (filter.fieldId !== "all" && task.field_id !== filter.fieldId) return false;
     if (filter.assigneeId === "unassigned" && task.assignee_id) return false;
     if (filter.assigneeId !== "all" && filter.assigneeId !== "unassigned" && task.assignee_id !== filter.assigneeId) return false;
     if (filter.status !== "all" && task.status !== filter.status) return false;
+    if (wantedPriority && (task.priority || "normal") !== wantedPriority) return false;
     if (filter.paused === "paused" && !task.paused) return false;
     if (filter.paused === "active" && task.paused) return false;
     if (query) {
@@ -317,3 +417,55 @@ export function activityLabel(action: string): string {
   };
   return labels[action] || action.replace(/_/g, " ");
 }
+
+// ---------------------------------------------------------------------------
+// Shared attachment validation & Cult UI motion presets
+// ---------------------------------------------------------------------------
+export const PROJECT_ATTACHMENT_ACCEPT = ".pdf,.jpg,.jpeg,.png,.gif,.webp,.txt,.csv,.docx,.xlsx,.pptx";
+
+const PROJECT_ATTACHMENT_MIMES: Record<string, string> = {
+  pdf: "application/pdf",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  gif: "image/gif",
+  webp: "image/webp",
+  txt: "text/plain",
+  csv: "text/csv",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+};
+
+export function validateProjectAttachmentFile(file: File, maxUploadMb: number): string {
+  const extension = file.name.split(".").pop()?.toLowerCase() || "";
+  const expected = PROJECT_ATTACHMENT_MIMES[extension];
+  if (!expected) return "Choose a PDF, image, text/CSV, Word, Excel or PowerPoint file.";
+  if (!file.size) return "The selected file is empty.";
+  const limit = Math.max(1, Math.min(150, Number(maxUploadMb) || 25)) * 1024 * 1024;
+  if (file.size > limit) return `Choose a file no larger than ${Math.floor(limit / 1024 / 1024)} MB.`;
+  if (
+    file.type
+    && file.type !== expected
+    && file.type !== "application/octet-stream"
+    && !(extension === "csv" && file.type === "application/vnd.ms-excel")
+  ) {
+    return "The file extension and content type do not match.";
+  }
+  return "";
+}
+
+export function formatProjectFileSize(size: number): string {
+  if (!Number.isFinite(size) || size < 0) return "—";
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** Composed Cult UI floating dialog & Kanban transitions — smooth, unhurried, GPU-only. */
+export const CULT_MODAL_TRANSITION = { type: "spring" as const, stiffness: 250, damping: 26, mass: 0.9 };
+export const CULT_POPOVER_TRANSITION = { type: "spring" as const, bounce: 0.05, duration: 0.28 };
+export const CULT_KANBAN_LAYOUT_SPRING = { type: "spring" as const, stiffness: 205, damping: 26, mass: 0.95 };
+export const CULT_KANBAN_ENTER_SPRING = { type: "spring" as const, stiffness: 225, damping: 26, mass: 0.9 };
+export const CULT_KANBAN_INDICATOR_SPRING = { type: "spring" as const, stiffness: 240, damping: 26 };
+

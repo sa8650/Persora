@@ -2,7 +2,7 @@
 //
 // Every route runs for the signed-in member only (api.js authorizes first) and
 // every database call passes that member's id, which the SQL functions in
-// supabase/migrations/202610280001_habits.sql use to scope each statement.
+// supabase/schema.sql use to scope each statement.
 // Input is validated here with the shared rules (cloudflare/habit-rules.js) and
 // again by table constraints.
 //
@@ -69,7 +69,7 @@ async function databaseError(response) {
   if (code === "23514" || code === "22007" || code === "22008" || code === "22P02") return new HabitError("Those habit details aren't valid. Check them and try again.", 400);
   if (code === "23505") return new HabitError("That change conflicts with another one. Reload and try again.", 409);
   if (code === "42P01" || code === "PGRST205" || code === "PGRST202" || code === "42883") {
-    return new HabitError("Habit Tracker needs its database migration (202610280001_habits.sql). Ask an administrator to apply it.", 503);
+    return new HabitError("Habit Tracker needs the Persora database schema (supabase/schema.sql). Ask an administrator to apply it.", 503);
   }
   console.error("Persora Habit Tracker database request failed", response.status, code, message);
   return new HabitError("The habit database could not complete the request. Please try again shortly.", 502);

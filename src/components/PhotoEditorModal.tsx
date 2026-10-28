@@ -1,17 +1,23 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import {
-  AlertTriangle, Check, Cpu, Crop, Eraser, Eye, FlipHorizontal2, FlipVertical2, Loader2, Move, Palette, RefreshCw, RotateCcw, RotateCw, ScanFace, ShieldCheck, SlidersHorizontal, Sparkles, Undo2, Wand2, X,
+  AlertTriangle, Check, Cpu, Crop, Eraser, Eye, FlipHorizontal2, FlipVertical2, Move, Palette, RefreshCw, RotateCcw, RotateCw, ScanFace, ShieldCheck, SlidersHorizontal, Sparkles, Undo2, Wand2, X,
 } from "lucide-react";
+import { Badge } from "@/components/reui/badge";
+import { IconTile } from "@/components/reui/icon-tile";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Progress } from "@/components/ui/progress";
+import { Spinner } from "@/components/ui/spinner";
 import type { PhotoStudioPhoto } from "../types";
 import {
-  BACKGROUND_SWATCHES, NEUTRAL_ADJUSTMENTS, PHOTO_SIZE_PRESETS, analyzePhoto, convertSize, matchPreset, normalizeHexColor, outputPixels, printSizeLabel,
-  type Adjustments, type PhotoAnalysis, type PhotoUnit,
+  BACKGROUND_SWATCHES, NEUTRAL_ADJUSTMENTS, NEUTRAL_FILTER, PHOTO_FILTER_PRESETS, PHOTO_SIZE_PRESETS, analyzePhoto, convertSize, getPhotoFilterPreset, isFilterNeutral, matchPreset, normalizeHexColor, outputPixels, printSizeLabel,
+  type Adjustments, type PhotoAnalysis, type PhotoFilterId, type PhotoFilterSelection, type PhotoUnit,
 } from "../lib/photo-studio";
-import { decodeImage, exportPhoto, releaseCanvas, renderComposite, toWorkingCanvas, type BackgroundMode, type EditState, type OutputFormat } from "../lib/photo-studio-render";
+import { decodeImage, exportPhoto, releaseCanvas, renderComposite, renderFilterThumbnails, toWorkingCanvas, type BackgroundMode, type EditState, type OutputFormat } from "../lib/photo-studio-render";
 import { BackgroundRemovalError, removePhotoBackground, type BackgroundEngine, type BackgroundStatus } from "../lib/photo-background";
 import { LOCAL_MODEL_NAME } from "../lib/local-matting";
 import ModalPortal from "./ModalPortal";
 import { ConfirmDialog } from "./VaultDialogs";
+import "./photo-studio.css";
 
 export interface EditorSource { blob: Blob; name: string; photo: PhotoStudioPhoto | null }
 
@@ -35,7 +41,7 @@ interface Props {
   onSaveAndOrganize: (result: EditedPhoto) => void;
 }
 
-type Tab = "frame" | "background" | "adjust";
+type Tab = "frame" | "background" | "filters" | "adjust";
 const PREVIEW_MAX = 640;
 const UNITS: PhotoUnit[] = ["px", "mm", "cm", "in"];
 const ADJUSTMENT_CONTROLS: { key: keyof Adjustments; label: string; min: number; max: number; step: number; format: (value: number) => string }[] = [
@@ -52,7 +58,8 @@ function initialState(width: number, height: number, photo: PhotoStudioPhoto | n
   return {
     presetId: preset.id, width: preset.width, height: preset.height, unit: preset.unit, dpi: preset.dpi,
     zoom: 1, offsetX: 0, offsetY: 0, rotation: 0, quarterTurns: 0, flipH: false, flipV: false,
-    adjustments: { ...NEUTRAL_ADJUSTMENTS }, background: "original", backgroundColor: "#ffffff", format: "image/jpeg", quality: 0.92,
+    adjustments: { ...NEUTRAL_ADJUSTMENTS }, filter: { ...NEUTRAL_FILTER },
+    background: "original", backgroundColor: "#ffffff", format: "image/jpeg", quality: 0.92,
   };
 }
 
@@ -90,6 +97,9 @@ export default function PhotoEditorModal({ source, cloudAvailable, organizing, o
   const [bgResult, setBgResult] = useState<BgResultInfo | null>(null);
   const [bgEngine, setBgEngine] = useState<BackgroundEngine>("auto");
   const [comparing, setComparing] = useState(false);
+  const [draftFilter, setDraftFilter] = useState<PhotoFilterSelection>({ ...NEUTRAL_FILTER });
+  const [filterComparing, setFilterComparing] = useState(false);
+  const [filterThumbs, setFilterThumbs] = useState<Partial<Record<PhotoFilterId, string>>>({});
   const [historyDepth, setHistoryDepth] = useState(0);
   const historyRef = useRef<BgHistoryEntry[]>([]);
   const latestRef = useRef<{ state: EditState | null; bgResult: BgResultInfo | null }>({ state: null, bgResult: null });
@@ -111,6 +121,8 @@ export default function PhotoEditorModal({ source, cloudAvailable, organizing, o
         initialRef.current = JSON.stringify(initial);
         setSourceSize({ width: image.naturalWidth, height: image.naturalHeight });
         setState(initial);
+        setDraftFilter({ ...NEUTRAL_FILTER });
+        setFilterThumbs(renderFilterThumbnails(canvas, 68));
         setReady(true);
       } catch (error) {
         if (active) setLoadError(error instanceof Error ? error.message : "This image couldn't be opened.");
@@ -132,17 +144,29 @@ export default function PhotoEditorModal({ source, cloudAvailable, organizing, o
   const previewW = Math.max(1, Math.round(output.width * previewScale));
   const previewH = Math.max(1, Math.round(output.height * previewScale));
 
+  const committedFilter = state?.filter || NEUTRAL_FILTER;
+  const filterHasPending =
+    draftFilter.id !== committedFilter.id || Math.round(draftFilter.intensity) !== Math.round(committedFilter.intensity);
+  const effectiveFilter = tab === "filters" ? draftFilter : committedFilter;
+
   // Re-render the live preview (throttled to one frame).
   useEffect(() => {
     if (!ready || !state || !sourceRef.current || !previewRef.current) return;
     const frame = requestAnimationFrame(() => {
-      // "Compare" previews the untouched original; the cut-out is kept.
-      if (sourceRef.current && previewRef.current) renderComposite(previewRef.current, sourceRef.current, cutoutRef.current, comparing ? { ...state, background: "original" } : state, previewW, previewH);
+      // "Compare" previews the untouched original; Before/After in Filters previews without filter.
+      if (sourceRef.current && previewRef.current) {
+        const previewState: EditState = comparing
+          ? { ...state, background: "original", filter: NEUTRAL_FILTER }
+          : filterComparing
+            ? { ...state, filter: NEUTRAL_FILTER }
+            : { ...state, filter: effectiveFilter };
+        renderComposite(previewRef.current, sourceRef.current, cutoutRef.current, previewState, previewW, previewH);
+      }
     });
     return () => cancelAnimationFrame(frame);
-  }, [ready, state, previewW, previewH, bgResult, comparing]);
+  }, [ready, state, effectiveFilter, previewW, previewH, bgResult, comparing, filterComparing]);
 
-  const dirty = Boolean(state && (JSON.stringify(state) !== initialRef.current || bgResult));
+  const dirty = Boolean(state && (JSON.stringify(state) !== initialRef.current || bgResult || filterHasPending));
   const busy = Boolean(bgStatus) || exporting;
   const requestClose = useCallback(() => {
     if (exporting) return;
@@ -267,32 +291,39 @@ export default function PhotoEditorModal({ source, cloudAvailable, organizing, o
     if (current.zoom !== 1 || current.offsetX || current.offsetY) lines.push(`Reframed (zoom ${Math.round(current.zoom * 100)}%)`);
     const adjust = ADJUSTMENT_CONTROLS.filter((control) => current.adjustments[control.key]).map((control) => `${control.label.toLowerCase()} ${control.format(current.adjustments[control.key])}`);
     if (adjust.length) lines.push(`Adjusted ${adjust.join(", ")}`);
+    const filterPreset = getPhotoFilterPreset(current.filter?.id);
+    if (filterPreset && current.filter && !isFilterNeutral(current.filter)) {
+      lines.push(`Filter: ${filterPreset.label} (${Math.round(current.filter.intensity)}%)`);
+    }
     lines.push(`Format ${current.format === "image/png" ? "PNG" : "JPEG"}`);
     return lines;
   }, [bgResult, output.width, output.height]);
 
   const saveAndOrganize = async () => {
     if (!state || !sourceRef.current || exporting || bgStatus) return;
+    const finalState: EditState = tab === "filters" ? { ...state, filter: { ...draftFilter } } : state;
     setExporting(true); setExportError("");
     try {
-      const result = await exportPhoto(sourceRef.current, cutoutRef.current, state, output.width, output.height);
+      const result = await exportPhoto(sourceRef.current, cutoutRef.current, finalState, output.width, output.height);
       const bytes = new Uint8Array(await result.blob.arrayBuffer());
       const analysis = analyzePhoto(bytes, { width: result.width, height: result.height }, result.blob.size);
       if (!analysis) throw new Error("The edited photo couldn't be prepared. Try again.");
-      const preset = PHOTO_SIZE_PRESETS.find((entry) => entry.id === state.presetId);
+      const preset = PHOTO_SIZE_PRESETS.find((entry) => entry.id === finalState.presetId);
       onSaveAndOrganize({
         ...result,
         analysis,
         presetCategory: preset?.category || null,
-        editSummary: editSummary(state),
+        editSummary: editSummary(finalState),
         editSettings: {
-          presetId: state.presetId, width: state.width, height: state.height, unit: state.unit, dpi: state.dpi,
-          outputWidth: result.width, outputHeight: result.height, zoom: state.zoom, offsetX: state.offsetX, offsetY: state.offsetY,
-          rotation: state.rotation, quarterTurns: state.quarterTurns, flipH: state.flipH, flipV: state.flipV,
-          background: state.background, backgroundColor: state.background === "color" ? state.backgroundColor : null,
-          backgroundRemoval: bgResult && state.background !== "original" ? bgResult.source : null,
+          presetId: finalState.presetId, width: finalState.width, height: finalState.height, unit: finalState.unit, dpi: finalState.dpi,
+          outputWidth: result.width, outputHeight: result.height, zoom: finalState.zoom, offsetX: finalState.offsetX, offsetY: finalState.offsetY,
+          rotation: finalState.rotation, quarterTurns: finalState.quarterTurns, flipH: finalState.flipH, flipV: finalState.flipV,
+          background: finalState.background, backgroundColor: finalState.background === "color" ? finalState.backgroundColor : null,
+          backgroundRemoval: bgResult && finalState.background !== "original" ? bgResult.source : null,
           backgroundRuntime: bgResult?.runtime || null,
-          adjustments: { ...state.adjustments }, format: state.format, sourceTitle: source.photo?.title || source.name,
+          adjustments: { ...finalState.adjustments },
+          filter: finalState.filter ? { ...finalState.filter } : null,
+          format: finalState.format, sourceTitle: source.photo?.title || source.name,
         },
       });
     } catch (error) {
@@ -310,12 +341,12 @@ export default function PhotoEditorModal({ source, cloudAvailable, organizing, o
     <div className="modal-backdrop ps-editor-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) requestClose(); }}>
       <section className="vault-modal ps-editor-modal" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <header className="vault-modal-header">
-          <span className="vault-modal-icon"><Wand2 size={18}/></span>
+          <IconTile variant="soft" size="sm" className="text-blue-600 dark:text-blue-300"><Wand2 size={18}/></IconTile>
           <div className="vault-modal-title"><small>Create &amp; edit</small><h2 id={titleId}>{source.photo ? `Edit a copy of “${source.photo.title}”` : "Edit your portrait"}</h2></div>
           <button type="button" className="vault-modal-close" onClick={requestClose} disabled={exporting} aria-label="Close editor"><X size={18}/></button>
         </header>
         {loadError ? <div className="ps-editor-error-state"><AlertTriangle size={22}/><h3>This image couldn't be opened</h3><p>{loadError}</p><button type="button" className="quiet-button" onClick={onClose}>Close</button></div>
-        : !ready || !state ? <div className="ps-editor-loading" role="status"><Loader2 className="ps-spin" size={20}/> Preparing your photo…</div>
+        : !ready || !state ? <div className="ps-editor-loading" role="status"><Spinner className="size-5"/> Preparing your photo…</div>
         : <div className="ps-editor-body">
           <div className="ps-stage">
             <div className="ps-stage-frame" style={{ aspectRatio: `${output.width} / ${output.height}`, ["--ps-ratio" as string]: output.width / output.height } as CSSProperties}>
@@ -329,34 +360,38 @@ export default function PhotoEditorModal({ source, cloudAvailable, organizing, o
                 onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
                 onWheel={onWheel} onKeyDown={onStageKey}
               />
-              {comparing && <span className="ps-compare-tag" aria-live="polite">Original photo</span>}
+              {(comparing || filterComparing) && (
+                <span className="ps-compare-tag" aria-live="polite">
+                  {comparing ? "Original photo" : "Before filter"}
+                </span>
+              )}
               {guide && !comparing && <svg className="ps-stage-guide" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
                 <ellipse cx="50" cy="44" rx="23" ry="31" />
                 <line x1="50" y1="4" x2="50" y2="96" />
                 <line x1="20" y1="40" x2="80" y2="40" />
               </svg>}
               {bgStatus && <div className="ps-stage-busy" role="status" aria-live="polite">
-                <Loader2 className="ps-spin" size={22}/>
+                <Spinner className="size-5"/>
                 <b>{bgStatus.stage === "switching" ? "Switching to on-device removal" : bgStatus.stage === "cloud" ? "Persora AI" : bgStatus.stage === "refining" ? "Finishing" : "On-device model"}</b>
                 <span>{bgStatus.message}</span>
                 {bgStatus.stage === "switching" && <small>{bgStatus.reason}</small>}
-                {bgProgress !== undefined && <span className="ps-progress"><i style={{ width: `${bgProgress}%` }}/></span>}
+                {bgProgress !== undefined && <Progress value={bgProgress} aria-label="Background removal progress" className="h-1.5 w-full max-w-[220px]"/>}
                 <button type="button" className="quiet-button" onClick={cancelBackgroundRemoval}>Cancel</button>
               </div>}
             </div>
             <div className="ps-stage-hint"><Move size={13}/> Drag to reposition · scroll to zoom
-              <label className="ps-guide-toggle"><input type="checkbox" checked={guide} onChange={(event) => setGuide(event.target.checked)}/> <ScanFace size={13}/> Face guide</label>
+              <label className="ps-guide-toggle"><Checkbox checked={guide} onCheckedChange={(checked) => setGuide(checked === true)}/> <ScanFace size={13}/> Face guide</label>
             </div>
           </div>
 
           <div className="ps-panel">
             <section className={`ps-remove-card ${bgResult ? "is-done" : ""}`} aria-label="Background removal">
               {!bgResult ? <>
-                <button type="button" className="editor-submit ps-remove-button" onClick={() => void runBackgroundRemoval("auto")} disabled={Boolean(bgStatus) || exporting}>{bgStatus ? <><Loader2 className="ps-spin" size={15}/> Removing background…</> : <><Sparkles size={15}/> Remove Background</>}</button>
+                <button type="button" className="editor-submit ps-remove-button" onClick={() => void runBackgroundRemoval("auto")} disabled={Boolean(bgStatus) || exporting}>{bgStatus ? <><Spinner className="size-3.5"/> Removing background…</> : <><Sparkles size={15}/> Remove Background</>}</button>
                 <small><ShieldCheck size={12}/> {cloudAvailable ? "Uses Persora AI first. If it's unavailable, an on-device model takes over and your photo stays on this device." : "Runs on this device — your photo isn't uploaded."}</small>
               </> : <>
                 <div className="ps-remove-status">
-                  <span className="ps-bg-badge"><Check size={13}/> Background removed · {resultLabel(bgResult)}</span>
+                  <Badge variant="success-light" size="sm"><Check className="size-3.5"/> Background removed · {resultLabel(bgResult)}</Badge>
                   {bgResult.source === "local" && <small>{LOCAL_MODEL_NAME}.{bgResult.fallbackReason ? ` Persora AI wasn't used: ${bgResult.fallbackReason}` : ""}</small>}
                 </div>
                 <div className="ps-remove-actions">
@@ -384,7 +419,29 @@ export default function PhotoEditorModal({ source, cloudAvailable, organizing, o
               </div>}
             </section>
             <div className="ps-tabs" role="tablist" aria-label="Editing tools">
-              {([["frame", "Crop & size", Crop], ["background", "Background", Eraser], ["adjust", "Adjust", SlidersHorizontal]] as const).map(([id, label, Icon]) => <button key={id} type="button" role="tab" aria-selected={tab === id} className={tab === id ? "is-active" : ""} onClick={() => setTab(id)}><Icon size={14}/>{label}</button>)}
+              {([
+                ["frame", "Crop & size", Crop],
+                ["background", "Background", Eraser],
+                ["filters", "Filters", Sparkles],
+                ["adjust", "Adjust", SlidersHorizontal],
+              ] as const).map(([id, label, Icon]) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === id}
+                  className={tab === id ? "is-active" : ""}
+                  onClick={() => {
+                    if (id === "filters" && tab !== "filters") {
+                      setDraftFilter(state.filter ? { ...state.filter } : { ...NEUTRAL_FILTER });
+                    }
+                    if (id !== "filters") setFilterComparing(false);
+                    setTab(id);
+                  }}
+                >
+                  <Icon size={14}/>{label}
+                </button>
+              ))}
             </div>
 
             {tab === "frame" && <div className="ps-tool-group" role="tabpanel" aria-label="Crop and size">
@@ -423,6 +480,118 @@ export default function PhotoEditorModal({ source, cloudAvailable, organizing, o
               </div>
             </div>}
 
+            {tab === "filters" && (
+              <div className="ps-tool-group ps-filters-panel" role="tabpanel" aria-label="Filters">
+                <div className="ps-filters-header">
+                  <span className="ps-filters-caption">10 local color-grading presets · non-destructive</span>
+                  <button
+                    type="button"
+                    className={`quiet-button ps-compare-btn ${filterComparing ? "is-on" : ""}`}
+                    aria-pressed={filterComparing}
+                    disabled={draftFilter.id === "none" || draftFilter.intensity <= 0}
+                    onClick={() => setFilterComparing((prev) => !prev)}
+                  >
+                    <Eye size={13} /> {filterComparing ? "Show filtered" : "Before / After"}
+                  </button>
+                </div>
+
+                <div className="ps-filter-grid" role="radiogroup" aria-label="Color filter presets">
+                  {PHOTO_FILTER_PRESETS.map((preset) => {
+                    const selected = draftFilter.id === preset.id;
+                    const thumbSrc = filterThumbs[preset.id];
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        data-filter-preset={preset.id}
+                        className={`ps-filter-card ${selected ? "is-selected" : ""}`}
+                        title={preset.tagline}
+                        onClick={() => {
+                          setFilterComparing(false);
+                          setDraftFilter((prev) => ({
+                            id: preset.id,
+                            intensity: prev.id === "none" || prev.intensity === 0 ? 100 : prev.intensity,
+                          }));
+                        }}
+                      >
+                        <span className="ps-filter-thumb">
+                          {thumbSrc ? (
+                            <img src={thumbSrc} alt="" aria-hidden="true" />
+                          ) : (
+                            <span className="ps-filter-thumb-fallback" aria-hidden="true" />
+                          )}
+                        </span>
+                        <span className="ps-filter-name">{preset.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <label className="ps-slider">
+                  <span>
+                    Filter intensity <b>{draftFilter.id === "none" ? "0%" : `${Math.round(draftFilter.intensity)}%`}</b>
+                  </span>
+                  <input
+                    type="range"
+                    aria-label="Filter intensity"
+                    min={0}
+                    max={100}
+                    step={1}
+                    disabled={draftFilter.id === "none"}
+                    value={draftFilter.id === "none" ? 0 : draftFilter.intensity}
+                    onChange={(event) => {
+                      setFilterComparing(false);
+                      setDraftFilter((prev) => ({ ...prev, intensity: Number(event.target.value) }));
+                    }}
+                  />
+                </label>
+
+                <div className="ps-filter-actions">
+                  <button
+                    type="button"
+                    className="ps-link-button"
+                    disabled={draftFilter.id === "none" && committedFilter.id === "none"}
+                    onClick={() => {
+                      setFilterComparing(false);
+                      setDraftFilter({ ...NEUTRAL_FILTER });
+                      update({ filter: { ...NEUTRAL_FILTER } });
+                    }}
+                  >
+                    <Undo2 size={13} /> Reset
+                  </button>
+                  <div className="ps-filter-commit-btns">
+                    <button
+                      type="button"
+                      className="quiet-button"
+                      disabled={!filterHasPending}
+                      onClick={() => {
+                        setFilterComparing(false);
+                        setDraftFilter(state.filter ? { ...state.filter } : { ...NEUTRAL_FILTER });
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="editor-submit ps-filter-apply"
+                      disabled={!filterHasPending}
+                      onClick={() => {
+                        setFilterComparing(false);
+                        update({ filter: { ...draftFilter } });
+                      }}
+                    >
+                      <Check size={13} /> Apply
+                    </button>
+                  </div>
+                </div>
+                <small className="ps-muted-note">
+                  Filters run locally in memory. Nothing is uploaded until you save in the final step.
+                </small>
+              </div>
+            )}
+
             {tab === "adjust" && <div className="ps-tool-group" role="tabpanel" aria-label="Adjustments">
               {ADJUSTMENT_CONTROLS.map((control) => <label key={control.key} className="ps-slider"><span>{control.label} <b>{control.format(state.adjustments[control.key])}</b></span><input type="range" min={control.min} max={control.max} step={control.step} value={state.adjustments[control.key]} onChange={(event) => update({ adjustments: { ...state.adjustments, [control.key]: Number(event.target.value) } })}/></label>)}
               <button type="button" className="ps-link-button" onClick={() => update({ adjustments: { ...NEUTRAL_ADJUSTMENTS } })}><Undo2 size={13}/> Reset adjustments</button>
@@ -445,7 +614,7 @@ export default function PhotoEditorModal({ source, cloudAvailable, organizing, o
           <div className="editor-footnote"><ShieldCheck size={14}/><span>Edits happen on this device. Nothing is saved until you press Save in the next step.</span></div>
           <div className="editor-actions">
             <button type="button" className="quiet-button" onClick={requestClose} disabled={exporting}>Cancel</button>
-            <button type="button" className="editor-submit" onClick={() => void saveAndOrganize()} disabled={!ready || busy || Boolean(loadError)}>{exporting ? <><span className="spinner"/> Preparing…</> : "Save & Organize"}</button>
+            <button type="button" className="editor-submit" onClick={() => void saveAndOrganize()} disabled={!ready || busy || Boolean(loadError)}>{exporting ? <><Spinner className="size-3.5"/> Preparing…</> : "Save & Organize"}</button>
           </div>
         </div>
       </section>

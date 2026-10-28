@@ -14,6 +14,8 @@ import type { VaultItem } from "../../types";
 import { SECTION_BY_ID } from "../../data";
 import type { EmailAvailability, Loan, LoanInstallment } from "../../lib/loan-api";
 import { DirectionGlyph, FREQUENCY_LABELS, formatDay, formatMoney } from "./loan-visuals";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Spinner } from "@/components/ui/spinner";
 
 interface Draft {
   name: string;
@@ -351,10 +353,10 @@ export default function LoanEditor({ loan, installments, today, userName, defaul
                   {REMINDER_DAY_OPTIONS.map((days) => <option key={days} value={String(days)}>{days === 0 ? "On the due date" : `${days} day${days === 1 ? "" : "s"} before`}</option>)}
                 </select>
               </label>
-              <label className="ln-switch"><input type="checkbox" checked={draft.overdueAlerts} onChange={(event) => update({ overdueAlerts: event.target.checked })}/><span>Tell me when an installment is overdue</span></label>
+              <label className="ln-switch"><Checkbox checked={draft.overdueAlerts} aria-label="Tell me when an installment is overdue" onCheckedChange={(checked) => update({ overdueAlerts: checked === true })}/><span>Tell me when an installment is overdue</span></label>
               {reminderOn && <>
                 <label className={`ln-switch ${email.available ? "" : "is-disabled"}`}>
-                  <input type="checkbox" checked={draft.reminderEmail && email.available} disabled={!email.available} onChange={(event) => update({ reminderEmail: event.target.checked })}/>
+                  <Checkbox checked={draft.reminderEmail && email.available} disabled={!email.available} aria-label="Also send an email" onCheckedChange={(checked) => update({ reminderEmail: checked === true })}/>
                   <span>Also send an email</span>
                 </label>
                 <div className="ln-hint ln-reminder-help">
@@ -380,7 +382,7 @@ export default function LoanEditor({ loan, installments, today, userName, defaul
               ? <button type="button" className="quiet-button" onClick={() => setConfirming(false)} disabled={busy}>Back</button>
               : <button type="button" className="quiet-button" onClick={onClose} disabled={busy}>Cancel</button>}
             <button type="submit" className="editor-submit" disabled={busy}>
-              {busy ? <><span className="spinner"/> Saving…</> : confirming ? "Confirm & recalculate" : loan ? (result.ok && result.scheduleChange ? "Review changes" : "Save Changes") : "Create Loan"}
+              {busy ? <><Spinner className="size-3.5"/> Saving…</> : confirming ? "Confirm & recalculate" : loan ? (result.ok && result.scheduleChange ? "Review changes" : "Save Changes") : "Create Loan"}
             </button>
           </div>
         </div>

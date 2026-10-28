@@ -4,7 +4,7 @@
 // Smart Table fields/records/views), cell input parsing and display
 // formatting, field validation and safe retyping, view filtering/sorting,
 // summaries and chart data, and validation of save batches. The database
-// enforces the same limits again (supabase/migrations/202610300001_persora_table.sql).
+// enforces the same limits again (supabase/schema.sql).
 
 import { LOAN_CURRENCIES } from "./loan-rules.js";
 import { isFormulaError } from "./table-formula.js";
@@ -19,9 +19,12 @@ export const TABLE_LIMITS = Object.freeze({
   sheets: 20,
   sheetNameLength: 31, // Excel's limit, so every sheet survives an XLSX round trip
   rows: 5000,
-  cols: 100,
+  cols: 200,
   cellsPerSheet: 200_000,
   cellText: 10_000,
+  commentsPerSheet: 500,
+  commentText: 2000,
+  chartsPerSheet: 20,
   fields: 60,
   fieldNameLength: 60,
   choices: 60,
@@ -36,7 +39,7 @@ export const TABLE_LIMITS = Object.freeze({
   tableBytes: 12 * 1024 * 1024,
   importBytes: 10 * 1024 * 1024,
   importRows: 5000,
-  importCols: 100,
+  importCols: 200,
 });
 
 export class TableValidationError extends Error {
@@ -84,20 +87,35 @@ export function isIsoDate(value) {
 // ---------------------------------------------------------------------------
 
 export const TEXT_COLORS = Object.freeze([
-  { id: "ink", label: "Default", hex: "#1F2937" }, { id: "gray", label: "Gray", hex: "#6B7280" }, { id: "red", label: "Red", hex: "#B42318" },
-  { id: "orange", label: "Orange", hex: "#B54708" }, { id: "green", label: "Green", hex: "#067647" }, { id: "blue", label: "Blue", hex: "#175CD3" },
-  { id: "violet", label: "Violet", hex: "#6941C6" },
+  { id: "ink", label: "Default", hex: "#1F2937" }, { id: "gray", label: "Gray", hex: "#6B7280" }, { id: "slate", label: "Slate", hex: "#334155" },
+  { id: "red", label: "Red", hex: "#B42318" }, { id: "orange", label: "Orange", hex: "#B54708" }, { id: "green", label: "Green", hex: "#067647" },
+  { id: "teal", label: "Teal", hex: "#0F766E" }, { id: "blue", label: "Blue", hex: "#175CD3" }, { id: "violet", label: "Violet", hex: "#6941C6" },
 ]);
 export const FILL_COLORS = Object.freeze([
-  { id: "gray", label: "Gray", hex: "#F2F4F7" }, { id: "red", label: "Red", hex: "#FEE4E2" }, { id: "orange", label: "Orange", hex: "#FEF0C7" },
-  { id: "yellow", label: "Yellow", hex: "#FEF7C3" }, { id: "green", label: "Green", hex: "#DCFAE6" }, { id: "blue", label: "Blue", hex: "#D1E9FF" },
+  { id: "gray", label: "Gray", hex: "#F2F4F7" }, { id: "slate", label: "Cool slate", hex: "#E2E8F0" }, { id: "red", label: "Red", hex: "#FEE4E2" },
+  { id: "orange", label: "Orange", hex: "#FEF0C7" }, { id: "yellow", label: "Yellow", hex: "#FEF7C3" }, { id: "green", label: "Green", hex: "#DCFAE6" },
+  { id: "teal", label: "Mint", hex: "#CCFBEF" }, { id: "blue", label: "Blue", hex: "#D1E9FF" }, { id: "sky", label: "Soft blue", hex: "#E8F0FE" },
   { id: "violet", label: "Violet", hex: "#EBE9FE" },
+]);
+export const BORDER_COLORS = Object.freeze([
+  { id: "default", label: "Default", hex: "#5F6368" }, { id: "ink", label: "Charcoal", hex: "#1F2937" }, { id: "gray", label: "Soft gray", hex: "#9CA3AF" },
+  { id: "blue", label: "Blue", hex: "#1A73E8" }, { id: "green", label: "Green", hex: "#137333" }, { id: "orange", label: "Orange", hex: "#B54708" },
+  { id: "red", label: "Red", hex: "#C5221F" }, { id: "violet", label: "Violet", hex: "#6941C6" },
+]);
+export const FONT_FAMILIES = Object.freeze([
+  { id: "sans", label: "Persora Sans", stack: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" },
+  { id: "serif", label: "Serif", stack: "Georgia, Cambria, 'Times New Roman', Times, serif" },
+  { id: "mono", label: "Monospace", stack: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" },
+  { id: "humanist", label: "Humanist", stack: "'Trebuchet MS', 'Segoe UI', Roboto, sans-serif" },
+  { id: "rounded", label: "Geometric", stack: "'Plus Jakarta Sans', 'DM Sans', system-ui, sans-serif" },
 ]);
 export const CHOICE_COLORS = Object.freeze(["gray", "blue", "green", "yellow", "orange", "red", "violet", "teal"]);
 export const FONT_SIZES = Object.freeze([10, 11, 12, 13, 14, 16, 18, 20, 24]);
 export const DEFAULT_FONT_SIZE = 13;
 export const NUMBER_FORMATS = Object.freeze(["general", "number", "currency", "percent", "date", "text"]);
-export const BORDER_STYLES = Object.freeze(["none", "all", "outer", "bottom"]);
+export const BORDER_STYLES = Object.freeze(["none", "all", "inner", "horiz", "vert", "outer", "top", "bottom", "left", "right"]);
+export const BORDER_LINE_STYLES = Object.freeze(["thin", "medium", "thick", "dashed", "dotted", "double"]);
+export const DEFAULT_BORDER_COLOR = "#5F6368";
 /** Normalizes a border edge set ("t", "r", "b", "l" in any combination) to canonical order, or "". */
 export function normalizeBorderEdges(value) {
   if (typeof value !== "string" || !/^[trbl]{1,4}$/u.test(value)) return "";
@@ -105,6 +123,12 @@ export function normalizeBorderEdges(value) {
 }
 const TEXT_HEX = new Set(TEXT_COLORS.map((color) => color.hex));
 const FILL_HEX = new Set(FILL_COLORS.map((color) => color.hex));
+const BORDER_HEX = new Set(BORDER_COLORS.map((color) => color.hex));
+const FONT_FAMILY_IDS = new Set(FONT_FAMILIES.map((font) => font.id));
+
+export function fontStackOf(id) {
+  return FONT_FAMILIES.find((entry) => entry.id === id)?.stack || FONT_FAMILIES[0].stack;
+}
 
 /** Keeps only known style keys/values. Returns undefined for an empty style. */
 export function sanitizeStyle(style) {
@@ -112,12 +136,21 @@ export function sanitizeStyle(style) {
   const out = {};
   if (style.b === 1 || style.b === true) out.b = 1;
   if (style.i === 1 || style.i === true) out.i = 1;
+  if (style.u === 1 || style.u === true) out.u = 1;
+  if (style.st === 1 || style.st === true) out.st = 1;
+  if (typeof style.ff === "string" && FONT_FAMILY_IDS.has(style.ff) && style.ff !== "sans") out.ff = style.ff;
   if (["l", "c", "r"].includes(style.a)) out.a = style.a;
+  if (["t", "b"].includes(style.va)) out.va = style.va;
+  if (["wrap", "clip"].includes(style.w)) out.w = style.w;
   if (typeof style.c === "string" && TEXT_HEX.has(style.c.toUpperCase())) out.c = style.c.toUpperCase();
   if (typeof style.bg === "string" && FILL_HEX.has(style.bg.toUpperCase())) out.bg = style.bg.toUpperCase();
   if (FONT_SIZES.includes(style.fs) && style.fs !== DEFAULT_FONT_SIZE) out.fs = style.fs;
   const edges = normalizeBorderEdges(style.bd);
-  if (edges) out.bd = edges;
+  if (edges) {
+    out.bd = edges;
+    if (BORDER_LINE_STYLES.includes(style.bs) && style.bs !== "thin") out.bs = style.bs;
+    if (typeof style.bc === "string" && BORDER_HEX.has(style.bc.toUpperCase()) && style.bc.toUpperCase() !== DEFAULT_BORDER_COLOR) out.bc = style.bc.toUpperCase();
+  }
   if (NUMBER_FORMATS.includes(style.nf) && style.nf !== "general") out.nf = style.nf;
   if (Number.isInteger(style.dp) && style.dp >= 0 && style.dp <= 6) out.dp = style.dp;
   if (typeof style.cur === "string" && TABLE_CURRENCIES.includes(style.cur)) out.cur = style.cur;
@@ -235,12 +268,101 @@ export function formatCellValue(value, style, locale = "en") {
 // Spreadsheet sheets
 // ---------------------------------------------------------------------------
 
-export const DEFAULT_SHEET_SIZE = Object.freeze({ rows: 100, cols: 26 });
+export const DEFAULT_SHEET_SIZE = Object.freeze({ rows: 200, cols: 52 });
 export const COLUMN_WIDTH = Object.freeze({ min: 40, max: 600, default: 110 });
 export const ROW_HEIGHT = Object.freeze({ min: 22, max: 200, default: 30 });
+export const MAX_MERGES_PER_SHEET = 1000;
+export const SHEET_CHART_TYPES = Object.freeze(["bar", "line", "pie", "doughnut"]);
+const SHEET_CHART_TYPE_SET = new Set(SHEET_CHART_TYPES);
 
 export function emptySheetData(rows = DEFAULT_SHEET_SIZE.rows, cols = DEFAULT_SHEET_SIZE.cols) {
-  return { rowCount: rows, colCount: cols, cells: {}, colWidths: {}, rowHeights: {}, frozenRows: 0 };
+  return { rowCount: rows, colCount: cols, cells: {}, colWidths: {}, rowHeights: {}, frozenRows: 0, frozenCols: 0, merges: [] };
+}
+
+function cleanIsoTimestamp(value, fallback) {
+  if (typeof value === "string" && value.length <= 64 && Number.isFinite(Date.parse(value))) return value;
+  return fallback;
+}
+
+/** Normalizes cell comments keyed by "row:col". */
+export function normalizeSheetComments(rawComments, rowCount, colCount) {
+  if (!rawComments || typeof rawComments !== "object" || Array.isArray(rawComments)) return {};
+  const out = {};
+  let count = 0;
+  const fallbackNow = new Date().toISOString();
+  for (const [key, raw] of Object.entries(rawComments)) {
+    if (count >= TABLE_LIMITS.commentsPerSheet) break;
+    const match = /^(\d{1,5}):(\d{1,3})$/u.exec(key);
+    if (!match || !raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const row = Number(match[1]);
+    const col = Number(match[2]);
+    if (row < 0 || row >= rowCount || col < 0 || col >= colCount) continue;
+    const text = cleanText(raw.text, TABLE_LIMITS.commentText).trim();
+    if (!text) continue;
+    const author = cleanText(raw.author || "Persora Member", 80).replace(/\s+/gu, " ").trim() || "Persora Member";
+    const createdAt = cleanIsoTimestamp(raw.createdAt, fallbackNow);
+    const updatedAt = cleanIsoTimestamp(raw.updatedAt, createdAt);
+    const id = isLocalId(raw.id) ? raw.id : newLocalId("cm");
+    out[`${row}:${col}`] = { id, text, author, createdAt, updatedAt };
+    count += 1;
+  }
+  return out;
+}
+
+/** Normalizes embedded spreadsheet charts referencing cell ranges in the sheet. */
+export function normalizeSheetCharts(rawCharts, rowCount, colCount) {
+  if (!Array.isArray(rawCharts) || !rawCharts.length) return [];
+  const out = [];
+  const seenIds = new Set();
+  for (const raw of rawCharts) {
+    if (out.length >= TABLE_LIMITS.chartsPerSheet) break;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const type = SHEET_CHART_TYPE_SET.has(raw.type) ? raw.type : "bar";
+    const range = raw.range && typeof raw.range === "object" ? raw.range : {};
+    const rawR1 = Number(range.r1);
+    const rawC1 = Number(range.c1);
+    const rawR2 = Number(range.r2);
+    const rawC2 = Number(range.c2);
+    if (![rawR1, rawC1, rawR2, rawC2].every(Number.isInteger)) continue;
+    const r1 = Math.max(0, Math.min(rowCount - 1, Math.min(rawR1, rawR2)));
+    const c1 = Math.max(0, Math.min(colCount - 1, Math.min(rawC1, rawC2)));
+    const r2 = Math.max(0, Math.min(rowCount - 1, Math.max(rawR1, rawR2)));
+    const c2 = Math.max(0, Math.min(colCount - 1, Math.max(rawC1, rawC2)));
+    const id = isLocalId(raw.id) && !seenIds.has(raw.id) ? raw.id : newLocalId("ch");
+    seenIds.add(id);
+    const title = cleanText(raw.title || "", TABLE_LIMITS.nameLength).replace(/\s+/gu, " ").trim() || "Chart";
+    const hasHeaders = Boolean(raw.hasHeaders);
+    const x = Number.isFinite(Number(raw.x)) ? Math.max(0, Math.min(8000, Math.round(Number(raw.x)))) : 80 + out.length * 28;
+    const y = Number.isFinite(Number(raw.y)) ? Math.max(0, Math.min(20000, Math.round(Number(raw.y)))) : 48 + out.length * 28;
+    const width = Number.isFinite(Number(raw.width)) ? Math.max(260, Math.min(900, Math.round(Number(raw.width)))) : 420;
+    const height = Number.isFinite(Number(raw.height)) ? Math.max(220, Math.min(640, Math.round(Number(raw.height)))) : 290;
+    out.push({ id, type, title, range: { r1, c1, r2, c2 }, hasHeaders, x, y, width, height });
+  }
+  return out;
+}
+
+/** Normalizes and deduplicates merged cell rectangles within [0..rowCount-1] × [0..colCount-1]. */
+export function normalizeMerges(rawMerges, rowCount, colCount) {
+  if (!Array.isArray(rawMerges) || !rawMerges.length) return [];
+  const accepted = [];
+  for (const raw of rawMerges) {
+    if (accepted.length >= MAX_MERGES_PER_SHEET) break;
+    if (!raw || typeof raw !== "object") continue;
+    const rawR1 = Number(raw.r1);
+    const rawC1 = Number(raw.c1);
+    const rawR2 = Number(raw.r2);
+    const rawC2 = Number(raw.c2);
+    if (![rawR1, rawC1, rawR2, rawC2].every(Number.isInteger)) continue;
+    const r1 = Math.max(0, Math.min(rowCount - 1, Math.min(rawR1, rawR2)));
+    const c1 = Math.max(0, Math.min(colCount - 1, Math.min(rawC1, rawC2)));
+    const r2 = Math.max(0, Math.min(rowCount - 1, Math.max(rawR1, rawR2)));
+    const c2 = Math.max(0, Math.min(colCount - 1, Math.max(rawC1, rawC2)));
+    if (r1 === r2 && c1 === c2) continue;
+    const overlaps = accepted.some((other) => !(r2 < other.r1 || r1 > other.r2 || c2 < other.c1 || c1 > other.c2));
+    if (!overlaps) accepted.push({ r1, c1, r2, c2 });
+  }
+  accepted.sort((a, b) => a.r1 - b.r1 || a.c1 - b.c1);
+  return accepted;
 }
 
 /** Rejects names Excel can't store and duplicates (case-insensitive). */
@@ -308,7 +430,24 @@ export function normalizeSheetData(data) {
     return out;
   };
   const frozenRows = Number.isInteger(data.frozenRows) ? Math.min(Math.max(data.frozenRows, 0), Math.min(10, rowCount - 1)) : 0;
-  return { rowCount, colCount, cells, colWidths: sizes(data.colWidths, colCount, COLUMN_WIDTH), rowHeights: sizes(data.rowHeights, rowCount, ROW_HEIGHT), frozenRows };
+  const frozenCols = Number.isInteger(data.frozenCols) ? Math.min(Math.max(data.frozenCols, 0), Math.min(10, colCount - 1)) : 0;
+  const merges = normalizeMerges(data.merges, rowCount, colCount);
+  const comments = normalizeSheetComments(data.comments, rowCount, colCount);
+  const charts = normalizeSheetCharts(data.charts, rowCount, colCount);
+  const normalized = {
+    rowCount,
+    colCount,
+    cells,
+    colWidths: sizes(data.colWidths, colCount, COLUMN_WIDTH),
+    rowHeights: sizes(data.rowHeights, rowCount, ROW_HEIGHT),
+    frozenRows,
+    frozenCols,
+    merges,
+  };
+  if (Object.keys(comments).length) normalized.comments = comments;
+  if (charts.length) normalized.charts = charts;
+  if (data.hideGridlines === true) normalized.hideGridlines = true;
+  return normalized;
 }
 
 // ---------------------------------------------------------------------------

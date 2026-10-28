@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Folder, MoreHorizontal, type LucideIcon } from "lucide-react";
+import { Folder, MoreHorizontal, MoreVertical, type LucideIcon } from "lucide-react";
 import type { VaultFolder } from "../types";
 
 export interface MoreMenuAction {
@@ -16,9 +16,10 @@ interface Props {
   folders?: VaultFolder[];
   folderId?: string;
   onMoveFolder?: (folderId: string | null) => void;
+  iconOrientation?: "horizontal" | "vertical";
 }
 
-export default function MoreOptionsMenu({ label, actions, folders, folderId, onMoveFolder }: Props) {
+export default function MoreOptionsMenu({ label, actions, folders, folderId, onMoveFolder, iconOrientation = "horizontal" }: Props) {
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -99,7 +100,7 @@ export default function MoreOptionsMenu({ label, actions, folders, folderId, onM
 
   return <>
     <div className="card-menu-wrap more-options-wrap" ref={wrapRef}>
-      <button ref={triggerRef} type="button" className="tiny-action" aria-label={label} aria-haspopup="menu" aria-expanded={open} aria-controls={open ? menuId : undefined} onClick={(event) => { event.stopPropagation(); setPosition(null); setOpen((current) => !current); }}><MoreHorizontal size={17}/></button>
+      <button ref={triggerRef} type="button" className="tiny-action" aria-label={label} aria-haspopup="menu" aria-expanded={open} aria-controls={open ? menuId : undefined} onClick={(event) => { event.stopPropagation(); setPosition(null); setOpen((current) => !current); }}>{iconOrientation === "vertical" ? <MoreVertical size={16}/> : <MoreHorizontal size={17}/>}</button>
     </div>
     {menu}
   </>;

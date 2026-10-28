@@ -1,7 +1,7 @@
 // End-to-end Password Manager tests: the real browser client
 // (src/lib/password-vault-client.ts) talks over fetch to the real Pages
 // Functions handler (cloudflare/password-vault.js), which calls the real SQL
-// functions from supabase/migrations in PGlite (with real pgcrypto bcrypt).
+// functions from supabase/schema.sql in PGlite (with real pgcrypto bcrypt).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';

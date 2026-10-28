@@ -369,6 +369,34 @@ test('missing migration maps to a clear 503', async () => {
   failNext = { name: 'persora_tables_list', response: () => Response.json({ code: 'PGRST202', message: 'Could not find the function' }, { status: 404 }) };
   const result = await call('GET', '/tables');
   assert.equal(result.status, 503);
-  assert.match(result.body.error, /202610300001_persora_table\.sql/);
+  assert.match(result.body.error, /supabase\/schema\.sql/);
   assert.ok(rpcLog.length > 0);
 });
+
+test('dashboard preview (?preview=1) evaluates formulas without touching openedAt', async () => {
+  const content = blankSpreadsheet();
+  content.sheets[0].data.cells['0:0'] = { v: 'Item', s: { b: 1, bg: '#e8f0fe' } };
+  content.sheets[0].data.cells['1:1'] = { v: 1200, s: { nf: 'currency', cur: 'USD', dp: 0 } };
+  content.sheets[0].data.cells['25:1'] = { v: 300 }; // beyond 12-row preview window, referenced by formula in row 2
+  content.sheets[0].data.cells['2:1'] = { f: '=B2+B26', s: { b: 1, nf: 'currency', cur: 'USD', dp: 0 } };
+  const id = crypto.randomUUID();
+  const created = await call('POST', '/tables', { id, kind: 'spreadsheet', name: 'Preview Check', sheets: content.sheets });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.table.openedAt, null, 'newly created table has null openedAt before opening');
+
+  const preview = await call('GET', `/tables/${id}?preview=1`);
+  assert.equal(preview.status, 200);
+  assert.equal(preview.body.table.openedAt, null, 'preview=1 must not mutate openedAt');
+  assert.equal(preview.body.sheets.length, 1);
+  assert.equal(preview.body.sheets[0].data.cells['2:1'].v, 1500, 'formula referencing row 26 evaluated accurately');
+  assert.equal(preview.body.sheets[0].data.cells['25:1'], undefined, 'cells outside preview window are trimmed');
+
+  const listAfterPreview = await call('GET', '/tables');
+  const item = listAfterPreview.body.tables.find((row) => row.id === id);
+  assert.equal(item.openedAt, null, 'openedAt remains untouched in table list after preview');
+
+  const fullOpen = await call('GET', `/tables/${id}`);
+  assert.equal(fullOpen.status, 200);
+  assert.ok(fullOpen.body.table.openedAt, 'opening table normally sets openedAt');
+});
+

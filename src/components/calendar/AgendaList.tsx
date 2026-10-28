@@ -1,5 +1,6 @@
 import { useMemo } from "react";
-import { CalendarPlus, MapPin, Repeat } from "lucide-react";
+import { MapPin, Repeat } from "lucide-react";
+import { PersoraEmptyState } from "@/design-system";
 import type { AnchorRect } from "./CalendarParts";
 import { CategoryDot, rectOf } from "./CalendarParts";
 import { eventAriaLabel } from "./TimeGrid";
@@ -28,14 +29,16 @@ export default function AgendaList({ from, to, occurrences, zone, today, nowMs, 
   }, [occurrences, from, to, zone]);
 
   if (!days.length) {
-    return <div className="cal-empty">
-      <span className="cal-empty-icon"><CalendarPlus size={22}/></span>
-      <h2>{filtered ? "Nothing matches your filters" : "Nothing scheduled"}</h2>
-      <p>{filtered ? "Some items" : "No events"} from {formatDay(from, { month: "short", day: "numeric" })} to {formatDay(to, { month: "short", day: "numeric" })}{filtered ? " are hidden by filters." : "."}</p>
-      {filtered && onResetFilters
+    return <PersoraEmptyState
+      className="cal-empty"
+      moduleId="calendar"
+      tone="indigo"
+      title={filtered ? "Nothing matches your filters" : "Nothing scheduled"}
+      description={`${filtered ? "Some items" : "No events"} from ${formatDay(from, { month: "short", day: "numeric" })} to ${formatDay(to, { month: "short", day: "numeric" })}${filtered ? " are hidden by filters." : "."}`}
+      action={filtered && onResetFilters
         ? <button type="button" className="cal-button" onClick={onResetFilters}>Reset filters</button>
         : <button type="button" className="cal-primary-button" onClick={onCreate}>New event</button>}
-    </div>;
+    />;
   }
 
   return <ol className="cal-agenda" aria-label="Agenda">
@@ -52,20 +55,20 @@ export default function AgendaList({ from, to, occurrences, zone, today, nowMs, 
           const time = occurrence.allDay
             ? occurrence.event.itemType === "task" ? "Due" : "All day"
             : multi
-              ? date === span.first ? `${formatTime(occurrence.startMs as number, zone)} →` : date === span.last ? `→ ${formatTime(occurrence.endMs as number, zone)}` : "All day"
+              ? date === span.first ? `${formatTime(occurrence.startMs as number, zone)} →` : date === span.last ? `→ ${formatTime(occurrence.endMs as number, zone)}` : "Continues"
               : <><span>{formatTime(occurrence.startMs as number, zone)}</span><span> – {formatTime(occurrence.endMs as number, zone)}</span></>;
           const past = occurrence.allDay ? (occurrence.endDate as string) <= today : (occurrence.endMs as number) <= nowMs;
           return <li key={`${occurrence.id}-${date}`}>
             <button
               type="button"
-              className={`cal-agenda-row ${itemClasses(occurrence.event)} ${past ? "is-past" : ""} ${highlightId === occurrence.event.id ? "is-highlight" : ""} ${savingIds?.has(occurrence.id) ? "is-saving" : ""}`}
+              className={`cal-agenda-row cal-cat-${occurrence.event.category || "default"} ${itemClasses(occurrence.event)} ${past ? "is-past" : ""} ${highlightId === occurrence.event.id ? "is-highlight" : ""} ${savingIds?.has(occurrence.id) ? "is-saving" : ""}`}
               onClick={(event) => onSelect(occurrence, rectOf(event.currentTarget))}
               aria-label={eventAriaLabel(occurrence, zone, savingIds?.has(occurrence.id))}
             >
               <span className="cal-agenda-time">{time}</span>
               <CategoryDot category={occurrence.event.category}/>
               <span className="cal-agenda-main">
-                <b><ItemTypeIcon event={occurrence.event} size={12}/><span className="cal-agenda-title">{occurrence.event.title}</span>{occurrence.recurring && <Repeat size={11} aria-hidden="true"/>}</b>
+                <b><ItemTypeIcon event={occurrence.event} size={13}/><span className="cal-agenda-title">{occurrence.event.title}</span>{occurrence.recurring && <Repeat size={11} className="cal-repeat-icon" aria-hidden="true"/>}</b>
                 {occurrence.event.location && <small><MapPin size={11} aria-hidden="true"/>{occurrence.event.location}</small>}
               </span>
             </button>

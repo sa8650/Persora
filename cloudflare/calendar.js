@@ -2,7 +2,7 @@
 //
 // Every route runs for the signed-in member only (api.js authorizes first) and
 // every database call passes that member's id, which the SQL functions in
-// supabase/migrations/202610250001_calendar.sql use to scope each statement.
+// supabase/schema.sql use to scope each statement.
 // Input is validated here with the shared rules (cloudflare/calendar-rules.js)
 // and again by table constraints.
 //
@@ -72,7 +72,7 @@ async function databaseError(response) {
   }
   if (code === "23514" || code === "22007" || code === "22008") return new CalendarError("Those event details aren't valid. Check the dates and try again.", 400);
   if (code === "42P01" || code === "PGRST205" || code === "PGRST202") {
-    return new CalendarError("Calendar needs its database migration (202610250001_calendar.sql). Ask an administrator to apply it.", 503);
+    return new CalendarError("Calendar needs the Persora database schema and migrations (supabase/schema.sql). Ask an administrator to apply them.", 503);
   }
   console.error("Persora Calendar database request failed", response.status, code, message);
   return new CalendarError("The calendar database could not complete the request. Please try again shortly.", 502);

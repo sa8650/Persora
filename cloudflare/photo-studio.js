@@ -1,6 +1,6 @@
 // Persora Photo Studio — worker routes for saved official photographs.
 //
-// Persistence guarantees (see supabase/migrations/202610220006_photo_studio.sql):
+// Persistence guarantees (see supabase/schema.sql):
 //   * Nothing is written before the member's final Save. The browser keeps the
 //     selected/edited image in memory; POST /photo-studio/photos is the ONLY
 //     route that writes, and it uploads one R2 object and then creates the row
@@ -72,7 +72,7 @@ async function databaseError(response) {
     return new PhotoStudioError(message, status >= 400 && status < 600 ? status : 400);
   }
   if (code === "42P01" || code === "PGRST205" || code === "PGRST202") {
-    return new PhotoStudioError("Photo Studio needs its database migration (202610220006_photo_studio.sql). Ask an administrator to apply it.", 503);
+    return new PhotoStudioError("Photo Studio needs the Persora database schema (supabase/schema.sql). Ask an administrator to apply it.", 503);
   }
   console.error("Persora Photo Studio database request failed", response.status, code, message);
   return new PhotoStudioError("The Photo Studio database could not complete the request. Please try again shortly.", 502);

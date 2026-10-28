@@ -6,6 +6,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import type { HabitCategory, HabitColor, HabitIcon } from "../../../cloudflare/habit-rules.js";
 import type { Habit } from "../../lib/habit-api";
+import { IconTile } from "@/components/reui/icon-tile";
 
 export const HABIT_ICON_COMPONENTS: Record<HabitIcon, LucideIcon> = {
   check: CheckCircle2, droplet: Droplet, book: BookOpen, dumbbell: Dumbbell, footprints: Footprints, bike: Bike, bed: BedDouble,
@@ -35,7 +36,7 @@ export const WEEKDAY_LONG = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursd
 
 export function HabitGlyph({ habit, size = 16 }: { habit: Pick<Habit, "icon" | "color">; size?: number }) {
   const Icon = HABIT_ICON_COMPONENTS[habit.icon] || CheckCircle2;
-  return <span className={`hb-glyph hb-c-${habit.color}`} aria-hidden="true"><Icon size={size} strokeWidth={2.1}/></span>;
+  return <IconTile variant="soft" size={size <= 14 ? "xs" : "sm"} className={`hb-glyph hb-c-${habit.color}`} aria-hidden="true"><Icon size={size} strokeWidth={2.1}/></IconTile>;
 }
 
 const formatNumber = (value: number) => new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value);

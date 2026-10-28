@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type ChangeEvent, type ReactNode } from "react";
-import { Image as ImageIcon, Loader2, Stamp, Trash2, Type, Upload, X } from "lucide-react";
+import { Image as ImageIcon, Stamp, Trash2, Type, Upload, X } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import {
   IMAGE_ACCEPT, OVERLAY_COLORS, WATERMARK_FONTS, WATERMARK_LIMITS, cleanTextForPdf, defaultTextWatermark, describePages, isWinAnsi, normalizeWatermark, resolveWatermarkPages, watermarkIsEmpty,
   type ImageWatermark, type TextWatermark, type Watermark, type WatermarkFont, type WatermarkPages, type WatermarkPosition,
@@ -157,7 +158,7 @@ export default function PdfWatermarkPanel({ draft, applied, pages, currentIndex,
         <div className="pdfs-wm-image">
           <span className="pdfs-wm-image-frame">{imageSrc ? <img src={imageSrc} alt="Watermark image"/> : <ImageIcon size={20} aria-hidden="true"/>}</span>
           <div>
-            <button type="button" className="quiet-button" onClick={() => fileInput.current?.click()} disabled={imageBusy}>{imageBusy ? <Loader2 size={14} className="pdfs-spin"/> : <Upload size={14}/>}{draft.imageId ? "Replace image" : "Choose image"}</button>
+            <button type="button" className="quiet-button" onClick={() => fileInput.current?.click()} disabled={imageBusy}>{imageBusy ? <Spinner className="size-3.5"/> : <Upload size={14}/>}{draft.imageId ? "Replace image" : "Choose image"}</button>
             <small>PNG, JPG, WebP, GIF or BMP. The aspect ratio is kept; transparent PNGs work best.</small>
             {imageError && <span className="pdfs-field-error" role="alert">{imageError}</span>}
           </div>

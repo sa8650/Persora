@@ -15,13 +15,13 @@ export type SectionId =
   | "notes"
   | "personal-finance";
 
-export type ViewId = "dashboard" | SectionId | "contacts" | "settings" | "billing" | "shared" | "timeline" | "medical-records" | "password-manager" | "trash" | "projects" | "photo-studio" | "pdf-studio" | "calendar" | "habits" | "loans" | "tables" | "connections";
+export type ViewId = "dashboard" | SectionId | "contacts" | "settings" | "billing" | "shared" | "timeline" | "medical-records" | "password-manager" | "trash" | "projects" | "photo-studio" | "pdf-studio" | "calendar" | "habits" | "loans" | "tables" | "forms" | "docs" | "connections";
 
 /** Content families that flow through the global Trash. */
-export type TrashKind = "vault_item" | "contact" | "business_card" | "medical_record" | "timeline_event" | "password_entry" | "photo_studio_photo" | "pdf_studio_document" | "persora_table";
+export type TrashKind = "vault_item" | "contact" | "business_card" | "medical_record" | "timeline_event" | "password_entry" | "photo_studio_photo" | "pdf_studio_document" | "persora_table" | "persora_doc";
 
 /** Space keys used by Trash entries: vault section ids plus whole-app spaces. */
-export type TrashSpace = SectionId | "contacts" | "business-cards" | "medical-records" | "timeline" | "password-manager" | "photo-studio" | "pdf-studio" | "persora-table";
+export type TrashSpace = SectionId | "contacts" | "business-cards" | "medical-records" | "timeline" | "password-manager" | "photo-studio" | "pdf-studio" | "persora-table" | "persora-docs";
 
 export interface TrashEntry {
   /** Stable id of the original record (restoration re-uses it). */
@@ -460,11 +460,17 @@ export interface BillingSnapshot {
 // Projects (2026-10-22)
 // ---------------------------------------------------------------------------
 export type ProjectKind = "personal" | "shared";
+export type ProjectPriority = "high" | "medium" | "normal" | "low";
 export type ProjectFieldStatus = "planning" | "in-progress" | "in-review" | "blocked" | "completed";
 export type ProjectMemberRole = "editor" | "commenter" | "viewer";
 export type ProjectAccessRole = ProjectMemberRole | "owner";
 export type ProjectFolderColor = "cyan" | "purple" | "pink" | "blue" | "orange" | "green";
-export interface ProjectRecord { id: string; owner_id: string; name: string; description: string; kind: ProjectKind; created_at: string; updated_at: string }
+export interface ProjectRecord {
+  id: string; owner_id: string; name: string; description: string; kind: ProjectKind;
+  category?: string; tags?: string[]; start_date?: string | null; due_date?: string | null;
+  priority?: ProjectPriority; paused?: boolean; archived?: boolean;
+  created_at: string; updated_at: string;
+}
 export interface ProjectAccess { owner: boolean; role: ProjectAccessRole; canCreateFields: boolean; canRequest?: boolean }
 export interface ProjectStats { fields: number; completed: number; inReview: number; members: number; pendingRequests: number; tasksTotal?: number; tasksCompleted?: number }
 export interface ProjectSummary extends ProjectRecord { access: { owner: boolean; role: ProjectAccessRole; canCreateFields: boolean }; stats: ProjectStats }
@@ -479,7 +485,7 @@ export interface ProjectTaskAttachment {
 }
 export interface ProjectTask {
   id: string; project_id: string; field_id: string; name: string; description: string; status: ProjectTaskStatus;
-  assignee_id: string | null; paused: boolean; created_by: string; updated_by: string | null; sort_order: number;
+  priority?: ProjectPriority; assignee_id: string | null; paused: boolean; created_by: string; updated_by: string | null; sort_order: number;
   created_at: string; updated_at: string; assigneeName?: string | null; creatorName?: string; fieldTitle?: string;
   comments?: ProjectTaskComment[]; attachments?: ProjectTaskAttachment[];
 }

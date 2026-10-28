@@ -7,6 +7,7 @@ import {
   type Field, type FilterOperator, type TableView, type ViewFilter, type ViewSort,
 } from "../../../cloudflare/table-rules.js";
 import { TableDialog } from "./table-ui";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const NO_VALUE_OPS: FilterOperator[] = ["empty", "not_empty", "checked", "unchecked"];
 
@@ -20,7 +21,7 @@ function FilterValue({ field, filter, onChange }: { field: Field; filter: ViewFi
   if (field.type === "multiselect") {
     const wanted = Array.isArray(filter.value) ? filter.value : [];
     return <span className="tb-filter-choices">{(field.choices || []).map((choice) => <label key={choice.id}>
-      <input type="checkbox" checked={wanted.includes(choice.id)} onChange={(event) => onChange(event.target.checked ? [...wanted, choice.id] : wanted.filter((id) => id !== choice.id))}/> {choice.label}
+      <Checkbox checked={wanted.includes(choice.id)} onCheckedChange={(checked) => onChange(checked === true ? [...wanted, choice.id] : wanted.filter((id) => id !== choice.id))}/> {choice.label}
     </label>)}</span>;
   }
   if (field.type === "date") return <input aria-label="Date" type="date" value={String(filter.value || "")} onChange={(event) => onChange(event.target.value)}/>;
@@ -108,8 +109,8 @@ export default function ViewSettingsDialog({ view, fields, primaryField, onSave,
 
       <fieldset className="tb-field tb-visible-fields"><legend>Visible fields</legend>
         {fields.map((field) => <label key={field.id}>
-          <input type="checkbox" disabled={field.id === primaryField} checked={!draft.hidden.includes(field.id)}
-            onChange={(event) => set({ hidden: event.target.checked ? draft.hidden.filter((id) => id !== field.id) : [...draft.hidden, field.id] })}/>
+          <Checkbox disabled={field.id === primaryField} checked={!draft.hidden.includes(field.id)}
+            onCheckedChange={(checked) => set({ hidden: checked === true ? draft.hidden.filter((id) => id !== field.id) : [...draft.hidden, field.id] })}/>
           {field.name}{field.id === primaryField && <small> (primary)</small>}
         </label>)}
       </fieldset>

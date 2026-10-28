@@ -5,9 +5,13 @@ import AuthDialog, { type AuthMode } from "./components/AuthDialog";
 import Workspace from "./components/Workspace";
 import { deriveAutomaticTimelineEvents, mergeTimelineEvents } from "./lib/timeline";
 import PublicBusinessCardPage from "./components/PublicBusinessCardPage";
+const PublicSharedTablePage = lazy(() => import("./components/table/PublicSharedTablePage"));
+const PublicSharedDocPage = lazy(() => import("./components/docs/PublicSharedDocPage"));
+const PublicFormPage = lazy(() => import("./components/forms/PublicFormPage"));
 const AdminConsole = lazy(() => import("./components/AdminConsole"));
 const AdminAccessPage = lazy(() => import("./components/AdminAccessPage"));
 import PublicInfoPage from "./components/PublicInfoPage";
+import type { PublicPage, PublicPath } from "./components/PublicSiteShared";
 import { ConfirmDialog, ItemDetailDialog, ItemEditorDialog, TodoEditorDialog, ToastNotice } from "./components/VaultDialogs";
 import ShareRecordDialog from "./components/ShareRecordDialog";
 import { ADD_DOCUMENT_DESTINATION_EVENT, ADD_DOCUMENT_HANDOFF_EVENT } from "./types";
@@ -78,10 +82,30 @@ import { getLocalAvatar, getLocalBusinessCards, getLocalContacts, getLocalItems,
 
 interface ToastState { message: string; kind: "success" | "error"; id: number }
 type EditorDraft = Omit<VaultItem, "id" | "createdAt" | "updatedAt"> & { id?: string; fileUpload?: File | null };
-type AppPath = "/" | "/admin" | "/privacy" | "/terms" | "/contact";
-type PublicPage = "privacy" | "terms" | "contact";
-const PUBLIC_PATHS: Record<string, PublicPage> = { "/privacy": "privacy", "/terms": "terms", "/contact": "contact" };
-const TRASH_SPACE_ALIASES: Record<string, TrashSpace> = { contacts: "contacts", business_cards: "business-cards", medical_records: "medical-records", timeline: "timeline", photo_studio: "photo-studio", pdf_studio: "pdf-studio" };
+type AppPath = "/" | "/admin" | PublicPath;
+const PUBLIC_PATHS: Record<string, PublicPage> = {
+  "/features": "features",
+  "/security": "security",
+  "/help": "help",
+  "/about": "about",
+  "/privacy": "privacy",
+  "/terms": "terms",
+  "/download": "download",
+  "/contact": "contact",
+};
+const SITE_CONTENT_PAGES = new Set<PublicPage>(["privacy", "terms", "contact"]);
+const TRASH_SPACE_ALIASES: Record<string, TrashSpace> = {
+  contacts: "contacts",
+  business_cards: "business-cards",
+  medical_records: "medical-records",
+  timeline: "timeline",
+  photo_studio: "photo-studio",
+  pdf_studio: "pdf-studio",
+  "persora-table": "persora-table",
+  persora_table: "persora-table",
+  "persora-docs": "persora-docs",
+  persora_docs: "persora-docs",
+};
 const baseDocumentTypes = SECTION_BY_ID.documents.fields.find((field) => field.key === "type")?.options || [];
 const normalizePath = (path: string) => path.replace(/\/+$/, "") || "/";
 
@@ -158,8 +182,12 @@ export default function App() {
   const localFiles = useRef<Map<string, string>>(new Map());
   const adminRoute = pathname === "/admin";
   const publicCardId = pathname.match(/^\/BusinessCard\/([A-F0-9]{32})$/i)?.[1].toUpperCase() || "";
+  const publicTableToken = pathname.match(/^\/SharedTable\/([^/]+)$/i)?.[1] || "";
+  const publicDocToken = pathname.match(/^\/SharedDoc\/([^/]+)$/i)?.[1] || "";
+  const publicFormSlug = pathname.match(/^\/Form\/([^/]+)$/i)?.[1] || "";
   const publicPage = PUBLIC_PATHS[pathname];
-  const siteContentLoading = Boolean(publicPage && isPagesApiConfigured && siteContentPath !== pathname);
+  const needsSiteContent = Boolean(publicPage && SITE_CONTENT_PAGES.has(publicPage));
+  const siteContentLoading = Boolean(needsSiteContent && isPagesApiConfigured && siteContentPath !== pathname);
 
   const notify = useCallback((message: string, kind: "success" | "error" = "success") => {
     setToast({ message, kind, id: Date.now() + Math.floor(Math.random() * 1000) });
@@ -328,6 +356,7 @@ export default function App() {
     if (normalizePath(window.location.pathname) !== path) window.history.pushState({}, "", path);
     setPathname(path);
     setSearch("");
+    window.scrollTo({ top: 0, behavior: "auto" });
   };
 
   const applyUser = useCallback(async (profile: AppUser) => {
@@ -590,7 +619,7 @@ export default function App() {
   }, [user?.id, user?.demo, commitMedicalRecords]);
 
   useEffect(() => {
-    if (!publicPage || !isPagesApiConfigured) return;
+    if (!needsSiteContent || !isPagesApiConfigured) return;
     let active = true;
     void loadPublicSiteContent().then((content) => {
       if (active) { setSiteContent(content); setSiteContentPath(pathname); }
@@ -598,11 +627,11 @@ export default function App() {
       if (active) setSiteContentPath(pathname);
     });
     return () => { active = false; };
-  }, [publicPage, pathname]);
+  }, [needsSiteContent, pathname]);
 
   useEffect(() => {
-    if (!publicPage && siteContentPath) setSiteContentPath("");
-  }, [publicPage, siteContentPath]);
+    if (!needsSiteContent && siteContentPath) setSiteContentPath("");
+  }, [needsSiteContent, siteContentPath]);
 
   useEffect(() => {
     if (!adminRoute || !isPagesApiConfigured) { setBootstrapStatus({ initialized: null, enabled: false }); return; }
@@ -997,6 +1026,27 @@ commitContacts(getLocalContacts(DEMO_USER.id));
     if (user.demo) putLocalContacts(user.id, next);
   };
 
+  const handleDeleteContacts = async (targets: PersoraContact[]) => {
+    if (!user) throw new Error("Please sign in before deleting contacts.");
+    if (!targets.length) return;
+    const removedIds = new Set<string>();
+    if (!user.demo) {
+      for (const contact of targets) {
+        await deleteContactRecord(contact.id);
+        removedIds.add(contact.id);
+      }
+      void refreshTrash().catch(() => {});
+    } else {
+      for (const contact of targets) {
+        moveDemoItemToTrash({ id: contact.id, kind: "contact", title: contact.name, space: "contacts", hasFiles: Boolean(contact.photoDataUrl || contact.photoKey), payload: contact });
+        removedIds.add(contact.id);
+      }
+    }
+    const next = contactsRef.current.filter((entry) => !removedIds.has(entry.id));
+    commitContacts(next);
+    if (user.demo) putLocalContacts(user.id, next);
+  };
+
   const handleMergeContacts = async (primaryId: string, duplicateIds: string[]) => {
     if (!user) throw new Error("Please sign in before merging contacts.");
     if (!user.demo) {
@@ -1129,7 +1179,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
     const rows = await loadBusinessCards(); commitBusinessCards(rows);
   };
 
-  const handleSaveMedicalRecord = async (draft: MedicalRecordDraft): Promise<MedicalRecord> => {
+  const handleSaveMedicalRecord = async (draft: MedicalRecordDraft, onUploadProgress?: (progress: TransferProgress) => void): Promise<MedicalRecord> => {
     if (!user) throw new Error("Sign in before adding medical records.");
     if (draft.fileUpload && (user.demo || user.uploadsEnabled !== true)) throw new Error("New medical attachments require an active paid plan. You can still save the record without a file.");
     const existing = draft.id ? medicalRecordsRef.current.find((record) => record.id === draft.id) : undefined;
@@ -1155,7 +1205,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
     let uploadedKey = "";
     let file = draft.removeFile ? undefined : draft.file || existing?.file;
     try {
-      if (draft.fileUpload) { file = await uploadMedicalRecordFile(draft.fileUpload); uploadedKey = file.key || ""; }
+      if (draft.fileUpload) { file = await uploadMedicalRecordFile(draft.fileUpload, onUploadProgress); uploadedKey = file.key || ""; }
       const saved = await saveMedicalRecord({ ...draft, file, fileUpload: undefined, removeFile: Boolean(draft.removeFile) });
       const next = existing ? medicalRecordsRef.current.map((record) => record.id === saved.id ? saved : record) : [saved, ...medicalRecordsRef.current];
       commitMedicalRecords(next); return saved;
@@ -1202,7 +1252,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
     return fetchMedicalRecordFile(record.id);
   };
 
-  const handleSaveTimelineEvent = async (draft: TimelineDraft) => {
+  const handleSaveTimelineEvent = async (draft: TimelineDraft, onUploadProgress?: (progress: TransferProgress) => void) => {
     if (!user || user.demo || !isPagesApiConfigured) throw new Error("Encrypted timeline posts require a signed-in Persora cloud account.");
     if (draft.attachmentFile && user.uploadsEnabled !== true) throw new Error("New timeline attachments require an active paid plan. You can still post or edit the event.");
     if (typeof navigator !== "undefined" && !navigator.onLine) throw new Error("Connect to the internet to post or edit a timeline event. Offline automatic dates are queued locally.");
@@ -1210,7 +1260,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
     let uploadedKey = "";
     try {
       let attachment = draft.removeAttachment ? undefined : draft.attachment;
-      if (draft.attachmentFile) { attachment = await uploadTimelineAttachment(draft.attachmentFile); uploadedKey = attachment.key || ""; }
+      if (draft.attachmentFile) { attachment = await uploadTimelineAttachment(draft.attachmentFile, onUploadProgress); uploadedKey = attachment.key || ""; }
       const saved = await saveTimelineEvent({ ...draft, attachment, attachmentFile: undefined });
       setTimelineEvents((current) => [saved, ...current.filter((event) => event.id !== saved.id)]);
       notify(draft.id ? "Timeline event updated." : "Timeline event posted.");
@@ -1486,11 +1536,12 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       url.searchParams.delete("project");
       window.history.replaceState(window.history.state, "", url);
     }
-    if (new URLSearchParams(window.location.search).has("view") || (next !== "loans" && new URLSearchParams(window.location.search).has("loan")) || (next !== "tables" && new URLSearchParams(window.location.search).has("table"))) {
+    if (new URLSearchParams(window.location.search).has("view") || (next !== "loans" && new URLSearchParams(window.location.search).has("loan")) || (next !== "tables" && new URLSearchParams(window.location.search).has("table")) || (next !== "docs" && new URLSearchParams(window.location.search).has("doc"))) {
       const url = new URL(window.location.href);
       url.searchParams.delete("view");
       if (next !== "loans") url.searchParams.delete("loan");
       if (next !== "tables") url.searchParams.delete("table");
+      if (next !== "docs") url.searchParams.delete("doc");
       window.history.replaceState(window.history.state, "", url);
     }
     if (next !== "documents") {
@@ -1518,6 +1569,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
     onSignIn={() => openAuth("signin")}
     onGetStarted={() => openAuth("signup")}
     onDemo={completeDemo}
+    onNavigatePublic={goToPath}
     plans={publicPlans}
     billingEnabled={billingEnabled}
     maxUploadMb={maxUploadMb}
@@ -1526,7 +1578,27 @@ commitContacts(getLocalContacts(DEMO_USER.id));
 
   const realUser = user?.demo ? null : user;
   return <>
-    {publicCardId ? <PublicBusinessCardPage cardId={publicCardId}/> : authRestoring || siteContentLoading ? <PersoraBootScreen /> : adminRoute ? realUser?.role === "admin" ? <Suspense fallback={<PersoraBootScreen />}><AdminConsole user={realUser} onBackToVault={backToVault} onSignOut={() => void handleSignOut()} notify={notify} /></Suspense> : <Suspense fallback={<PersoraBootScreen />}><AdminAccessPage
+    {publicCardId ? <PublicBusinessCardPage cardId={publicCardId}/> : publicTableToken ? <Suspense fallback={<PersoraBootScreen />}><PublicSharedTablePage
+      token={decodeURIComponent(publicTableToken)}
+      signedInUser={realUser}
+      notify={notify}
+      onSignIn={() => openAuth("signin")}
+      onCreateAccount={() => openAuth("signup")}
+      onOpenWorkspace={backToVault}
+    /></Suspense> : publicDocToken ? <Suspense fallback={<PersoraBootScreen />}><PublicSharedDocPage
+      token={decodeURIComponent(publicDocToken)}
+      signedInUser={realUser}
+      notify={notify}
+      onSignIn={() => openAuth("signin")}
+      onCreateAccount={() => openAuth("signup")}
+      onOpenWorkspace={backToVault}
+    /></Suspense> : publicFormSlug ? <Suspense fallback={<PersoraBootScreen />}><PublicFormPage
+      slug={decodeURIComponent(publicFormSlug)}
+      signedInUser={realUser}
+      notify={notify}
+      onSignIn={() => openAuth("signin")}
+      onCreateAccount={() => openAuth("signup")}
+    /></Suspense> : authRestoring || siteContentLoading ? <PersoraBootScreen /> : adminRoute ? realUser?.role === "admin" ? <Suspense fallback={<PersoraBootScreen />}><AdminConsole user={realUser} onBackToVault={backToVault} onSignOut={() => void handleSignOut()} notify={notify} /></Suspense> : <Suspense fallback={<PersoraBootScreen />}><AdminAccessPage
       user={realUser}
       status={bootstrapStatus}
       backendConnected={isPagesApiConfigured}
@@ -1535,7 +1607,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       onBootstrapComplete={handleBootstrapComplete}
       onBack={backToVault}
       onSignOut={() => void handleSignOut()}
-    /></Suspense> : publicPage ? <PublicInfoPage page={publicPage} content={siteContent} signedIn={Boolean(user)} onHome={openHomeFromPublicPage} onSignIn={() => openAuth("signin")} /> : user ? <Workspace
+    /></Suspense> : publicPage ? <PublicInfoPage page={publicPage} content={siteContent} signedIn={Boolean(user)} onHome={openHomeFromPublicPage} onNavigate={goToPath} onSignIn={() => openAuth("signin")} onGetStarted={() => openAuth("signup")} /> : user ? <Workspace
       user={user}
       items={items}
       sharedByMe={sharedByMe}
@@ -1598,6 +1670,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       onMoveVaultItem={handleMoveVaultItem}
       onSaveContact={handleSaveContact}
       onDeleteContact={handleDeleteContact}
+      onDeleteContacts={handleDeleteContacts}
       onMergeContacts={handleMergeContacts}
       onImportContacts={handleImportContacts}
       onRefreshContacts={handleRefreshContacts}
@@ -1626,7 +1699,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       onSubmit={handleAuthSubmit}
     />}
     {editor && user && <ItemEditorDialog sectionId={editor.section} item={editor.item} initialMetadata={editor.initialMetadata} initialFile={editor.initialFile} initialScanResult={editor.initialScanResult} initialScanComplete={editor.initialScanComplete} initialProtectedKeys={editor.initialProtectedKeys} documentTypes={documentTypes} familyMembers={familyMembers} maxUploadMb={maxUploadMb} canUpload={!user.demo && user.uploadsEnabled === true} onUpgrade={!user.demo ? () => { setView("billing"); setEditor(null); } : undefined} onChangeAddDocumentDestination={(draft) => window.dispatchEvent(new CustomEvent<AddDocumentFlowDraft>(ADD_DOCUMENT_DESTINATION_EVENT, { detail: draft }))} onClose={() => setEditor(null)} onSave={handleSaveItem} />}
-    {todoEditor !== false && user && <TodoEditorDialog key={`${todoEditorType}:${todoEditor?.id || "new"}`} kind={todoEditorType} item={todoEditor || undefined} canUpload={!user.demo && user.uploadsEnabled === true} maxUploadMb={maxUploadMb} onUpgrade={!user.demo ? () => { setView("billing"); setTodoEditor(false); } : undefined} onClose={() => setTodoEditor(false)} onSave={async (draft) => { await handleSaveItem(draft); setTodoEditor(false); }} />}
+    {todoEditor !== false && user && <TodoEditorDialog key={`${todoEditorType}:${todoEditor?.id || "new"}`} kind={todoEditorType} item={todoEditor || undefined} canUpload={!user.demo && user.uploadsEnabled === true} maxUploadMb={maxUploadMb} onUpgrade={!user.demo ? () => { setView("billing"); setTodoEditor(false); } : undefined} onClose={() => setTodoEditor(false)} onSave={async (draft, onProgress) => { await handleSaveItem(draft, onProgress); setTodoEditor(false); }} />}
     {focusedItem && <ItemDetailDialog
       item={focusedItem}
       familyMembers={familyMembers}
@@ -1665,6 +1738,8 @@ function initialWorkspaceView(): ViewId {
   if (params.get("view") === "habits") return "habits";
   if (params.get("view") === "loans") return "loans";
   if (params.get("view") === "tables") return "tables";
+  if (params.get("view") === "docs") return "docs";
+  if (params.get("view") === "forms") return "forms";
   if (params.get("view") === "connections") return "connections";
   return "dashboard";
 }

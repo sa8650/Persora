@@ -4,6 +4,8 @@ import "./table.css";
 import type { AppUser } from "../../types";
 import { isPagesApiConfigured } from "../../lib/cloud";
 import TableHome from "./TableHome";
+import { Spinner } from "@/components/ui/spinner";
+import { PersoraEmptyState } from "@/design-system";
 
 const TableEditor = lazy(() => import("./TableEditor"));
 
@@ -43,14 +45,20 @@ export default function TableView({ user, notify, canUpload, maxUploadMb, onUpgr
   }, []);
 
   if (disabled) {
-    return <div className="tb-view"><div className="tb-empty" role="status">
-      <h2>Persora Table needs your Persora account</h2>
-      <p>Tables are saved privately to your account on the server, so they aren't available in the local sample session. Sign in to create spreadsheets and Smart Tables.</p>
-    </div></div>;
+    return <div className="tb-view">
+      <PersoraEmptyState
+        className="tb-empty"
+        role="status"
+        moduleId="tables"
+        tone="emerald"
+        title="Persora Table needs your Persora account"
+        description="Tables are saved privately to your account on the server, so they aren't available in the local sample session. Sign in to create spreadsheets and Smart Tables."
+      />
+    </div>;
   }
   return <div className="tb-view">
     {openId
-      ? <Suspense fallback={<div className="tb-loading" role="status"><span className="spinner"/> Opening table…</div>}>
+      ? <Suspense fallback={<div className="tb-loading" role="status"><Spinner className="size-4"/> Opening table…</div>}>
         <TableEditor key={openId} tableId={openId} user={user} notify={notify} canUpload={canUpload} maxUploadMb={maxUploadMb} onUpgrade={onUpgrade}
           onClose={() => open(null)} onOpen={open} onTrashChanged={onTrashChanged}/>
       </Suspense>

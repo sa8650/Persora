@@ -1,22 +1,26 @@
 // Persora Table — one open table: loading, saving (server-confirmed), local
-// backups, conflict handling, undo/redo and the header. The spreadsheet and
-// Smart Table editors below only produce new documents; this shell decides
-// what is saved and when.
+// backups, conflict handling, undo/redo, member/link sharing, comments, and
+// permission-aware editing ('owner' | 'edit' | 'comment' | 'view').
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Check, CloudOff, Copy, MoreHorizontal, Pencil, Redo2, RefreshCw, Star, Trash2, TriangleAlert, Undo2 } from "lucide-react";
+import { ArrowLeft, Check, CloudOff, Copy, Eye, MessageSquare, MoreHorizontal, Pencil, Redo2, RefreshCw, Share2, Star, Trash2, TriangleAlert, Undo2, Users } from "lucide-react";
 import type { AppUser } from "../../types";
 import { ConfirmDialog } from "../VaultDialogs";
 import ModalPortal from "../ModalPortal";
 import { TABLE_LIMITS } from "../../../cloudflare/table-rules.js";
 import {
-  createTable, deleteTable, duplicateTable, getTable, getTableRevision, isGoneError, saveTableContent, tableErrorMessage, updateTableInfo,
-  type TableAttachmentInfo, type TableDetail, type TableSummary,
+  createTable, deleteTable, duplicateTable, getTable, getTableRevision, isGoneError, postTableCellComment, postTableThreadComment, saveTableContent, tableErrorMessage, updateTableInfo,
+  type TableAttachmentInfo, type TableDetail, type TableSummary, type TableThreadComment,
 } from "../../lib/table/table-api";
 import { TableSaver, type SaveState, type TableDoc } from "../../lib/table/table-sync";
 import { deleteDraft, loadDraft, saveDraft, type TableDraft } from "../../lib/table/table-drafts";
 import { DocHistory } from "../../lib/table/table-history";
 import { Menu, PromptDialog, newId, relativeTime } from "./table-ui";
 import { KindIcon } from "./TableHome";
+import ShareTableDialog from "./ShareTableDialog";
+import TableCommentsPanel, { extractSheetCellComments } from "./TableCommentsPanel";
+import { Badge } from "@/components/reui/badge";
+import { IconTile } from "@/components/reui/icon-tile";
+import { Spinner } from "@/components/ui/spinner";
 
 const SpreadsheetEditor = lazy(() => import("./SpreadsheetEditor"));
 const SmartTableEditor = lazy(() => import("./SmartTableEditor"));
@@ -26,7 +30,7 @@ const DRAFT_THROTTLE_MS = 1000;
 
 export type Commit = (next: TableDoc, label: string) => void;
 
-export function docFromDetail(detail: TableDetail): TableDoc {
+export function docFromDetail(detail: { table: { kind: TableDetail["table"]["kind"]; meta?: TableDetail["table"]["meta"] }; sheets: TableDetail["sheets"]; records: TableDetail["records"] }): TableDoc {
   if (detail.table.kind === "spreadsheet") return { kind: "spreadsheet", sheets: [...detail.sheets].sort((a, b) => a.position - b.position) };
   return { kind: "smart", meta: detail.table.meta!, records: [...detail.records].sort((a, b) => a.position - b.position) };
 }
@@ -44,7 +48,7 @@ function sameDoc(a: TableDoc, b: TableDoc) {
 function SaveIndicator({ state, onRetry }: { state: SaveState; onRetry: () => void }) {
   const { status } = state;
   if (status === "saved") return <span className="tb-save is-saved" role="status" title={state.lastSavedAt ? `Saved ${relativeTime(new Date(state.lastSavedAt).toISOString())}` : "All changes saved"}><Check size={14}/> Saved</span>;
-  if (status === "pending" || status === "saving") return <span className="tb-save is-saving" role="status"><span className="spinner"/> Saving…</span>;
+  if (status === "pending" || status === "saving") return <span className="tb-save is-saving" role="status"><Spinner className="size-3"/> Saving…</span>;
   if (status === "retrying") return <span className="tb-save is-error" role="status"><CloudOff size={14}/> Unable to save <button type="button" className="tb-link-button" onClick={onRetry}>Retry</button></span>;
   if (status === "error") return <span className="tb-save is-error" role="status"><TriangleAlert size={14}/> Unable to save</span>;
   return <span className="tb-save is-error" role="status"><TriangleAlert size={14}/> Not saved</span>;
@@ -63,6 +67,7 @@ export default function TableEditor({ tableId, user, notify, canUpload, maxUploa
 }) {
   const [summary, setSummary] = useState<TableSummary | null>(null);
   const [attachments, setAttachments] = useState<TableAttachmentInfo[]>([]);
+  const [comments, setComments] = useState<TableThreadComment[]>([]);
   const [doc, setDoc] = useState<TableDoc | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -70,6 +75,8 @@ export default function TableEditor({ tableId, user, notify, canUpload, maxUploa
   const [draftOffer, setDraftOffer] = useState<{ draft: TableDraft; compatible: boolean } | null>(null);
   const [confirm, setConfirm] = useState<null | "discard-draft" | "load-latest" | "delete">(null);
   const [renameOpen, setRenameOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [commentsOpen, setCommentsOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [historyTick, setHistoryTick] = useState(0);
   const [remoteNotice, setRemoteNotice] = useState<string | null>(null);
@@ -81,6 +88,11 @@ export default function TableEditor({ tableId, user, notify, canUpload, maxUploa
   const summaryRef = useRef<TableSummary | null>(null);
   summaryRef.current = summary;
 
+  const permission = summary?.permission || "owner";
+  const isOwner = permission === "owner" && !summary?.shared;
+  const canEdit = isOwner || permission === "edit";
+  const canComment = canEdit || permission === "comment";
+
   // ---- load ------------------------------------------------------------------
   useEffect(() => {
     const controller = new AbortController();
@@ -88,6 +100,7 @@ export default function TableEditor({ tableId, user, notify, canUpload, maxUploa
     getTable(tableId, controller.signal).then(async (detail) => {
       const serverDoc = docFromDetail(detail);
       saverRef.current?.dispose();
+      const editable = (detail.table.permission || "owner") === "owner" || detail.table.permission === "edit";
       const saver = new TableSaver({
         revision: detail.table.revision, saved: serverDoc,
         send: (batch) => saveTableContent(tableId, batch),
@@ -99,16 +112,19 @@ export default function TableEditor({ tableId, user, notify, canUpload, maxUploa
       docRef.current = serverDoc;
       setSummary(detail.table);
       setAttachments(detail.attachments);
+      setComments(detail.comments || []);
       setDoc(serverDoc);
       setSaveState(saver.snapshot);
       setHistoryTick((tick) => tick + 1);
-      const draft = await loadDraft(user.id, tableId).catch(() => null);
-      if (controller.signal.aborted) return;
-      if (draft && draft.doc.kind === serverDoc.kind && !sameDoc(draft.doc, serverDoc)) setDraftOffer({ draft, compatible: draft.baseRevision === detail.table.revision });
-      else if (draft) void deleteDraft(user.id, tableId);
+      if (editable) {
+        const draft = await loadDraft(user.id, tableId).catch(() => null);
+        if (controller.signal.aborted) return;
+        if (draft && draft.doc.kind === serverDoc.kind && !sameDoc(draft.doc, serverDoc)) setDraftOffer({ draft, compatible: draft.baseRevision === detail.table.revision });
+        else if (draft) void deleteDraft(user.id, tableId);
+      }
     }).catch((error) => {
       if (controller.signal.aborted) return;
-      setLoadError(isGoneError(error) ? "This table isn't in your account. It may have been deleted (check Trash) or the link is wrong." : tableErrorMessage(error, "This table couldn't be loaded. Check your connection and try again."));
+      setLoadError(isGoneError(error) ? "This table isn't available in your account. It may have been deleted, unshared, or the link is wrong." : tableErrorMessage(error, "This table couldn't be loaded. Check your connection and try again."));
     });
     return () => controller.abort();
   }, [tableId, reloadKey, user.id]);
@@ -117,18 +133,22 @@ export default function TableEditor({ tableId, user, notify, canUpload, maxUploa
 
   // ---- local backup of unsaved edits ------------------------------------------
   const writeDraft = useCallback(() => {
+    if (!canEdit) return;
     const saver = saverRef.current; const current = docRef.current; const info = summaryRef.current;
     if (!saver || !current || !info) return;
     if (saver.hasUnsaved) void saveDraft({ tableId, userId: user.id, name: info.name, baseRevision: saver.currentRevision, savedAt: Date.now(), doc: current });
     else void deleteDraft(user.id, tableId);
-  }, [tableId, user.id]);
+  }, [canEdit, tableId, user.id]);
+
   useEffect(() => {
+    if (!canEdit) return;
     if (saveState.status === "saved" && saverRef.current && !saverRef.current.hasUnsaved) void deleteDraft(user.id, tableId);
     if (saveState.status === "conflict" || saveState.status === "gone" || saveState.status === "retrying" || saveState.status === "error") writeDraft();
-  }, [saveState.status, tableId, user.id, writeDraft]);
+  }, [canEdit, saveState.status, tableId, user.id, writeDraft]);
 
   // ---- committing edits ----------------------------------------------------------
   const commit = useCallback<Commit>((next, label) => {
+    if (!canEdit) return;
     const previous = docRef.current;
     if (!previous || next === previous) return;
     historyRef.current.push(previous, label);
@@ -138,9 +158,10 @@ export default function TableEditor({ tableId, user, notify, canUpload, maxUploa
     saverRef.current?.update(next);
     if (draftTimer.current) clearTimeout(draftTimer.current);
     draftTimer.current = setTimeout(writeDraft, DRAFT_THROTTLE_MS);
-  }, [writeDraft]);
+  }, [canEdit, writeDraft]);
 
   const travel = useCallback((direction: "undo" | "redo") => {
+    if (!canEdit) return;
     const current = docRef.current;
     if (!current) return;
     const entry = direction === "undo" ? historyRef.current.undo(current) : historyRef.current.redo(current);
@@ -151,10 +172,10 @@ export default function TableEditor({ tableId, user, notify, canUpload, maxUploa
     saverRef.current?.update(entry.doc);
     if (draftTimer.current) clearTimeout(draftTimer.current);
     draftTimer.current = setTimeout(writeDraft, DRAFT_THROTTLE_MS);
-  }, [writeDraft]);
+  }, [canEdit, writeDraft]);
 
-  // Undo/redo shortcuts when focus isn't in a text field (fields keep their own undo).
   useEffect(() => {
+    if (!canEdit) return;
     const onKey = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
       const target = event.target as HTMLElement | null;
@@ -166,24 +187,24 @@ export default function TableEditor({ tableId, user, notify, canUpload, maxUploa
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [travel]);
+  }, [canEdit, travel]);
 
   // ---- leaving, focus and polling ---------------------------------------------------
   useEffect(() => {
     const beforeUnload = (event: BeforeUnloadEvent) => {
-      if (!saverRef.current?.hasUnsaved) return;
+      if (!canEdit || !saverRef.current?.hasUnsaved) return;
       writeDraft();
       event.preventDefault();
       event.returnValue = "";
     };
-    const onHidden = () => { if (document.visibilityState === "hidden") { writeDraft(); void saverRef.current?.flush(); } else void poll(); };
+    const onHidden = () => { if (document.visibilityState === "hidden") { if (canEdit) { writeDraft(); void saverRef.current?.flush(); } } else void poll(); };
     const poll = async () => {
       const saver = saverRef.current;
       if (!saver || document.visibilityState === "hidden") return;
       try {
         const head = await getTableRevision(tableId);
         if (!saver.isBehind(head.revision)) return;
-        if (saver.hasUnsaved) { setRemoteNotice("This table was changed in another tab or on another device."); void saver.flush(); return; }
+        if (canEdit && saver.hasUnsaved) { setRemoteNotice("This table was changed in another tab or by a collaborator."); void saver.flush(); return; }
         const detail = await getTable(tableId);
         const fresh = docFromDetail(detail);
         if (saverRef.current !== saver || saver.hasUnsaved) return;
@@ -193,10 +214,11 @@ export default function TableEditor({ tableId, user, notify, canUpload, maxUploa
         setDoc(fresh);
         setSummary(detail.table);
         setAttachments(detail.attachments);
+        setComments(detail.comments || []);
         setHistoryTick((tick) => tick + 1);
-        setRemoteNotice("Updated with changes made in another tab or on another device.");
+        setRemoteNotice("Updated with recent changes.");
       } catch (error) {
-        if (isGoneError(error)) setRemoteNotice("This table is no longer in your account. It may have been deleted elsewhere.");
+        if (isGoneError(error)) setRemoteNotice("Your access to this table has ended or it was removed.");
       }
     };
     window.addEventListener("beforeunload", beforeUnload);
@@ -209,12 +231,12 @@ export default function TableEditor({ tableId, user, notify, canUpload, maxUploa
       window.removeEventListener("focus", poll);
       clearInterval(interval);
     };
-  }, [tableId, writeDraft]);
+  }, [canEdit, tableId, writeDraft]);
 
   // ---- actions ------------------------------------------------------------------------
   const close = async () => {
     const saver = saverRef.current;
-    if (saver?.hasUnsaved) {
+    if (canEdit && saver?.hasUnsaved) {
       writeDraft();
       await saver.flush();
       if (saverRef.current?.hasUnsaved) { notify("Some changes aren't saved yet. They're kept on this device and will be offered when you reopen this table.", "error"); }
@@ -253,14 +275,14 @@ export default function TableEditor({ tableId, user, notify, canUpload, maxUploa
     notify("Unsaved changes from this device were discarded.");
   };
   const rename = async (name: string) => {
-    if (!summary) return;
+    if (!summary || !isOwner) return;
     setBusy("rename");
     try { const next = await updateTableInfo(tableId, { name }); setSummary((current) => current ? { ...current, name: next.name } : current); setRenameOpen(false); notify("Table renamed."); } catch (error) {
       notify(tableErrorMessage(error, "The new name couldn't be saved."), "error");
     } finally { setBusy(null); }
   };
   const toggleStar = async () => {
-    if (!summary) return;
+    if (!summary || !isOwner) return;
     const starred = !summary.starred;
     setSummary({ ...summary, starred });
     try { await updateTableInfo(tableId, { starred }); } catch (error) {
@@ -269,7 +291,7 @@ export default function TableEditor({ tableId, user, notify, canUpload, maxUploa
     }
   };
   const duplicate = async () => {
-    if (!summary) return;
+    if (!summary || !isOwner) return;
     if (saverRef.current?.hasUnsaved) await saverRef.current.flush();
     if (saverRef.current?.hasUnsaved) { notify("Wait until your changes are saved before duplicating.", "error"); return; }
     setBusy("duplicate");
@@ -278,6 +300,7 @@ export default function TableEditor({ tableId, user, notify, canUpload, maxUploa
     } finally { setBusy(null); }
   };
   const remove = async () => {
+    if (!isOwner) return;
     setBusy("delete");
     try {
       await deleteTable(tableId);
@@ -291,45 +314,139 @@ export default function TableEditor({ tableId, user, notify, canUpload, maxUploa
     } finally { setBusy(null); setConfirm(null); }
   };
 
+  const handleSaveCommentOnlyCell = useCallback(async ({ sheetId, row, col, text }: { sheetId: string; row: number; col: number; text: string }) => {
+    const res = await postTableCellComment(tableId, { sheetId, row, col, text });
+    if (res.comment && docRef.current?.kind === "spreadsheet") {
+      const nextDoc: TableDoc = {
+        kind: "spreadsheet",
+        sheets: docRef.current.sheets.map((sheet) =>
+          sheet.id === sheetId
+            ? {
+                ...sheet,
+                data: {
+                  ...sheet.data,
+                  comments: { ...(sheet.data.comments || {}), [res.cellKey]: res.comment! },
+                },
+              }
+            : sheet,
+        ),
+      };
+      docRef.current = nextDoc;
+      setDoc(nextDoc);
+      saverRef.current?.reset(nextDoc, res.revision);
+      notify("Comment added.");
+    }
+  }, [tableId, notify]);
+
+  const handlePostThreadComment = useCallback(async (body: string) => {
+    const created = await postTableThreadComment(tableId, { body });
+    setComments((prev) => [...prev, created]);
+    notify("Comment posted.");
+  }, [tableId, notify]);
+
   const history = historyRef.current;
   const undoRedo = useMemo(() => ({ canUndo: history.canUndo, canRedo: history.canRedo, undoLabel: history.undoLabel, redoLabel: history.redoLabel }), [history, historyTick]); // eslint-disable-line react-hooks/exhaustive-deps
-  const locked = saveState.status === "conflict" || saveState.status === "gone";
+  const locked = !canEdit || saveState.status === "conflict" || saveState.status === "gone";
+  const commentTotal = useMemo(
+    () => comments.length + (doc?.kind === "spreadsheet" ? extractSheetCellComments(doc.sheets).length : 0),
+    [comments, doc],
+  );
 
   if (loadError) return <div className="tb-editor"><div className="tb-banner is-error" role="alert"><span>{loadError}</span>
     <button type="button" className="tb-link-button" onClick={() => setReloadKey((key) => key + 1)}><RefreshCw size={13}/> Try again</button>
     <button type="button" className="tb-link-button" onClick={onClose}>Back to tables</button></div></div>;
-  if (!summary || !doc) return <div className="tb-loading" role="status"><span className="spinner"/> Opening table…</div>;
+  if (!summary || !doc) return <div className="tb-loading" role="status"><Spinner className="size-4"/> Opening table…</div>;
 
   return <section className={`tb-editor is-${summary.kind}`} aria-label={summary.name}>
     <header className="tb-editor-head">
       <button type="button" className="tb-icon-button" onClick={() => void close()} aria-label="Back to all tables" title="All tables"><ArrowLeft size={17}/></button>
-      <span className={`tb-kind-badge is-${summary.kind}`} title={summary.kind === "smart" ? "Smart Table" : "Spreadsheet"}><KindIcon kind={summary.kind}/></span>
-      <button type="button" className="tb-title-button" onClick={() => setRenameOpen(true)} title="Rename"><h2>{summary.name}</h2><Pencil size={13} aria-hidden="true"/></button>
-      <button type="button" className={`tb-icon-button tb-star ${summary.starred ? "is-on" : ""}`} aria-pressed={summary.starred} aria-label={summary.starred ? "Unstar table" : "Star table"} onClick={() => void toggleStar()}><Star size={16} fill={summary.starred ? "currentColor" : "none"}/></button>
-      <SaveIndicator state={saveState} onRetry={() => void saverRef.current?.flush()}/>
+      <IconTile variant="soft" size="sm" className={summary.kind === "smart" ? "text-blue-600 dark:text-blue-300" : "text-emerald-600 dark:text-emerald-300"} title={summary.kind === "smart" ? "Smart Table" : "Spreadsheet"}>
+        <KindIcon kind={summary.kind}/>
+      </IconTile>
+
+      {isOwner ? (
+        <button type="button" className="tb-title-button" onClick={() => setRenameOpen(true)} title="Rename">
+          <h2>{summary.name}</h2>
+          <Pencil size={13} aria-hidden="true"/>
+        </button>
+      ) : (
+        <div className="tb-title-static">
+          <h2>{summary.name}</h2>
+        </div>
+      )}
+
+      {summary.shared && (
+        <span className="tb-shared-meta-pills">
+          <Badge variant="info-light" size="xs">
+            <Users size={11} aria-hidden="true" /> Shared by {summary.ownerName || "Persora Member"}
+          </Badge>
+          <Badge variant="outline" size="xs">
+            {permission === "edit" ? "Editor" : permission === "comment" ? "Commenter" : <><Eye size={11} aria-hidden="true" /> View only</>}
+          </Badge>
+        </span>
+      )}
+
+      {isOwner && (
+        <button type="button" className={`tb-icon-button tb-star ${summary.starred ? "is-on" : ""}`} aria-pressed={summary.starred} aria-label={summary.starred ? "Unstar table" : "Star table"} onClick={() => void toggleStar()}>
+          <Star size={16} fill={summary.starred ? "currentColor" : "none"}/>
+        </button>
+      )}
+
+      {canEdit && <SaveIndicator state={saveState} onRetry={() => void saverRef.current?.flush()}/>}
+
       <span className="tb-head-spacer"/>
-      <button type="button" className="tb-icon-button" onClick={() => travel("undo")} disabled={!undoRedo.canUndo || locked} aria-label={undoRedo.undoLabel ? `Undo ${undoRedo.undoLabel}` : "Undo"} title={`Undo${undoRedo.undoLabel ? ` ${undoRedo.undoLabel}` : ""} (Ctrl+Z)`}><Undo2 size={16}/></button>
-      <button type="button" className="tb-icon-button" onClick={() => travel("redo")} disabled={!undoRedo.canRedo || locked} aria-label={undoRedo.redoLabel ? `Redo ${undoRedo.redoLabel}` : "Redo"} title={`Redo${undoRedo.redoLabel ? ` ${undoRedo.redoLabel}` : ""} (Ctrl+Y)`}><Redo2 size={16}/></button>
-      <Menu label="More table actions" icon={<MoreHorizontal size={16}/>} align="end" items={[
-        { id: "rename", label: "Rename", icon: <Pencil size={14}/>, onSelect: () => setRenameOpen(true) },
-        { id: "duplicate", label: busy === "duplicate" ? "Duplicating…" : "Duplicate", icon: <Copy size={14}/>, disabled: Boolean(busy), onSelect: () => void duplicate() },
-        "divider",
-        { id: "delete", label: "Delete", icon: <Trash2 size={14}/>, danger: true, onSelect: () => setConfirm("delete") },
-      ]}/>
+
+      {canEdit && (
+        <>
+          <button type="button" className="tb-icon-button" onClick={() => travel("undo")} disabled={!undoRedo.canUndo || locked} aria-label={undoRedo.undoLabel ? `Undo ${undoRedo.undoLabel}` : "Undo"} title={`Undo${undoRedo.undoLabel ? ` ${undoRedo.undoLabel}` : ""} (Ctrl+Z)`}><Undo2 size={16}/></button>
+          <button type="button" className="tb-icon-button" onClick={() => travel("redo")} disabled={!undoRedo.canRedo || locked} aria-label={undoRedo.redoLabel ? `Redo ${undoRedo.redoLabel}` : "Redo"} title={`Redo${undoRedo.redoLabel ? ` ${undoRedo.redoLabel}` : ""} (Ctrl+Y)`}><Redo2 size={16}/></button>
+        </>
+      )}
+
+      <button
+        type="button"
+        className={`tb-secondary-button ${commentsOpen ? "is-active" : ""}`}
+        aria-expanded={commentsOpen}
+        onClick={() => setCommentsOpen((open) => !open)}
+      >
+        <MessageSquare size={14}/>
+        <span>Comments{commentTotal > 0 ? ` (${commentTotal})` : ""}</span>
+      </button>
+
+      {isOwner && (
+        <button
+          type="button"
+          className="tb-primary-button"
+          onClick={() => setShareOpen(true)}
+        >
+          <Share2 size={14}/>
+          <span>Share</span>
+        </button>
+      )}
+
+      {isOwner && (
+        <Menu label="More table actions" icon={<MoreHorizontal size={16}/>} align="end" items={[
+          { id: "share", label: "Share…", icon: <Share2 size={14}/>, onSelect: () => setShareOpen(true) },
+          { id: "rename", label: "Rename", icon: <Pencil size={14}/>, onSelect: () => setRenameOpen(true) },
+          { id: "duplicate", label: busy === "duplicate" ? "Duplicating…" : "Duplicate", icon: <Copy size={14}/>, disabled: Boolean(busy), onSelect: () => void duplicate() },
+          "divider",
+          { id: "delete", label: "Delete", icon: <Trash2 size={14}/>, danger: true, onSelect: () => setConfirm("delete") },
+        ]}/>
+      )}
     </header>
 
-    {saveState.status === "conflict" && <div className="tb-banner is-warn" role="alert">
-      <span><b>This table was changed in another tab or on another device.</b> Your latest edits were not saved over it, and they're kept on this device.</span>
+    {saveState.status === "conflict" && canEdit && <div className="tb-banner is-warn" role="alert">
+      <span><b>This table was changed in another tab or by a collaborator.</b> Your latest edits were not saved over it, and they're kept on this device.</span>
       <button type="button" className="tb-secondary-button" onClick={() => setConfirm("load-latest")}>Load latest version</button>
       <button type="button" className="tb-secondary-button" disabled={busy === "copy"} onClick={() => void saveAsCopy(docRef.current!)}>{busy === "copy" ? "Saving…" : "Save my version as a copy"}</button>
     </div>}
     {saveState.status === "gone" && <div className="tb-banner is-warn" role="alert">
-      <span><b>This table is no longer in your account</b> (it may have been deleted elsewhere — check Trash). Your edits are kept on this device.</span>
-      <button type="button" className="tb-secondary-button" disabled={busy === "copy"} onClick={() => void saveAsCopy(docRef.current!)}>{busy === "copy" ? "Saving…" : "Save my version as a new table"}</button>
+      <span><b>This table is no longer available</b> (it may have been deleted or unshared).</span>
+      {canEdit && <button type="button" className="tb-secondary-button" disabled={busy === "copy"} onClick={() => void saveAsCopy(docRef.current!)}>{busy === "copy" ? "Saving…" : "Save my version as a new table"}</button>}
     </div>}
     {(saveState.status === "error" || saveState.status === "retrying") && saveState.message && <div className="tb-banner is-error" role="alert"><span>{saveState.message}</span>
       {saveState.status === "retrying" && <button type="button" className="tb-link-button" onClick={() => void saverRef.current?.flush()}><RefreshCw size={13}/> Retry now</button>}</div>}
-    {draftOffer && <div className="tb-banner is-info" role="alert">
+    {draftOffer && canEdit && <div className="tb-banner is-info" role="alert">
       <span><b>Unsaved changes from {relativeTime(new Date(draftOffer.draft.savedAt).toISOString())} were found on this device.</b> {draftOffer.compatible ? "Restore them to keep working where you left off." : "The table has changed since then, so they can only be restored as a separate copy."}</span>
       {draftOffer.compatible
         ? <button type="button" className="tb-secondary-button" onClick={restoreDraft}>Restore</button>
@@ -338,15 +455,47 @@ export default function TableEditor({ tableId, user, notify, canUpload, maxUploa
     </div>}
     {remoteNotice && saveState.status !== "conflict" && <div className="tb-banner is-info" role="status"><span>{remoteNotice}</span><button type="button" className="tb-link-button" onClick={() => setRemoteNotice(null)}>Dismiss</button></div>}
 
-    <Suspense fallback={<div className="tb-loading" role="status"><span className="spinner"/> Loading editor…</div>}>
-      {doc.kind === "spreadsheet"
-        ? <SpreadsheetEditor doc={doc} tableName={summary.name} commit={commit} readOnly={locked} notify={notify}/>
-        : <SmartTableEditor doc={doc} tableId={tableId} tableName={summary.name} commit={commit} readOnly={locked} notify={notify}
-          attachments={attachments} onAttachmentAdded={(info) => setAttachments((list) => [...list, info])}
-          canUpload={canUpload} maxUploadMb={maxUploadMb} onUpgrade={onUpgrade}/>}
-    </Suspense>
+    <div className="tb-editor-workspace-row">
+      <div className="tb-editor-main-pane">
+        <Suspense fallback={<div className="tb-loading" role="status"><Spinner className="size-4"/> Loading editor…</div>}>
+          {doc.kind === "spreadsheet"
+            ? <SpreadsheetEditor
+                doc={doc}
+                tableName={summary.name}
+                commit={commit}
+                readOnly={locked}
+                allowComment={!canEdit && canComment}
+                onSaveCellComment={handleSaveCommentOnlyCell}
+                notify={notify}
+                authorName={user.fullName || user.email || "Persora Member"}
+                canUndo={undoRedo.canUndo}
+                canRedo={undoRedo.canRedo}
+                onUndo={() => travel("undo")}
+                onRedo={() => travel("redo")}
+                onRenameTable={isOwner ? () => setRenameOpen(true) : undefined}
+                onDuplicateTable={isOwner ? () => void duplicate() : undefined}
+                onDeleteTable={isOwner ? () => setConfirm("delete") : undefined}
+                onCloseTable={() => void close()}
+              />
+            : <SmartTableEditor doc={doc} tableId={tableId} tableName={summary.name} commit={commit} readOnly={locked} notify={notify}
+              attachments={attachments} onAttachmentAdded={(info) => setAttachments((list) => [...list, info])}
+              canUpload={canUpload && canEdit} maxUploadMb={maxUploadMb} onUpgrade={onUpgrade}/>}
+        </Suspense>
+      </div>
 
-    {renameOpen && <PromptDialog id="tb-editor-rename" title="Rename table" label="Name" initial={summary.name} maxLength={TABLE_LIMITS.nameLength} busy={busy === "rename"}
+      {commentsOpen && (
+        <TableCommentsPanel
+          comments={comments}
+          sheets={doc.kind === "spreadsheet" ? doc.sheets : undefined}
+          canComment={canComment}
+          onAddComment={handlePostThreadComment}
+          onClose={() => setCommentsOpen(false)}
+        />
+      )}
+    </div>
+
+    {shareOpen && isOwner && <ShareTableDialog tableId={tableId} tableName={summary.name} notify={notify} onClose={() => setShareOpen(false)} />}
+    {renameOpen && isOwner && <PromptDialog id="tb-editor-rename" title="Rename table" label="Name" initial={summary.name} maxLength={TABLE_LIMITS.nameLength} busy={busy === "rename"}
       validate={(value) => (value.trim() ? null : "Enter a name.")} onCancel={() => setRenameOpen(false)} onConfirm={(value) => void rename(value.trim())}/>}
     {confirm === "discard-draft" && <ModalPortal><ConfirmDialog title="Discard unsaved changes?" confirmLabel="Discard changes" onCancel={() => setConfirm(null)} onConfirm={() => void discardDraft()}>
       <p>The edits kept on this device for “{summary.name}” will be deleted. The saved table isn't affected.</p>
@@ -354,7 +503,7 @@ export default function TableEditor({ tableId, user, notify, canUpload, maxUploa
     {confirm === "load-latest" && <ModalPortal><ConfirmDialog title="Load the latest version?" confirmLabel="Load latest" onCancel={() => setConfirm(null)} onConfirm={() => void loadLatest()}>
       <p>Your unsaved edits in this tab will be discarded. To keep them, choose “Save my version as a copy” instead.</p>
     </ConfirmDialog></ModalPortal>}
-    {confirm === "delete" && <ModalPortal><ConfirmDialog title={`Delete “${summary.name}”?`} confirmLabel={busy === "delete" ? "Deleting…" : "Move to Trash"} onCancel={() => setConfirm(null)} onConfirm={() => void remove()}>
+    {confirm === "delete" && isOwner && <ModalPortal><ConfirmDialog title={`Delete “${summary.name}”?`} confirmLabel={busy === "delete" ? "Deleting…" : "Move to Trash"} onCancel={() => setConfirm(null)} onConfirm={() => void remove()}>
       <p>The table moves to Trash with all its {summary.kind === "smart" ? "records and attached files" : "sheets"}. You can restore it for 7 days.</p>
     </ConfirmDialog></ModalPortal>}
   </section>;

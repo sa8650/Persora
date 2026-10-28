@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type DragEvent } from "react";
-import { AlertTriangle, ArrowDown, ArrowUp, Download, FilePlus2, FileText, GripVertical, Image as ImageIcon, Info, Plus, ShieldCheck, Trash2, Type, Upload, WandSparkles, X } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, Download, FilePlus2, GripVertical, Info, Plus, ShieldCheck, Trash2, Type, Upload, WandSparkles, X } from "lucide-react";
 import {
   CREATE_ACCEPT, IMAGE_MAX_BYTES, PAGE_SIZES, PDF_OPEN_MAX_BYTES, SUPPORTED_INPUTS_LABEL, TEXT_MAX_BYTES, decodeText, errorMessage, formatBytes, isWinAnsi, makeId, pdfDownloadName,
   sniffFileKind, titleFromFileName, unsupportedReason, type InputKind, type MarginId, type Orientation, type PageSizeId,
 } from "../lib/pdf-studio";
 import ModalPortal from "./ModalPortal";
 import { ConfirmDialog } from "./VaultDialogs";
+import { StageProgressIndicator } from "./ProgressIndicator";
+import { FileType, getFileType } from "@/components/reui/file-type";
+import { IconTile } from "@/components/reui/icon-tile";
 import "./pdf-studio.css";
 
 interface CreateItem {
@@ -175,7 +178,14 @@ export default function PdfCreateModal({ initialFiles, onClose, onOpenInEditor, 
   };
 
   const hasDraggedFiles = (event: DragEvent) => Array.from(event.dataTransfer?.types || []).includes("Files");
-  const kindIcon = (item: CreateItem) => item.kind === "image" ? <ImageIcon size={16}/> : item.kind === "pdf" ? <FileText size={16}/> : <Type size={16}/>;
+  const kindIcon = (item: CreateItem) => (
+    <FileType
+      type={item.kind === "pdf" ? "pdf" : item.kind === "text" ? "txt" : getFileType(item.name || item.inputKind)}
+      size="sm"
+      variant="light"
+      aria-hidden
+    />
+  );
 
   const sizeSelects = useMemo(() => <div className="pdfs-create-options" role="group" aria-label="Page options">
     <label className="field-label">Page size
@@ -201,7 +211,7 @@ export default function PdfCreateModal({ initialFiles, onClose, onOpenInEditor, 
         onDrop={(event) => { if (!hasDraggedFiles(event)) return; event.preventDefault(); dragDepth.current = 0; setDragOver(false); void addFiles(Array.from(event.dataTransfer.files || [])); }}
       >
         <header className="vault-modal-header">
-          <span className="vault-modal-icon"><FilePlus2 size={18}/></span>
+          <IconTile variant="soft" size="sm" className="text-rose-600 dark:text-rose-300"><FilePlus2 size={18}/></IconTile>
           <div className="vault-modal-title"><small>Create PDF</small><h2 id={titleId}>Build a PDF from images, text and files</h2></div>
           <button type="button" className="vault-modal-close" onClick={requestClose} disabled={Boolean(busy)} aria-label="Close Create PDF"><X size={18}/></button>
         </header>
@@ -259,7 +269,7 @@ export default function PdfCreateModal({ initialFiles, onClose, onOpenInEditor, 
           </aside>
         </div>
         {errors.length > 0 && <div className="form-alert error-alert editor-error" role="alert">{errors.map((message) => <div key={message}>{message}</div>)}</div>}
-        {busy && <div className="pdfs-busy-bar" role="status" aria-live="polite"><span className="spinner"/><span>{busy.label}</span><span className="pdfs-progress" aria-hidden="true"><i style={{ width: `${busy.percent ?? 30}%` }} className={busy.percent === null ? "is-indeterminate" : ""}/></span></div>}
+        {busy && <div className="px-6 pt-2"><StageProgressIndicator label={busy.label} percent={busy.percent}/></div>}
         <div className="editor-form-footer">
           <div className="editor-footnote"><ShieldCheck size={14}/><span>Built on this device. Nothing is uploaded.</span></div>
           <div className="editor-actions">

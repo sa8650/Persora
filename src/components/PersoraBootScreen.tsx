@@ -1,55 +1,72 @@
-import { Activity, AlarmClock, BellRing, BookOpen, BriefcaseBusiness, CalendarClock, Cloud, ContactRound, FileText, GraduationCap, HeartPulse, Link2, NotebookPen, Share2, ShieldCheck, WalletCards } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
+import { LAUNCHER_MODULE_BY_ID, type LauncherModuleId } from "../lib/app-launcher";
+import { LauncherModuleIcon } from "./launcher/LauncherIcons";
 import { OrbitingCircles } from "./ui/orbiting-circles";
 
-type OrbitIcon = typeof FileText;
-type OrbitItem = { icon: OrbitIcon; tone: string; label: string };
-
-const innerItems: OrbitItem[] = [
-  { icon: FileText, tone: "blue", label: "Documents" },
-  { icon: HeartPulse, tone: "red", label: "Medical records" },
-  { icon: ContactRound, tone: "blue", label: "Contacts" },
-  { icon: NotebookPen, tone: "amber", label: "Notes" },
-  { icon: BellRing, tone: "blue", label: "Reminders" },
+export const BOOT_INNER_MODULES: readonly LauncherModuleId[] = [
+  "documents",
+  "calendar",
+  "notes",
+  "contacts",
+  "password-manager",
 ];
 
-const middleItems: OrbitItem[] = [
-  { icon: AlarmClock, tone: "purple", label: "Alarms" },
-  { icon: CalendarClock, tone: "purple", label: "Life timeline" },
-  { icon: WalletCards, tone: "blue", label: "Subscriptions and memberships" },
-  { icon: Share2, tone: "amber", label: "Shared documents" },
-  { icon: BriefcaseBusiness, tone: "blue", label: "Business cards" },
+export const BOOT_MIDDLE_MODULES: readonly LauncherModuleId[] = [
+  "pdf-studio",
+  "photo-studio",
+  "habits",
+  "loans",
+  "tables",
 ];
 
-const outerItems: OrbitItem[] = [
-  { icon: GraduationCap, tone: "blue", label: "Academics" },
-  { icon: Cloud, tone: "blue", label: "Private cloud vault" },
-  { icon: Link2, tone: "purple", label: "Linked records" },
-  { icon: BookOpen, tone: "red", label: "Personal records" },
-  { icon: Activity, tone: "amber", label: "Health archive" },
+export const BOOT_OUTER_MODULES: readonly LauncherModuleId[] = [
+  "projects",
+  "medical-records",
+  "subscriptions",
+  "timeline",
+  "connections",
 ];
 
-function renderOrbitItems(items: OrbitItem[]) {
-  return items.map(({ icon: Icon, tone, label }) => <span key={label} className={`persora-orbit-icon tone-${tone}`} aria-label={label}><Icon strokeWidth={1.9}/></span>);
+function renderOrbitModules(moduleIds: readonly LauncherModuleId[], iconSize: number) {
+  const glyphSize = Math.round(iconSize * 0.72);
+  return moduleIds.map((moduleId) => {
+    const label = LAUNCHER_MODULE_BY_ID[moduleId]?.label || moduleId;
+    return (
+      <span
+        key={moduleId}
+        className="persora-orbit-icon"
+        data-module-id={moduleId}
+        aria-label={label}
+        title={label}
+      >
+        <LauncherModuleIcon id={moduleId} size={glyphSize} />
+      </span>
+    );
+  });
 }
 
 export default function PersoraBootScreen() {
-  return <main className="persora-boot-screen" role="status" aria-live="polite">
-    <div className="persora-boot-orbit-stage" aria-hidden="true">
-      <OrbitingCircles className="persora-orbiting-item" radius={56} duration={19} speed={1.12} iconSize={24}>
-        {renderOrbitItems(innerItems)}
-      </OrbitingCircles>
-      <OrbitingCircles className="persora-orbiting-item" radius={96} duration={30} speed={1.08} iconSize={32} reverse>
-        {renderOrbitItems(middleItems)}
-      </OrbitingCircles>
-      <OrbitingCircles className="persora-orbiting-item" radius={136} duration={41} speed={1.05} iconSize={40}>
-        {renderOrbitItems(outerItems)}
-      </OrbitingCircles>
-      <span className="persora-boot-core"><ShieldCheck size={35} strokeWidth={2.15}/></span>
-    </div>
-    <div className="persora-boot-copy">
-      <span className="persora-boot-eyebrow">YOUR PRIVATE SPACE</span>
-      <strong>Persora</strong>
-      <span>Preparing your personal vault…</span>
-    </div>
-  </main>;
+  return (
+    <main className="persora-boot-screen" role="status" aria-live="polite">
+      <div className="persora-boot-orbit-stage" aria-hidden="true">
+        <OrbitingCircles className="persora-orbiting-item" radius={62} duration={20} speed={1.08} iconSize={32}>
+          {renderOrbitModules(BOOT_INNER_MODULES, 32)}
+        </OrbitingCircles>
+        <OrbitingCircles className="persora-orbiting-item" radius={104} duration={31} speed={1.05} iconSize={36} reverse>
+          {renderOrbitModules(BOOT_MIDDLE_MODULES, 36)}
+        </OrbitingCircles>
+        <OrbitingCircles className="persora-orbiting-item" radius={146} duration={42} speed={1.02} iconSize={40}>
+          {renderOrbitModules(BOOT_OUTER_MODULES, 40)}
+        </OrbitingCircles>
+        <span className="persora-boot-core">
+          <ShieldCheck size={34} strokeWidth={2.15} />
+        </span>
+      </div>
+      <div className="persora-boot-copy">
+        <span className="persora-boot-eyebrow">YOUR PRIVATE SPACE</span>
+        <strong>Persora</strong>
+        <span>Preparing your personal workspace…</span>
+      </div>
+    </main>
+  );
 }

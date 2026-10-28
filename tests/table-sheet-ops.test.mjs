@@ -163,7 +163,8 @@ test('sheets: add, rename (references follow), duplicate, reorder, delete (#REF!
   assert.throws(() => renameSheet(wb, 'id-Summary', 'plan 2026'), /already/);
   wb = addSheet(wb, null, 'id-new');
   assert.equal(wb.sheets[2].name, 'Sheet3');
-  assert.equal(wb.sheets[2].data.rowCount, 100);
+  assert.equal(wb.sheets[2].data.rowCount, 200);
+  assert.equal(wb.sheets[2].data.colCount, 52);
   assert.throws(() => addSheet(wb, 'summary', 'id-dupe'), /already/);
 });
 
