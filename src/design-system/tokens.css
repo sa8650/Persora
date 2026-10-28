@@ -8,14 +8,14 @@
   color-scheme: light;
 
   /* 1. Multi-layer Surface Hierarchy (distinct Sidebar, Canvas, Card, Overlay) */
-  --ds-sidebar-bg: #f7f9fc;
+  --ds-sidebar-bg: #f6f7fb;
   --ds-sidebar-hover: #edf2f8;
   --ds-sidebar-active: #e4eefc;
   --ds-sidebar-active-text: #1557b0;
 
-  --ds-canvas-bg: #eef2f7;
+  --ds-canvas-bg: #ffffff;
   --ds-topbar-bg: rgba(255, 255, 255, 0.94);
-  --ds-footer-bg: #f7f9fc;
+  --ds-footer-bg: #f6f7fb;
 
   --ds-card-bg: #ffffff;
   --ds-card-hover-bg: #fbfdff;
@@ -34,13 +34,32 @@
   --ds-border-strong: #c6d2e2;
   --ds-border-hover: #9ec0f6;
 
-  /* 3. Typography & Ink Hierarchy */
+  /* 3. Typography — Geist Sans is the single canonical UI typeface */
+  /* Per-glyph fallback (localised scripts, emoji) is left to the generic `sans-serif`
+     keyword so no obsolete webfont family has to be declared here. */
+  --ds-font-sans: "Geist Variable", "Geist Sans", Geist, ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --ds-font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
+    monospace;
+  --ds-font-ui: var(--ds-font-sans);
+  --ds-font-heading: var(--ds-font-sans);
+  --ds-font-body: var(--ds-font-sans);
+
+  /* Sidebar navigation typography (Geist Sans 13px / #676879) */
+  --ds-sidebar-font: var(--ds-font-sans);
+  --ds-sidebar-font-size: 13px;
+  --ds-sidebar-font-weight: 500;
+  --ds-sidebar-text: #676879;
+  --ds-sidebar-label-size: 10.5px;
+  --ds-sidebar-label-color: #8b8d9c;
+
+  /* 4. Ink Hierarchy */
   --ds-text: #0f172a;
   --ds-text-secondary: #334155;
   --ds-text-muted: #5b687a;
   --ds-text-soft: #8290a2;
 
-  /* 4. Brand & Semantic Accents */
+  /* 5. Brand & Semantic Accents */
   --ds-primary: #1a73e8;
   --ds-primary-hover: #155ec0;
   --ds-primary-fg: #ffffff;
@@ -68,7 +87,7 @@
   --ds-cyan-soft: #e3fafc;
   --ds-cyan-border: #99e9f2;
 
-  /* 5. Elevation & Geometry */
+  /* 6. Elevation & Geometry */
   --ds-shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
   --ds-shadow-card: 0 1px 3px rgba(15, 23, 42, 0.05), 0 4px 12px rgba(15, 23, 42, 0.025);
   --ds-shadow-card-hover: 0 8px 22px rgba(15, 23, 42, 0.08);
@@ -104,8 +123,10 @@
   --ds-radius-lg: 16px;
   --ds-radius-xl: 20px;
 
-  /* 6. Bridge to shadcn / ReUI tokens */
+  /* 7. Bridge to shadcn / ReUI tokens */
   --radius: 0.75rem;
+  --font-sans: var(--ds-font-sans);
+  --font-mono: var(--ds-font-mono);
   --background: var(--ds-canvas-bg);
   --foreground: var(--ds-text);
   --card: var(--ds-card-bg);
@@ -129,7 +150,7 @@
   --sidebar-foreground: var(--ds-text-secondary);
   --sidebar-border: var(--ds-divider);
 
-  /* 7. Bridge to Persora workspace & module variables */
+  /* 8. Bridge to Persora workspace & module variables */
   --p-bg: var(--ds-canvas-bg);
   --p-surface: var(--ds-card-bg);
   --p-text: var(--ds-text);
@@ -181,6 +202,10 @@
   --ds-border: rgba(148, 163, 184, 0.16);
   --ds-border-strong: rgba(148, 163, 184, 0.26);
   --ds-border-hover: rgba(96, 165, 250, 0.48);
+
+  /* Sidebar typography keeps the same family + 13px scale, tuned ink for dark surfaces */
+  --ds-sidebar-text: #cbd5e1;
+  --ds-sidebar-label-color: #94a3b8;
 
   --ds-text: #f1f5f9;
   --ds-text-secondary: #cbd5e1;

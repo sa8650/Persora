@@ -643,7 +643,7 @@ export function renderDocPrintableHtml(title, doc) {
     padding: 0;
     background: #ffffff;
     color: #1f2937;
-    font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: "Geist", "Geist Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     font-size: 11pt;
     line-height: 1.62;
     -webkit-print-color-adjust: exact;

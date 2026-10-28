@@ -1,3 +1,4 @@
+@import "./design-system/fonts.css";
 @import "tailwindcss";
 @import "shadcn/tailwind.css";
 @import "./design-system/tokens.css";
@@ -13,6 +14,9 @@
 }
 
 @theme inline {
+  --font-sans: var(--ds-font-sans);
+  --font-ui: var(--ds-font-ui);
+  --font-mono: var(--ds-font-mono);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);

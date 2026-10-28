@@ -1571,7 +1571,7 @@
   min-height: 900px;
   outline: none;
   color: #1f2937;
-  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--ds-font-sans);
   font-size: 11pt;
   line-height: 1.62;
   word-break: break-word;

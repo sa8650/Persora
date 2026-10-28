@@ -86,8 +86,18 @@ test("Sidebar and page canvas surfaces are separated in both Light and Dark them
   const darkCard = darkBlock.match(/--ds-card-bg:\s*([^;]+);/)?.[1]?.trim();
 
   assert.ok(lightSidebar && lightCanvas && lightCard);
+
+  // Workspace Colors & Typography update: white page canvas, #F6F7FB navigation rail.
+  assert.equal(lightSidebar.toLowerCase(), "#f6f7fb", "Light sidebar background must be #F6F7FB");
+  assert.equal(lightCanvas.toLowerCase(), "#ffffff", "Light workspace canvas must be #FFFFFF");
   assert.notEqual(lightSidebar, lightCanvas, "Light sidebar and canvas must have distinct surface tokens");
-  assert.notEqual(lightCanvas, lightCard, "Light canvas and card must have distinct surface tokens");
+
+  // Canvas and cards are both white by design; separation is carried by borders,
+  // dividers and elevation rather than a grey canvas tone.
+  assert.equal(lightCard.toLowerCase(), "#ffffff");
+  assert.match(tokensCss, /--ds-card-border:\s*var\(--ds-border\)/);
+  assert.match(tokensCss, /--ds-divider:\s*#cfd9e6/);
+  assert.match(systemCss, /\.workspace-sidebar\s*\{[\s\S]*?border-right:\s*1px solid var\(--ds-divider\)/);
 
   assert.ok(darkSidebar && darkCanvas && darkCard);
   assert.notEqual(darkSidebar, darkCanvas, "Dark sidebar and canvas must have distinct surface tokens");
@@ -276,3 +286,58 @@ test("ReUI ContextMenu, ReUI Menubar, PersoraDeleteModal, ShareTableDialog, and 
 });
 
 
+
+test("Geist Sans is the single UI typeface and sidebar typography uses 13px / #676879", () => {
+  const tokensCss = read("src/design-system/tokens.css");
+  const systemCss = read("src/design-system/system.css");
+  const indexCss = read("src/index.css");
+  const fontsCss = read("src/design-system/fonts.css");
+  const pkg = JSON.parse(read("package.json"));
+
+  // Font loading: self-hosted Geist Sans, no CDN / no obsolete webfont packages.
+  assert.match(fontsCss, /@fontsource-variable\/geist/);
+  assert.match(indexCss, /design-system\/fonts\.css/);
+  assert.ok(pkg.dependencies["@fontsource-variable/geist"], "geist must be a dependency");
+  assert.equal(pkg.dependencies["@fontsource-variable/inter"], undefined, "unused Inter webfont must be removed");
+
+  // Font family tokens.
+  assert.match(tokensCss, /--ds-font-sans:\s*"Geist Variable"/);
+  assert.match(tokensCss, /--ds-font-mono:/);
+  assert.match(tokensCss, /--ds-font-ui:\s*var\(--ds-font-sans\)/);
+  assert.match(indexCss, /--font-sans:\s*var\(--ds-font-sans\)/);
+
+  // Global family assignment lives in the shared design-system stylesheet only.
+  assert.match(systemCss, /html\s*\{[^}]*font-family:\s*var\(--ds-font-sans\)/);
+  assert.match(systemCss, /body\s*\{[^}]*font-family:\s*var\(--ds-font-sans\)/);
+  assert.match(systemCss, /:where\(code, kbd, samp, pre,[^)]*\)\s*\{[^}]*var\(--ds-font-mono\)/);
+
+  // Sidebar typography tokens (Light #676879, Dark keeps a token-based ink).
+  assert.match(tokensCss, /--ds-sidebar-font-size:\s*13px/);
+  assert.match(tokensCss, /--ds-sidebar-text:\s*#676879/);
+  assert.match(tokensCss, /--ds-sidebar-font:\s*var\(--ds-font-sans\)/);
+  assert.match(systemCss, /\.sidebar-link\s*\{[^}]*font-size:\s*var\(--ds-sidebar-font-size\)/);
+  assert.match(systemCss, /\.sidebar-link\s*\{[^}]*color:\s*var\(--ds-sidebar-text\)/);
+
+  // No scattered font overrides: every font-family declaration in src/ CSS must be
+  // a design-system token reference or an intentional monospace stack.
+  const offenders = [];
+  for (const file of walkFiles(path.join(ROOT, "src"), /\.css$/)) {
+    const css = fs.readFileSync(file, "utf8");
+    for (const match of css.matchAll(/font-family:\s*([^;}]+)/g)) {
+      const value = match[1].trim();
+      if (/var\(--ds-(?:font|sidebar-font)[a-z-]*\)/.test(value)) continue;
+      if (value === "inherit") continue;
+      if (/^(?:ui-monospace|monospace)\b/.test(value) && /SFMono-Regular|Menlo|monospace/.test(value)) continue;
+      offenders.push(`${path.relative(ROOT, file)} -> ${value}`);
+    }
+  }
+  assert.deepEqual(offenders, [], `Fonts must come from design-system tokens:\n${offenders.join("\n")}`);
+
+  // "Noto Sans" is fully retired from app UI styles and components.
+  for (const file of walkFiles(path.join(ROOT, "src"), /\.(css|ts|tsx)$/)) {
+    const content = fs.readFileSync(file, "utf8");
+    // PDF canvas/text rendering references a system PDF font stack, not app UI type.
+    if (file.includes("pdf-canvas") || file.includes("pdf-studio")) continue;
+    assert.doesNotMatch(content, /Noto Sans/, `${path.relative(ROOT, file)} must not reference Noto Sans`);
+  }
+});

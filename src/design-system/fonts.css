@@ -1,0 +1,15 @@
+/* ==========================================================================
+   Persora UI/UX Design System — Canonical Typeface Loading
+   (src/design-system/fonts.css)
+
+   Geist Sans is the single UI typeface for all of Persora. It is self-hosted
+   through `@fontsource-variable/geist` (no CDN, no external font requests) and
+   exposed to CSS through the `--ds-font-sans` token family declared in
+   `src/design-system/tokens.css`.
+
+   This file only loads the webfont files. It intentionally declares no
+   `font-family` rules: family assignment lives in `src/design-system/system.css`
+   so a whole-app typography change is a one-token edit.
+   ========================================================================== */
+
+@import "@fontsource-variable/geist";
