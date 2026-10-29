@@ -11,6 +11,7 @@ import {
   Link2,
   ListChecks,
   Settings as SettingsIcon,
+  Wand2,
 } from "lucide-react";
 import type { AppUser } from "../../types";
 import { isPagesApiConfigured } from "../../lib/cloud";
@@ -30,6 +31,7 @@ import {
   type FormSettings,
   type FormSummary,
 } from "../../lib/forms-api";
+import AdvancedFormsView from "./advanced/AdvancedFormsView";
 import FormsDashboard from "./FormsDashboard";
 import FormBuilder from "./FormBuilder";
 import FormResponsesTab from "./FormResponsesTab";
@@ -54,6 +56,13 @@ export default function FormsView({
   maxUploadMb: number;
   onUpgrade?: () => void;
 }) {
+  // Which Forms surface is showing. Session-scoped: a reload keeps you in the
+  // advanced workspace, but re-entering Persora Forms from the sidebar always
+  // lands on the standard dashboard.
+  const [advancedOpen, setAdvancedOpen] = useState(() => {
+    try { return sessionStorage.getItem("persora.forms.surface") === "advanced"; } catch { return false; }
+  });
+  const [surfaceDirection, setSurfaceDirection] = useState<"forward" | "backward">("forward");
   const [forms, setForms] = useState<FormSummary[]>([]);
   const [loadingList, setLoadingList] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -87,6 +96,13 @@ export default function FormsView({
   }, []);
 
   const disabled = Boolean(user.demo) || !isPagesApiConfigured;
+
+  useEffect(() => {
+    try { sessionStorage.setItem("persora.forms.surface", advancedOpen ? "advanced" : "standard"); } catch { /* storage may be unavailable */ }
+  }, [advancedOpen]);
+
+  const openAdvanced = () => { setSurfaceDirection("forward"); setAdvancedOpen(true); };
+  const closeAdvanced = () => { setSurfaceDirection("backward"); setAdvancedOpen(false); };
 
   useEffect(() => {
     if (disabled) {
@@ -336,9 +352,18 @@ export default function FormsView({
     }
   };
 
+  if (advancedOpen) {
+    return (
+      <div className={`pf-surface-slide ${surfaceDirection === "forward" ? "is-forward" : "is-back"}`}>
+        <AdvancedFormsView user={user} notify={notify} onBackToForms={closeAdvanced} />
+      </div>
+    );
+  }
+
   if (disabled) {
     return (
       <section className="pf-root">
+        <AdvancedFormPullButton onClick={openAdvanced} />
         <div className="pf-card">
           <PersoraEmptyState
             role="status"
@@ -354,7 +379,8 @@ export default function FormsView({
 
   if (!activeFormId) {
     return (
-      <section className="pf-root">
+      <section className="pf-root pf-standard-surface">
+        <AdvancedFormPullButton onClick={openAdvanced} />
         <FormsDashboard
           forms={forms}
           loading={loadingList}
@@ -529,5 +555,27 @@ export default function FormsView({
         )}
       </div>
     </section>
+  );
+}
+
+/**
+ * Right-edge pull tab that opens Persora Advanced Forms.
+ *
+ * It hugs the right side of the standard Forms dashboard so the two experiences
+ * read as one module, and stays reachable when the standard forms need a signed-
+ * in account (Advanced Forms stores its documents locally).
+ */
+function AdvancedFormPullButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className="pf-advanced-pull"
+      onClick={onClick}
+      aria-label="Open Persora Advanced Forms"
+      title="Open Persora Advanced Forms"
+    >
+      <span className="pf-advanced-pull-icon"><Wand2 size={16} aria-hidden="true" /></span>
+      <span className="pf-advanced-pull-label">Advanced Form</span>
+    </button>
   );
 }

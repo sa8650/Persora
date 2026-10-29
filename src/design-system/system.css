@@ -569,9 +569,11 @@ textarea {
   font-size: 11.5px;
 }
 
-.workspace-content input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]):not(.note-page-title):not(.note-page-tag-input),
-.workspace-content select,
-.workspace-content textarea,
+/* `.aff-input` opts out: Advanced Forms render the respondent's own control
+   colours, so workspace chrome must not repaint them. */
+.workspace-content input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]):not(.note-page-title):not(.note-page-tag-input):not(.aff-input),
+.workspace-content select:not(.aff-input),
+.workspace-content textarea:not(.aff-input),
 .vault-modal input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]),
 .vault-modal select,
 .vault-modal textarea,
@@ -585,7 +587,7 @@ textarea {
   font-size: 13px;
 }
 
-.workspace-content :is(input:not([type="checkbox"]):not([type="radio"]):not(.note-page-title):not(.note-page-tag-input), select, textarea):focus,
+.workspace-content :is(input:not([type="checkbox"]):not([type="radio"]):not(.note-page-title):not(.note-page-tag-input):not(.aff-input), select:not(.aff-input), textarea:not(.aff-input)):focus,
 .vault-modal :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea):focus {
   border-color: var(--ds-primary);
   box-shadow: 0 0 0 3px var(--ds-focus-ring);

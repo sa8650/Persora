@@ -183,3 +183,24 @@ Tasks & Notes no longer opens a drawer. Plain notes (`section.id === "notes"`, i
 | Autosave | 900ms debounce after the last edit (like Persora Docs' `DocSaver`), an in-flight queue, `Cmd/Ctrl + S` to save now, and a flush before `Escape` or `Done` closes the page. `App.tsx` exposes `handleSaveNoteDraft` (built on `persistVaultItem`) which saves **in place** and returns `{ id, file }` so the page updates the same note instead of creating duplicates. An empty new note is never persisted just by opening it. Status chip: `Autosave on` → `Unsaved changes` → `Saving…` → `Saved`, or `Save failed · Retry`. |
 | Safety | Nothing is discarded silently: closing flushes pending edits first, and a failed save keeps the page open with the text intact and a Retry action. |
 | Tokens | Every color in `note-editor-page.css` is a `--ds-*` token, so Light, Dark and System themes are automatic. |
+
+---
+
+## 8. Persora Advanced Forms (Persora Forms → Advanced)
+
+Advanced Forms is a second surface of Persora Forms: the standard dashboard is untouched, and a right-edge pull tab slides into an advanced workspace with its own dashboard, builder, preview and respondent view.
+
+| Aspect | Contract |
+| --- | --- |
+| Entry point | `AdvancedFormPullButton` in `FormsView.tsx` is the **only** entry: a fixed, right-edge vertical pull tab (`aria-label="Open Persora Advanced Forms"`) on the standard dashboard and on the "needs your Persora account" state, so Advanced Forms stays reachable even in the local sample session. The chosen surface persists in `localStorage["persora.forms.surface"]`. |
+| Transition | `.pf-surface-slide` slides the advanced surface in from the right (`pf-surface-in`, 260ms, `cubic-bezier(.22,.61,.36,1)` + 0→1 opacity) and back out with `is-back`; the in-workspace surfaces use `.aff-view` / `.aff-view--back`. No flashes, no scale, no bounce — and every animation is disabled under `prefers-reduced-motion`. |
+| Back | The `ArrowLeft` button in the advanced dashboard header (`Back to Persora Forms`) and in the builder/preview bars returns along the same path; standard Forms keeps every existing behaviour. |
+| Tokens | `advanced-forms.css` reads `--ds-*` tokens only and defines no new design tokens. All per-form styling travels in `--aff-*` custom properties written by `AdvancedFormRenderer` from the form document, so one renderer paints the card miniature, the canvas, the preview and the published form identically. |
+| Workspace chrome opt-out | `.workspace-content` input/select/textarea rules exclude `.aff-input`, so a respondent's own control colours (dark themes, custom borders, focus colour) are never repainted by workspace chrome. Any future global input blanket must keep that `:not(.aff-input)` exclusion. |
+| Dashboard | Template rail (horizontal, arrows + "Template gallery" expander, miniatures of the real designs), then "Recent advanced forms" cards with live miniatures, modified date, response count, publish/share/logic badges and a three-dot menu. Search, category, sort and a **grid/list** toggle (persisted in `localStorage["persora.advanced-forms.layout"]`). |
+| Cards menu | Advanced forms ship `AdvancedMenu` / `AdvancedPromptDialog` (`src/components/forms/advanced/AdvancedMenu.tsx`) instead of the Persora Table menu, so the Forms workspace never loads `table.css`. Delete still routes through the shared `PersoraDeleteModal`. |
+| Builder | Three columns (element library rail · canvas · inspector) with the rail collapsible; below **1320px** the rail and inspector move under the canvas so the canvas keeps full width, and below 620px the topbar stacks. Height is viewport-bound (`min(calc(100vh - 250px), 720px)`), so there is no oversized panel or dead space. |
+| Canvas | The canvas is the real renderer, so dragging reorders blocks with per-block tools (up / down / duplicate / delete) and `½` / `⅓` width presets resize them inside the design's column grid. Drag reorder never mutates a field's identity. |
+| Responsive forms | `.aff-surface` is a size container (`container-type: inline-size`); below 480px every element collapses to a single column and the submit button goes full width, which is what the mobile preview and a phone-sized respondent see. |
+| Validation | Answers are validated by the pure rules layer (`cloudflare/advanced-forms-rules.js`) — required, email/phone, min/max, length, rating range, choice membership — and hidden elements (conditional logic) are never validated. The respondent view shows inline `role="alert"` errors and focuses the first invalid control. |
+| Publishing | Publishing keeps the whole document (`design` + `fields` + `settings`) locally, so the respondent view and preview reproduce the design exactly. `advancedFormGate` blocks closed/scheduled/at-limit forms with the form's own message before any answer is collected. |
