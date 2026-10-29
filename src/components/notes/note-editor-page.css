@@ -193,11 +193,28 @@
   border-bottom-color: var(--ds-border);
 }
 
-/* The rich body is borderless inside the page so the page *is* the note. */
-.note-page .rich-note-editor {
+/* The rich body is borderless inside the page so the page *is* the note.
+   The legacy `.rich-note-editor:focus-within` ring (a hardcoded light-blue
+   border plus a 3px blue wash from persora-theme.css) is explicitly cleared
+   here: the note page must not paint a soft blue edge when the body is
+   focused. */
+.note-page .rich-note-editor,
+.note-page .rich-note-editor:focus,
+.note-page .rich-note-editor:focus-within,
+.note-page .rich-note-editor:focus-visible {
   border: 0;
   border-radius: 0;
+  outline: 0;
   background: transparent;
+  box-shadow: none;
+}
+
+.note-page .rich-note-content,
+.note-page .rich-note-content:focus,
+.note-page .rich-note-content:focus-visible {
+  border: 0;
+  outline: 0;
+  box-shadow: none;
 }
 
 .note-page .rich-note-toolbar {

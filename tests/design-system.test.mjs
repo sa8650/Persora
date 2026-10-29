@@ -246,7 +246,7 @@ test("ReUI ContextMenu, ReUI Menubar, PersoraDeleteModal, ShareTableDialog, and 
 
   // Start shelf token (#FAFCFF / rgb(250, 252, 255))
   const tokensCss = read("src/design-system/tokens.css");
-  assert.match(tokensCss, /--ds-shelf-bg:\s*#fafcff/i);
+  assert.match(tokensCss, /--ds-shelf-bg:\s*#f6f7fb/i);
 
   // Persora Docs Home: Google Docs / Persora Table & Forms dashboard parity
   const docsHome = read("src/components/docs/DocsHome.tsx");

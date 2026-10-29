@@ -20,7 +20,7 @@
   --ds-card-bg: #ffffff;
   --ds-card-hover-bg: #fbfdff;
   --ds-subtle-bg: #f6f8fc;
-  --ds-shelf-bg: #fafcff;
+  --ds-shelf-bg: #f6f7fb;
   --ds-input-bg: #ffffff;
 
   --ds-overlay-bg: #ffffff;
@@ -125,10 +125,13 @@
 
   /* 6b. Template & starter cards (Persora Table / Docs / Forms shelves)
      One canonical card geometry + one gradient ramp, so every template card
-     and every empty "add" card in the product is exactly the same size. */
-  --ds-template-card-height: 140px;
-  --ds-template-thumb-min-height: 88px;
+     and every empty "add" card in the product is exactly the same size.
+     Cards are 224 × 157px previews; the per-row count follows the sidebar
+     (5 cards with the rail open, 6 with the collapsed icon rail). */
+  --ds-template-card-width: 224px;
+  --ds-template-card-height: 157px;
   --ds-template-card-gap: 6px;
+  --ds-template-shelf-columns: 5;
 
   /* Per-card gradient slot consumed by .ds-template-thumb (empty by default). */
   --ds-template-gradient: none;

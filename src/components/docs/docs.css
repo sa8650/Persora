@@ -178,7 +178,8 @@
 
 .pd-starter-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--ds-template-shelf-columns), minmax(0, var(--ds-template-card-width)));
+  justify-content: start;
   gap: 14px;
   min-width: 0;
 }
@@ -197,8 +198,7 @@
   justify-content: flex-start;
   gap: var(--ds-template-card-gap);
   width: 100%;
-  /* Shared template-card geometry (src/components/shared/template-card.css) */
-  height: var(--ds-template-card-height);
+  /* Card geometry: 224 × 157px preview + caption row (shared template-card.css) */
   text-align: left;
   border: 0;
   background: transparent;
@@ -1718,18 +1718,13 @@
 
 @media (max-width: 1120px) {
   .pd-starter-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, var(--ds-template-card-width)));
   }
 }
 
 @media (max-width: 820px) {
-  .pd-start-shelf {
-    --ds-template-card-height: 128px;
-    --ds-template-thumb-min-height: 78px;
-  }
-
   .pd-starter-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, var(--ds-template-card-width)));
     gap: 10px;
   }
 

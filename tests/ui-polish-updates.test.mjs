@@ -211,8 +211,10 @@ test("Template and starter cards share one geometry and the canonical gradients"
   assert.match(card, /export function templateGradient/);
   assert.match(cardCss, /\.ds-template-thumb \{[^}]*height:/);
 
-  // Canonical card height + gradient stops live in the token layer.
-  assert.match(tokens, /--ds-template-card-height:\s*140px/);
+  // Canonical 224 × 157px card geometry + gradient stops live in the token layer.
+  assert.match(tokens, /--ds-template-card-width:\s*224px/);
+  assert.match(tokens, /--ds-template-card-height:\s*157px/);
+  assert.match(tokens, /--ds-template-shelf-columns:\s*5/);
   const stops = [
     "linear-gradient(90deg, rgb(87, 154, 252) 0%, rgb(87, 99, 252) 100%)",
     "linear-gradient(90deg, rgb(255, 90, 194) 0%, rgb(253, 91, 115) 100%)",
@@ -228,11 +230,17 @@ test("Template and starter cards share one geometry and the canonical gradients"
   assert.match(cardCss, /\.ds-template-thumb\.is-gradient \.tb-mini-sheet-paper,/);
   assert.match(cardCss, /background-color: #ffffff/);
 
-  // Every product card opts into the shared height; page files keep no sizes.
+  // Every product card opts into the shared column rhythm; the size itself is
+  // declared once, on .ds-template-thumb.
   for (const css of [tableCss, docsCss, formsCss]) {
-    assert.match(css, /height: var\(--ds-template-card-height\)/);
+    assert.match(css, /repeat\(var\(--ds-template-shelf-columns\), minmax\(0, var\(--ds-template-card-width\)\)\)/);
     assert.doesNotMatch(css, /height:\s*124px/);
+    assert.doesNotMatch(css, /height:\s*140px/);
   }
+  assert.match(cardCss, /height: var\(--ds-template-card-height\)/);
+
+  // The start shelves share one surface: rgb(246, 247, 251).
+  assert.match(tokens, /--ds-shelf-bg:\s*#f6f7fb/);
   assert.doesNotMatch(tableCss, /\.tb-starter-thumb \{[^}]*border:/);
   assert.doesNotMatch(docsCss, /\.pd-starter-thumb \{[^}]*height:/);
   assert.doesNotMatch(formsCss, /\.pf-starter-thumb \{[^}]*height:/);
@@ -255,4 +263,37 @@ test("Sidebar and topbar headers are 60px with no seam between brand and nav", (
   assert.match(systemCss, /\.sidebar-header \{[^}]*border-bottom: 0/);
   assert.match(systemCss, /\.workspace-topbar \{[^}]*height: 60px/);
   assert.doesNotMatch(systemCss, /border-bottom: 1px solid var\(--ds-divider\);\s*backdrop-filter: none/);
+});
+
+test("Shelf cards are 224 × 157 with 5 columns open / 6 collapsed", () => {
+  const tokens = read("src/design-system/tokens.css");
+  const cardCss = read("src/components/shared/template-card.css");
+
+  assert.match(tokens, /--ds-template-card-width:\s*224px/);
+  assert.match(tokens, /--ds-template-card-height:\s*157px/);
+  assert.match(tokens, /--ds-shelf-bg:\s*#f6f7fb/);
+
+  // Sidebar state drives the per-row count, never the card size.
+  assert.match(cardCss, /\.workspace-shell:has\(\.workspace-sidebar\.is-collapsed\) \.tb-start-shelf/);
+  assert.match(cardCss, /\.workspace-shell:has\(\.workspace-sidebar\.is-collapsed\) \.pd-start-shelf/);
+  assert.match(cardCss, /\.workspace-shell:has\(\.workspace-sidebar\.is-collapsed\) \.pf-start-shelf/);
+  assert.match(cardCss, /--ds-template-shelf-columns: 6/);
+});
+
+test("Persora Table gradient bands frame the preview on three sides only", () => {
+  const cardCss = read("src/components/shared/template-card.css");
+  // left / right / top spacing, no bottom gap — the paper runs off the bottom
+  // edge exactly like the Persora Docs card.
+  const rule = cardCss.match(/\.ds-template-thumb\.is-gradient \.tb-mini \{([^}]*)\}/)?.[1] || "";
+  assert.match(rule, /justify-content: flex-start/);
+  assert.match(rule, /padding: 10px 12px 0/);
+  assert.doesNotMatch(rule, /padding: 10px 12px;/);
+});
+
+test("The note page paints no soft blue focus edge around the rich editor", () => {
+  const pageCss = read("src/components/notes/note-editor-page.css");
+  assert.match(pageCss, /\.note-page \.rich-note-editor:focus-within/);
+  assert.match(pageCss, /\.note-page \.rich-note-content:focus/);
+  assert.match(pageCss, /box-shadow: none/);
+  assert.doesNotMatch(pageCss, /#8ab4f8/);
 });

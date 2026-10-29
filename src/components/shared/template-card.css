@@ -8,9 +8,9 @@
 .ds-template-thumb {
   position: relative;
   display: block;
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   width: 100%;
-  min-height: var(--ds-template-thumb-min-height);
+  height: var(--ds-template-card-height);
   border: 1px solid var(--ds-border-strong);
   border-radius: var(--ds-radius-xs);
   overflow: hidden;
@@ -38,10 +38,13 @@
   background-color: #ffffff;
 }
 
-/* Inside a gradient band the white page floats free, like a real template card. */
+/* Inside a gradient band the white page floats inside a three-sided frame —
+   spacing on the left, right and top only, running out of the bottom edge
+   exactly like the Persora Docs card. */
 .ds-template-thumb.is-gradient .tb-mini {
-  justify-content: center;
-  padding: 10px 12px;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 10px 12px 0;
 }
 
 .ds-template-thumb.is-gradient .tb-mini-sheet-paper {
@@ -59,4 +62,15 @@
 /* No banding: the gradient is painted once, as a single smooth raster. */
 @media (prefers-reduced-motion: reduce) {
   .ds-template-thumb { transition: none; }
+}
+
+/* ---- Shelf rhythm --------------------------------------------------------
+   Five cards per row with the sidebar rail open, six when it is collapsed.
+   Only the column count changes — the 224 × 157px card size never does. */
+@media (min-width: 821px) {
+  .workspace-shell:has(.workspace-sidebar.is-collapsed) .tb-start-shelf,
+  .workspace-shell:has(.workspace-sidebar.is-collapsed) .pd-start-shelf,
+  .workspace-shell:has(.workspace-sidebar.is-collapsed) .pf-start-shelf {
+    --ds-template-shelf-columns: 6;
+  }
 }
