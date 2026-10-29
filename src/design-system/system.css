@@ -115,17 +115,50 @@ textarea {
 }
 
 .sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex: 0 0 70px;
   height: 70px;
   min-height: 70px;
-  padding: 0 20px;
+  padding: 0 12px 0 20px;
   background: var(--ds-sidebar-bg);
   border-bottom: 1px solid var(--ds-divider);
   backdrop-filter: none;
 }
 
 .workspace-brand {
+  flex: 1 1 auto;
+  min-width: 0;
   color: var(--ds-text);
+}
+
+/* Sidebar collapse / expand control (sidebar header) */
+.sidebar-toggle-button {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ds-text-muted);
+  cursor: pointer;
+  transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+.sidebar-toggle-button:hover,
+.sidebar-toggle-button:focus-visible {
+  border-color: var(--ds-border);
+  background: var(--ds-card-bg);
+  color: var(--ds-primary);
+  outline: 0;
+}
+
+.sidebar-toggle-button:focus-visible {
+  box-shadow: 0 0 0 3px var(--ds-focus-ring);
 }
 
 .sidebar-nav {
@@ -220,9 +253,128 @@ textarea {
   flex: 0 0 auto;
   position: relative;
   z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
   padding: 12px 12px 14px;
   background: var(--ds-sidebar-bg);
   border-top: 1px solid var(--ds-divider);
+}
+
+/* Single sign-out action (the profile menu was removed from the rail) */
+.sidebar-logout {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 38px;
+  padding: 0 11px;
+  border: 1px solid var(--ds-border);
+  border-radius: 11px;
+  background: var(--ds-card-bg);
+  color: var(--ds-sidebar-text);
+  font-family: var(--ds-sidebar-font);
+  font-size: var(--ds-sidebar-font-size);
+  font-weight: 550;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.sidebar-logout > svg {
+  flex: 0 0 auto;
+  color: var(--ds-text-muted);
+}
+
+.sidebar-logout:hover,
+.sidebar-logout:focus-visible {
+  border-color: var(--ds-rose-border);
+  background: var(--ds-rose-soft);
+  color: var(--ds-rose);
+  outline: 0;
+}
+
+.sidebar-logout:hover > svg,
+.sidebar-logout:focus-visible > svg {
+  color: var(--ds-rose);
+}
+
+.sidebar-logout:focus-visible {
+  box-shadow: 0 0 0 3px var(--ds-focus-ring);
+}
+
+/* 2b. Collapsed navigation rail (desktop / tablet only)
+   Toggled from the sidebar header. Labels are visually hidden but every link
+   keeps its accessible name (aria-label) and a hover tooltip (title). */
+@media (min-width: 821px) {
+  .workspace-sidebar {
+    transition: width 180ms var(--p-ease, cubic-bezier(0.22, 1, 0.36, 1)),
+      min-width 180ms var(--p-ease, cubic-bezier(0.22, 1, 0.36, 1)),
+      flex-basis 180ms var(--p-ease, cubic-bezier(0.22, 1, 0.36, 1));
+  }
+
+  .workspace-sidebar.is-collapsed {
+    width: 78px;
+    min-width: 78px;
+    flex: 0 0 78px;
+  }
+
+  .workspace-sidebar.is-collapsed .sidebar-header {
+    padding: 0;
+    justify-content: center;
+    gap: 0;
+  }
+
+  /* Collapsed rail: the header becomes the expand control. */
+  .workspace-sidebar.is-collapsed .workspace-brand,
+  .workspace-sidebar.is-collapsed .sidebar-secure-card,
+  .workspace-sidebar.is-collapsed .sidebar-link-label,
+  .workspace-sidebar.is-collapsed .nav-count,
+  .workspace-sidebar.is-collapsed .admin-nav-dot,
+  .workspace-sidebar.is-collapsed .sidebar-logout-label {
+    display: none;
+  }
+
+  .workspace-sidebar.is-collapsed .sidebar-toggle-button {
+    width: 36px;
+    height: 36px;
+    border-color: var(--ds-border);
+    background: var(--ds-card-bg);
+  }
+
+  .workspace-sidebar.is-collapsed .sidebar-nav {
+    padding: 10px 11px 16px;
+  }
+
+  .workspace-sidebar.is-collapsed .nav-group-label {
+    display: block;
+    height: 1px;
+    margin: 12px 8px 10px;
+    padding: 0;
+    overflow: hidden;
+    background: var(--ds-divider);
+    color: transparent;
+    text-indent: -9999px;
+  }
+
+  .workspace-sidebar.is-collapsed .sidebar-group.sidebar-primary-group > .nav-group-label {
+    display: none;
+  }
+
+  .workspace-sidebar.is-collapsed .sidebar-link,
+  .workspace-sidebar.is-collapsed .sidebar-logout {
+    justify-content: center;
+    gap: 0;
+    padding: 0;
+  }
+
+  .workspace-sidebar.is-collapsed .sidebar-link {
+    min-height: 40px;
+  }
+
+  .workspace-sidebar.is-collapsed .sidebar-bottom {
+    padding: 10px 11px 12px;
+  }
 }
 
 .sidebar-secure-card {
@@ -246,28 +398,6 @@ textarea {
   color: var(--ds-sidebar-text);
   font-family: var(--ds-sidebar-font);
   font-size: 10.5px;
-}
-
-.sidebar-profile {
-  border-radius: 11px;
-  padding: 7px 8px;
-}
-
-.sidebar-profile:hover {
-  border-color: var(--ds-border);
-  background: var(--ds-sidebar-hover);
-}
-
-.profile-copy b {
-  color: var(--ds-text);
-  font-family: var(--ds-sidebar-font);
-  font-size: var(--ds-sidebar-font-size);
-}
-
-.profile-copy small {
-  color: var(--ds-sidebar-text);
-  font-family: var(--ds-sidebar-font);
-  font-size: 11px;
 }
 
 .workspace-main {
@@ -399,7 +529,7 @@ textarea {
   font-size: 11.5px;
 }
 
-.workspace-content input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]),
+.workspace-content input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]):not(.note-page-title):not(.note-page-tag-input),
 .workspace-content select,
 .workspace-content textarea,
 .vault-modal input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]),
@@ -415,7 +545,7 @@ textarea {
   font-size: 13px;
 }
 
-.workspace-content :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea):focus,
+.workspace-content :is(input:not([type="checkbox"]):not([type="radio"]):not(.note-page-title):not(.note-page-tag-input), select, textarea):focus,
 .vault-modal :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea):focus {
   border-color: var(--ds-primary);
   box-shadow: 0 0 0 3px var(--ds-focus-ring);
@@ -587,28 +717,34 @@ textarea {
   color: var(--ds-primary);
 }
 
-/* Global Search Trigger in Topbar */
+/* Global Search Trigger in Topbar — a clean 38px icon button */
 .global-search-trigger {
-  border-color: var(--ds-border-strong);
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 38px;
+  min-width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 1px solid var(--ds-border-strong);
+  border-radius: 999px;
   background: var(--ds-card-bg);
   color: var(--ds-text-muted);
+  cursor: pointer;
+  transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+
+.global-search-trigger > svg {
+  flex: 0 0 auto;
 }
 
 .global-search-trigger:hover,
 .global-search-trigger:focus-visible {
   border-color: var(--ds-primary-border);
   background: var(--ds-card-hover-bg);
+  color: var(--ds-primary);
+  outline: 0;
   box-shadow: 0 0 0 3px var(--ds-focus-ring);
-}
-
-.global-search-trigger > span {
-  color: var(--ds-text-muted);
-}
-
-.global-search-trigger kbd {
-  border-color: var(--ds-border);
-  background: var(--ds-subtle-bg);
-  color: var(--ds-text-muted);
 }
 
 /* Absolute-positioned icon inputs safety net */
@@ -1077,7 +1213,6 @@ textarea {
 .add-document-drawer,
 .billing-checkout-drawer,
 .todo-editor-drawer,
-.notes-editor-drawer,
 .tb-record-panel {
   background: var(--ds-overlay-bg) !important;
   color: var(--ds-text) !important;
@@ -1291,7 +1426,6 @@ textarea {
 
 /* Popovers & Dropdown Menus */
 .notification-popover,
-.user-popover,
 .more-options-menu,
 .card-action-menu {
   background: var(--ds-overlay-bg) !important;
@@ -1408,23 +1542,6 @@ textarea {
   color: var(--ds-text-muted);
   font-size: 12.5px;
   font-style: normal;
-}
-
-.user-popover-header {
-  border-bottom-color: var(--ds-border);
-}
-
-.user-popover-header strong {
-  color: var(--ds-text);
-}
-
-.user-popover > button {
-  color: var(--ds-text-secondary);
-}
-
-.user-popover > button:hover {
-  background: var(--ds-subtle-bg);
-  color: var(--ds-text);
 }
 
 .toast-notice {
@@ -1643,6 +1760,8 @@ textarea {
 }
 
 /* 9. Global Portaled Delete Confirmation Modal & ReUI Menubar / ContextMenu */
+/* Clean confirmation dialog — centered title + impact copy, then a full-width
+   destructive action stacked above a full-width Cancel (no header chrome). */
 .modal-backdrop.ds-delete-modal-backdrop {
   position: fixed;
   inset: 0;
@@ -1657,38 +1776,32 @@ textarea {
 
 .confirm-dialog.ds-delete-modal {
   position: relative;
-  width: min(100%, 440px);
+  width: min(100%, 430px);
   max-height: calc(100dvh - 40px);
-  overflow: hidden;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  padding: 0;
-  border-radius: var(--ds-radius-xl);
-  border: 1px solid var(--ds-border-strong);
+  padding: 28px 26px 22px;
+  border-radius: 24px;
+  border: 1px solid var(--ds-border);
   background: var(--ds-overlay-bg);
   color: var(--ds-text);
   box-shadow: var(--ds-shadow-modal);
+  text-align: center;
+  scrollbar-width: thin;
+  animation: dialog-in 0.22s var(--p-ease, cubic-bezier(0.22, 1, 0.36, 1)) both;
 }
 
-.ds-delete-modal-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 16px 18px 14px;
-  border-bottom: 1px solid var(--ds-border);
-  background: var(--ds-overlay-header-bg);
-}
-
-.ds-delete-modal-title-wrap {
-  flex: 1 1 auto;
-  min-width: 0;
+.ds-delete-modal-copy {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
 .ds-delete-modal-eyebrow {
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1697,45 +1810,29 @@ textarea {
 
 .confirm-dialog.ds-delete-modal h2 {
   margin: 0;
-  font-size: 16.5px;
-  font-weight: 650;
+  font-size: 19px;
+  font-weight: 700;
   line-height: 1.3;
   letter-spacing: -0.02em;
   color: var(--ds-text);
-}
-
-.ds-delete-modal-close {
-  display: inline-grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  flex-shrink: 0;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--ds-text-muted);
-  cursor: pointer;
-  transition: background-color 140ms ease, color 140ms ease;
-}
-
-.ds-delete-modal-close:hover:not(:disabled) {
-  background: var(--ds-subtle-bg);
-  color: var(--ds-text);
+  text-wrap: balance;
 }
 
 .confirm-copy.ds-delete-modal-body {
-  padding: 16px 18px;
-  overflow-y: auto;
-  font-size: 13.5px;
-  line-height: 1.55;
-  color: var(--ds-text-secondary);
+  padding: 0;
+  max-width: 34ch;
+  margin: 0 auto;
+  overflow: visible;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--ds-text-muted);
 }
 
 .confirm-copy.ds-delete-modal-body p {
   margin: 0;
-  font-size: 13.5px;
-  line-height: 1.55;
-  color: var(--ds-text-secondary);
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--ds-text-muted);
 }
 
 .confirm-copy.ds-delete-modal-body p + p {
@@ -1744,59 +1841,73 @@ textarea {
 
 .confirm-copy.ds-delete-modal-body b,
 .confirm-copy.ds-delete-modal-body strong {
-  color: var(--ds-text);
+  color: var(--ds-text-secondary);
   font-weight: 600;
+}
+
+.confirm-copy.ds-delete-modal-body ul,
+.confirm-copy.ds-delete-modal-body ol {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  text-align: left;
 }
 
 .confirm-actions.ds-delete-modal-actions {
   display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 0;
-  padding: 12px 18px;
-  border-top: 1px solid var(--ds-border);
-  background: var(--ds-overlay-footer-bg);
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
+.ds-delete-confirm-btn,
 .ds-delete-cancel-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 36px;
-  padding: 0 14px;
-  border: 1px solid var(--ds-border-strong);
-  border-radius: var(--ds-radius-sm);
-  background: var(--ds-card-bg);
-  color: var(--ds-text-secondary);
-  font-size: 13px;
-  font-weight: 600;
+  gap: 7px;
+  width: 100%;
+  min-height: 47px;
+  padding: 0 16px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
   cursor: pointer;
-}
-
-.ds-delete-cancel-btn:hover:not(:disabled) {
-  background: var(--ds-subtle-bg);
-  color: var(--ds-text);
+  transition: background-color 150ms ease, border-color 150ms ease, filter 150ms ease;
 }
 
 .ds-delete-confirm-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 36px;
-  padding: 0 15px;
+  order: 0;
   border: 1px solid var(--ds-danger);
-  border-radius: var(--ds-radius-sm);
   background: var(--ds-danger);
   color: #ffffff;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
 }
 
 .ds-delete-confirm-btn:hover:not(:disabled) {
-  filter: brightness(0.94);
+  filter: brightness(0.95);
+}
+
+.ds-delete-cancel-btn {
+  order: 1;
+  border: 1px solid var(--ds-border-strong);
+  background: var(--ds-card-bg);
+  color: var(--ds-text);
+  font-weight: 600;
+}
+
+.ds-delete-cancel-btn:hover:not(:disabled) {
+  border-color: var(--ds-text-soft);
+  background: var(--ds-subtle-bg);
+}
+
+.ds-delete-confirm-btn:focus-visible,
+.ds-delete-cancel-btn:focus-visible {
+  outline: 2px solid var(--ds-focus-ring);
+  outline-offset: 2px;
 }
 
 .ds-delete-confirm-btn:disabled,
@@ -1805,9 +1916,45 @@ textarea {
   cursor: not-allowed;
 }
 
+@media (max-width: 480px) {
+  .confirm-dialog.ds-delete-modal {
+    padding: 24px 20px 18px;
+    border-radius: 22px;
+  }
+
+  .confirm-dialog.ds-delete-modal h2 {
+    font-size: 17.5px;
+  }
+}
+
 .workspace-topbar .workspace-title-stack {
   flex-shrink: 0;
   white-space: nowrap;
+}
+
+/* Full-page Tasks & Notes editor: the page owns the whole content area, so the
+   workspace topbar/footer step aside and the content padding is removed. */
+.workspace-main:has(.note-page) {
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+}
+
+.workspace-main:has(.note-page) > .workspace-topbar,
+.workspace-main:has(.note-page) > .workspace-footer {
+  display: none;
+}
+
+.workspace-content.workspace-content-note-page {
+  display: flex;
+  flex: 1 1 0%;
+  min-height: 0;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
 }
 
 /* Full-bleed edge-to-edge workspace layout when Persora Table or Persora Docs editor is open */

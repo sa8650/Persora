@@ -1002,7 +1002,6 @@
 .workspace-topbar { gap: 18px; }
 .workspace-topbar .breadcrumb-area { min-width: 0; flex: 1 1 auto; }
 .workspace-topbar .topbar-actions { position: relative; z-index: 2; flex: 0 0 auto; justify-content: flex-end; margin-left: auto; white-space: nowrap; }
-.workspace-topbar .global-search-trigger { flex: 0 1 221px; }
 
 /* Overview cards: modestly larger labels and supporting copy for readability. */
 .metric-state { font-size: 8.6px; }
@@ -1026,34 +1025,34 @@
 .contacts-field { gap: 6px; font-size: 11px; }
 .contact-editor-dialog .editor-actions button,.contact-editor-dialog .quiet-button,.contact-editor-dialog .contact-save-button { min-height: 38px; font-size: 11px; }
 
-/* Tasks, notes and reminders open as a right-side editing workspace. */
-.modal-backdrop.todo-editor-backdrop,.modal-backdrop.notes-editor-backdrop { display: flex; align-items: stretch; justify-content: flex-end; overflow: hidden; padding: 0; }
-.vault-modal.todo-editor-drawer,.vault-modal.notes-editor-drawer { display: flex; flex-direction: column; width: min(560px,100vw); height: 100dvh; max-height: 100dvh; overflow-x: hidden; overflow-y: auto; margin: 0 0 0 auto; border: 0; border-left: 1px solid var(--p-line); border-radius: 22px 0 0 22px; padding: 25px 25px 19px; background: linear-gradient(180deg,#fff 0%,var(--p-blue-pale) 100%); box-shadow: -18px 0 58px rgba(60,64,67,0.19); animation: editor-drawer-in .32s cubic-bezier(.2,.75,.25,1) both; scrollbar-width: thin; }
+/* Tasks and reminders open as a right-side editing workspace (notes use their own page). */
+.modal-backdrop.todo-editor-backdrop { display: flex; align-items: stretch; justify-content: flex-end; overflow: hidden; padding: 0; }
+.vault-modal.todo-editor-drawer { display: flex; flex-direction: column; width: min(560px,100vw); height: 100dvh; max-height: 100dvh; overflow-x: hidden; overflow-y: auto; margin: 0 0 0 auto; border: 0; border-left: 1px solid var(--p-line); border-radius: 22px 0 0 22px; padding: 25px 25px 19px; background: linear-gradient(180deg,#fff 0%,var(--p-blue-pale) 100%); box-shadow: -18px 0 58px rgba(60,64,67,0.19); animation: editor-drawer-in .32s cubic-bezier(.2,.75,.25,1) both; scrollbar-width: thin; }
 @keyframes editor-drawer-in { from { opacity: .76; transform: translateX(34px); } to { opacity: 1; transform: translateX(0); } }
-.todo-editor-drawer .vault-modal-header,.notes-editor-drawer .vault-modal-header { position: sticky; z-index: 2; top: -25px; margin: -25px -25px 0; border-bottom: 1px solid var(--p-line); padding: 20px 25px 15px; background: #fff; }
-.todo-editor-drawer .vault-modal-header h2,.notes-editor-drawer .vault-modal-header h2 { font-size: 25px; line-height: 1.13; }
-.todo-editor-drawer .editor-intro,.notes-editor-drawer .editor-intro { margin: 15px 0 18px; color: var(--p-muted); font-size: 11px; line-height: 1.6; }
-.todo-editor-drawer .editor-form,.notes-editor-drawer .editor-form { gap: 13px; flex: 1 0 auto; }
-.todo-editor-drawer .field-label,.notes-editor-drawer .field-label { gap: 6px; color: var(--p-text); font-size: 11px; }
-.todo-editor-drawer .field-label input,.todo-editor-drawer .field-label select,.todo-editor-drawer .field-label textarea,.notes-editor-drawer .field-label input,.notes-editor-drawer .field-label select,.notes-editor-drawer .field-label textarea { min-height: 42px; border-color: var(--p-line); border-radius: 10px; padding: 10px 12px; font-size: 12px; }
-.todo-editor-drawer .field-label textarea,.notes-editor-drawer .field-label textarea { min-height: 100px; line-height: 1.6; }
-.todo-editor-drawer .editor-form-footer,.notes-editor-drawer .editor-form-footer { position: sticky; z-index: 2; bottom: -19px; margin: auto -25px -19px; border-top: 1px solid var(--p-line); padding: 13px 25px 17px; background: #fff; }
-.todo-editor-drawer .editor-footnote,.notes-editor-drawer .editor-footnote { font-size: 10px; }
-.todo-editor-drawer .editor-actions button,.notes-editor-drawer .editor-actions button { min-height: 39px; padding-inline: 13px; font-size: 11px; }
-.todo-editor-drawer .editor-submit,.notes-editor-drawer .editor-submit { min-height: 40px; padding-inline: 15px; font-size: 11px; }
-.todo-editor-drawer .vault-modal-header .vault-modal-close,.notes-editor-drawer .vault-modal-header .vault-modal-close { width: 36px; height: 36px; border-radius: 10px; }
-.todo-editor-drawer .editor-error,.notes-editor-drawer .editor-error { margin: 4px 0 0; }
+.todo-editor-drawer .vault-modal-header{ position: sticky; z-index: 2; top: -25px; margin: -25px -25px 0; border-bottom: 1px solid var(--p-line); padding: 20px 25px 15px; background: #fff; }
+.todo-editor-drawer .vault-modal-header h2{ font-size: 25px; line-height: 1.13; }
+.todo-editor-drawer .editor-intro{ margin: 15px 0 18px; color: var(--p-muted); font-size: 11px; line-height: 1.6; }
+.todo-editor-drawer .editor-form{ gap: 13px; flex: 1 0 auto; }
+.todo-editor-drawer .field-label{ gap: 6px; color: var(--p-text); font-size: 11px; }
+.todo-editor-drawer .field-label input,.todo-editor-drawer .field-label select,.todo-editor-drawer .field-label textarea{ min-height: 42px; border-color: var(--p-line); border-radius: 10px; padding: 10px 12px; font-size: 12px; }
+.todo-editor-drawer .field-label textarea{ min-height: 100px; line-height: 1.6; }
+.todo-editor-drawer .editor-form-footer{ position: sticky; z-index: 2; bottom: -19px; margin: auto -25px -19px; border-top: 1px solid var(--p-line); padding: 13px 25px 17px; background: #fff; }
+.todo-editor-drawer .editor-footnote{ font-size: 10px; }
+.todo-editor-drawer .editor-actions button{ min-height: 39px; padding-inline: 13px; font-size: 11px; }
+.todo-editor-drawer .editor-submit{ min-height: 40px; padding-inline: 15px; font-size: 11px; }
+.todo-editor-drawer .vault-modal-header .vault-modal-close{ width: 36px; height: 36px; border-radius: 10px; }
+.todo-editor-drawer .editor-error{ margin: 4px 0 0; }
 .todo-editor-drawer .ringtone-help-note { color: var(--p-muted); font-size: 10px; line-height: 1.55; }
 .todo-editor-drawer .schedule-repeat-days button { min-width: 39px; height: 35px; font-size: 10px; }
 @media (max-width: 620px) {
-  .vault-modal.todo-editor-drawer,.vault-modal.notes-editor-drawer { width: 100vw; border-radius: 0; padding: 19px 16px 15px; }
-  .todo-editor-drawer .vault-modal-header,.notes-editor-drawer .vault-modal-header { top: -19px; margin: -19px -16px 0; padding: 16px 16px 12px; }
-  .todo-editor-drawer .vault-modal-header h2,.notes-editor-drawer .vault-modal-header h2 { font-size: 22px; }
-  .todo-editor-drawer .editor-form-footer,.notes-editor-drawer .editor-form-footer { bottom: -15px; margin: auto -16px -15px; padding: 11px 16px 13px; }
-  .todo-editor-drawer .editor-footnote,.notes-editor-drawer .editor-footnote { display: none; }
+  .vault-modal.todo-editor-drawer { width: 100vw; border-radius: 0; padding: 19px 16px 15px; }
+  .todo-editor-drawer .vault-modal-header{ top: -19px; margin: -19px -16px 0; padding: 16px 16px 12px; }
+  .todo-editor-drawer .vault-modal-header h2{ font-size: 22px; }
+  .todo-editor-drawer .editor-form-footer{ bottom: -15px; margin: auto -16px -15px; padding: 11px 16px 13px; }
+  .todo-editor-drawer .editor-footnote{ display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .editor-dialog.todo-editor-drawer,.editor-dialog.notes-editor-drawer { animation: none; }
+  .editor-dialog.todo-editor-drawer,.editor-dialog{ animation: none; }
 }
 
 .contact-editor-footer { position: sticky; bottom: -17px; z-index: 2; margin: 14px -17px -17px; border-top: 1px solid var(--p-line); padding: 12px 17px 16px; background: rgba(255,255,255,.97); }
@@ -1236,7 +1235,6 @@ button.vault-folder-tile { width: 100%; text-align: left; cursor: pointer; }
 .persora-verified-badge svg { display: block; width: 100%; height: 100%; }
 .persora-verified-badge.is-inactive { color: #a8b0bb; }
 .persora-verified-badge.is-small { width: 15px; height: 15px; }
-.profile-copy > b, .user-popover-header strong { display: inline-flex; align-items: center; gap: 5px; }
 .settings-profile-name { display: flex; align-items: center; gap: 7px; }
 .settings-upload-notice, .business-card-upload-notice, .file-upload-locked, .medical-upload-notice, .timeline-upload-notice { display: flex; align-items: center; gap: 10px; border: 1px solid var(--ds-border); border-radius: var(--ds-radius-md); padding: 11px 13px; color: var(--ds-text-secondary); background: var(--ds-subtle-bg); font-size: 12.5px; line-height: 1.5; }
 .settings-upload-notice { margin: -8px 0 18px; }
@@ -1356,8 +1354,6 @@ button.vault-folder-tile { width: 100%; text-align: left; cursor: pointer; }
 @media (max-width: 540px) {
   .workspace-add-document { width: 36px; min-height: 36px; padding: 0; border-radius: 10px; }
   .workspace-add-document > span { display: none; }
-  .workspace-topbar .global-search-trigger { width: 36px; min-width: 36px; height: 36px; flex: 0 0 36px; justify-content: center; border-radius: 10px; padding: 0; }
-  .workspace-topbar .global-search-trigger > span,.workspace-topbar .global-search-trigger kbd { display: none; }
   .add-document-drawer { width: 100vw; border-left: 0; border-radius: 0; }
   .add-document-drawer-header { min-height: 76px; padding: 12px 17px; }
   .add-document-drawer-body { gap: 15px; padding: 18px 18px 22px; }

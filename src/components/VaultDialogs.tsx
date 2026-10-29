@@ -331,8 +331,8 @@ export function ItemEditorDialog({ sectionId, item, initialMetadata, initialFile
     return <input {...common} type={type} placeholder={field.placeholder || ""} />;
   };
 
-  const isNotesDrawer = section.id === "notes";
-  const useScrollWrap = section.id !== "notes";
+  // Notes are edited on their own full page (src/components/notes/NoteEditorPage.tsx).
+  const useScrollWrap = true;
   const eyebrow = isCv ? "Career profile" : isAdmission ? "Education record" : item ? "Edit your record" : `Add to ${section.label.toLowerCase()}`;
   const title = isCv ? item ? "Update your CV / Resume." : "Add a CV / Resume." : isAdmission ? item ? "Update admission details." : "Add an admission record." : item ? "Make a quick update." : `Add a ${section.singular}.`;
 
@@ -403,8 +403,7 @@ export function ItemEditorDialog({ sectionId, item, initialMetadata, initialFile
   return (
     <ItemModalShell
       labelledBy="editor-title"
-      className={`vault-modal-editor ${isNotesDrawer ? "notes-editor-drawer" : ""}`.trim()}
-      backdropClassName={isNotesDrawer ? "notes-editor-backdrop" : ""}
+      className="vault-modal-editor"
       icon={<section.icon size={19} />}
       iconClassName={`editor-icon ${section.id}`}
       eyebrow={eyebrow}
@@ -638,7 +637,7 @@ export function TodoEditorDialog({ kind = "todo", item, canUpload, maxUploadMb =
   );
 }
 
-function RichNoteEditor({ id, value, onChange }: { id: string; value: string; onChange: (value: string) => void }) {
+export function RichNoteEditor({ id, value, onChange, placeholder = "Write a note… Format it, add lists, or make a checklist.", showHint = true }: { id: string; value: string; onChange: (value: string) => void; placeholder?: string; showHint?: boolean }) {
   const editorRef = useRef<HTMLDivElement>(null);
   const touchedRef = useRef(false);
   const savedRangeRef = useRef<Range | null>(null);
@@ -702,8 +701,8 @@ function RichNoteEditor({ id, value, onChange }: { id: string; value: string; on
       <button type="button" title="Checklist" aria-label="Insert checklist" onMouseDown={(event) => { event.preventDefault(); saveSelection(); }} onClick={insertChecklist}><ListTodo size={15}/></button>
       <button type="button" title="Clear formatting" aria-label="Clear formatting" onMouseDown={(event) => { event.preventDefault(); saveSelection(); }} onClick={() => command("removeFormat")}><RemoveFormatting size={15}/></button>
     </div>
-    <div id={id} ref={editorRef} className="rich-note-content" contentEditable role="textbox" aria-multiline="true" aria-label="Note content" data-placeholder="Write a note… Format it, add lists, or make a checklist." onInput={sync} onClick={toggleTask} onPaste={pastePlainText} onKeyUp={saveSelection} onMouseUp={saveSelection} onFocus={saveSelection}/>
-    <div className="rich-note-hint">Use the toolbar for formatting and checklists.</div>
+    <div id={id} ref={editorRef} className="rich-note-content" contentEditable role="textbox" aria-multiline="true" aria-label="Note content" data-placeholder={placeholder} onInput={sync} onClick={toggleTask} onPaste={pastePlainText} onKeyUp={saveSelection} onMouseUp={saveSelection} onFocus={saveSelection}/>
+    {showHint && <div className="rich-note-hint">Use the toolbar for formatting and checklists.</div>}
   </div>;
 }
 

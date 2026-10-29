@@ -1,11 +1,6 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
-import {
-  AlertTriangle,
-  Search,
-  Trash2,
-  X,
-} from "lucide-react";
+import { Search, X } from "lucide-react";
 import { IconStack } from "@/components/reui/icon-stack";
 import { IconTile } from "@/components/reui/icon-tile";
 import { Spinner } from "@/components/ui/spinner";
@@ -249,7 +244,10 @@ export interface PersoraDeleteModalProps {
   danger?: boolean;
   /** Disables dismissal and shows a loading spinner on the confirm button. */
   busy?: boolean;
-  /** Custom header icon (defaults to `Trash2` when `danger` is true). */
+  /**
+   * @deprecated The clean confirmation layout no longer renders a header icon.
+   * Accepted for API compatibility with existing call sites.
+   */
   icon?: React.ReactNode;
   /** Optional eyebrow label above the title. */
   eyebrow?: React.ReactNode;
@@ -262,6 +260,8 @@ export interface PersoraDeleteModalProps {
 /**
  * Global Persora Delete / Destructive Confirmation Modal.
  *
+ * Clean, centered confirmation layout: title, one-line impact summary, then a
+ * full-width destructive action stacked above a full-width Cancel button.
  * Always portals directly to `document.body` above `.workspace-sidebar` and
  * all page stacking contexts so confirmation dialogs never open confined inside
  * `.workspace-main` or beside the sidebar.
@@ -276,7 +276,6 @@ export function PersoraDeleteModal({
   cancelLabel = "Cancel",
   danger = true,
   busy = false,
-  icon,
   eyebrow,
   className,
   backdropClassName,
@@ -329,38 +328,30 @@ export function PersoraDeleteModal({
         aria-labelledby={resolvedTitleId}
         aria-describedby={description || children ? descId : undefined}
       >
-        <div className="ds-delete-modal-head">
-          <IconTile
-            variant="soft"
-            size="default"
-            className={danger ? "ds-tone-rose" : "ds-tone-blue"}
-            aria-hidden="true"
-          >
-            {icon ?? (danger ? <Trash2 size={18} /> : <AlertTriangle size={18} />)}
-          </IconTile>
-          <div className="ds-delete-modal-title-wrap">
-            {eyebrow ? <span className="ds-delete-modal-eyebrow">{eyebrow}</span> : null}
-            <h2 id={resolvedTitleId}>{title}</h2>
-          </div>
-          <button
-            type="button"
-            className="ds-delete-modal-close"
-            onClick={onCancel}
-            disabled={busy}
-            aria-label="Close dialog"
-          >
-            <X size={17} />
-          </button>
+        <div className="ds-delete-modal-copy">
+          {eyebrow ? <span className="ds-delete-modal-eyebrow">{eyebrow}</span> : null}
+          <h2 id={resolvedTitleId}>{title}</h2>
+          {(description || children) && (
+            <div id={descId} className="confirm-copy ds-delete-modal-body">
+              {description ? <p>{description}</p> : null}
+              {children}
+            </div>
+          )}
         </div>
 
-        {(description || children) && (
-          <div id={descId} className="confirm-copy ds-delete-modal-body">
-            {description ? <p>{description}</p> : null}
-            {children}
-          </div>
-        )}
-
         <div className="confirm-actions ds-delete-modal-actions">
+          <button
+            type="button"
+            className={cn(
+              "ds-delete-confirm-btn",
+              danger ? "confirm-danger-button" : "ds-primary-confirm-btn editor-submit",
+            )}
+            disabled={busy}
+            onClick={onConfirm}
+          >
+            {busy ? <Spinner className="size-3.5" /> : null}
+            <span>{confirmLabel}</span>
+          </button>
           <button
             ref={cancelRef}
             type="button"
@@ -369,17 +360,6 @@ export function PersoraDeleteModal({
             onClick={onCancel}
           >
             {cancelLabel}
-          </button>
-          <button
-            type="button"
-            className={cn(
-              danger ? "ds-delete-confirm-btn confirm-danger-button" : "ds-primary-confirm-btn editor-submit",
-            )}
-            disabled={busy}
-            onClick={onConfirm}
-          >
-            {busy ? <Spinner className="size-3.5" /> : null}
-            <span>{confirmLabel}</span>
           </button>
         </div>
       </section>

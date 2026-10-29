@@ -576,7 +576,6 @@ export default function DocsHome({
               </div>
               <div className="pd-starter-caption">
                 <strong className="pd-starter-name">{info.label}</strong>
-                <span className="pd-starter-sub">{info.description}</span>
               </div>
             </button>
           ))}

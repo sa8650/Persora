@@ -24,10 +24,10 @@ body:has(.modal-backdrop, .pj-modal-backdrop, .timeline-modal-backdrop, .medical
 .vault-modal .editor-form { display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; }
 @media (max-width: 520px) {
   /* Centered modals become bottom sheets; full-height drawers are excluded. */
-  .modal-backdrop:has(.vault-modal):not(.todo-editor-backdrop):not(.notes-editor-backdrop) { align-items: end; padding: 7px; }
-  .vault-modal:not(.todo-editor-drawer):not(.notes-editor-drawer) { width: 100%; max-height: 95dvh; border-radius: 16px 16px 10px 10px; }
-  .vault-modal:not(.todo-editor-drawer):not(.notes-editor-drawer) .vault-modal-header { padding: 12px 14px; }
-  .vault-modal:not(.todo-editor-drawer):not(.notes-editor-drawer) .vault-modal-scroll { padding: 12px 14px; }
+  .modal-backdrop:has(.vault-modal):not(.todo-editor-backdrop) { align-items: end; padding: 7px; }
+  .vault-modal:not(.todo-editor-drawer) { width: 100%; max-height: 95dvh; border-radius: 16px 16px 10px 10px; }
+  .vault-modal:not(.todo-editor-drawer) .vault-modal-header { padding: 12px 14px; }
+  .vault-modal:not(.todo-editor-drawer) .vault-modal-scroll { padding: 12px 14px; }
 }
 
 .confirm-dialog { position: relative; width: min(100%,680px); max-height: calc(100dvh - 42px); overflow: auto; animation: dialog-in .24s var(--p-ease) both; scrollbar-width: thin; scrollbar-color: var(--p-line) transparent; }

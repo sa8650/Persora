@@ -13,6 +13,7 @@ const AdminAccessPage = lazy(() => import("./components/AdminAccessPage"));
 import PublicInfoPage from "./components/PublicInfoPage";
 import type { PublicPage, PublicPath } from "./components/PublicSiteShared";
 import { ConfirmDialog, ItemDetailDialog, ItemEditorDialog, TodoEditorDialog, ToastNotice } from "./components/VaultDialogs";
+import { NoteEditorPage } from "./components/notes/NoteEditorPage";
 import ShareRecordDialog from "./components/ShareRecordDialog";
 import { ADD_DOCUMENT_DESTINATION_EVENT, ADD_DOCUMENT_HANDOFF_EVENT } from "./types";
 import type { ActiveScheduleAlert, AddDocumentFlowDraft, AppUser, BusinessCardDraft, ContactDraft, ContactImportProgress, DigitalBusinessCard, DocumentTypeOption, MedicalRecord, MedicalRecordDraft, MedicalRecordFile, NotesRecordKind, PersoraContact, SectionId, ShareComment, ShareNotification, SharePermission, SharedVaultEntry, RecordShareEntry, RecordShareType, SiteContent, SubscriptionPlan, TimelineDraft, TimelineEvent, TrashEntry, TrashSpace, TransferProgress, SmartScanResult, VaultFilePreview, VaultItem, ViewId } from "./types";
@@ -1648,6 +1649,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       onCloseDocumentPanel={() => { setEditor((current) => current?.section === "documents" ? null : current); setFocusedItem((current) => current?.section === "documents" ? null : current); }}
       onAdd={(section, initialMetadata, initialFile, initialScanResult, initialScanComplete, initialProtectedKeys) => { if (section === "documents" && view !== "documents") { navigateWorkspace("documents"); setSearch(""); } setEditor({ section, initialMetadata, initialFile, initialScanResult, initialScanComplete, initialProtectedKeys }); setFocusedItem(null); }}
       onSaveItem={handleSaveItem}
+      notePage={editor && user && editor.section === "notes" ? <NoteEditorPage key={editor.item?.id || "new-note"} item={editor.item} initialMetadata={editor.initialMetadata} canUpload={!user.demo && user.uploadsEnabled === true} maxUploadMb={maxUploadMb} onUpgrade={!user.demo ? () => { setView("billing"); setEditor(null); } : undefined} onClose={() => setEditor(null)} onSave={handleSaveItem} /> : null}
       onAddTodo={(kind = "todo") => { setTodoEditorType(kind); setTodoEditor(null); setFocusedItem(null); }}
       onEditTodoItem={(item) => { const type = item.metadata.recordType; setTodoEditorType(type === "reminder" || type === "alarm" ? type : "todo"); setTodoEditor(item); setFocusedItem(null); }}
       onToggleTodo={handleToggleTodo}
@@ -1698,7 +1700,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       onClose={() => setAuthOpen(false)}
       onSubmit={handleAuthSubmit}
     />}
-    {editor && user && <ItemEditorDialog sectionId={editor.section} item={editor.item} initialMetadata={editor.initialMetadata} initialFile={editor.initialFile} initialScanResult={editor.initialScanResult} initialScanComplete={editor.initialScanComplete} initialProtectedKeys={editor.initialProtectedKeys} documentTypes={documentTypes} familyMembers={familyMembers} maxUploadMb={maxUploadMb} canUpload={!user.demo && user.uploadsEnabled === true} onUpgrade={!user.demo ? () => { setView("billing"); setEditor(null); } : undefined} onChangeAddDocumentDestination={(draft) => window.dispatchEvent(new CustomEvent<AddDocumentFlowDraft>(ADD_DOCUMENT_DESTINATION_EVENT, { detail: draft }))} onClose={() => setEditor(null)} onSave={handleSaveItem} />}
+    {editor && user && editor.section !== "notes" && <ItemEditorDialog sectionId={editor.section} item={editor.item} initialMetadata={editor.initialMetadata} initialFile={editor.initialFile} initialScanResult={editor.initialScanResult} initialScanComplete={editor.initialScanComplete} initialProtectedKeys={editor.initialProtectedKeys} documentTypes={documentTypes} familyMembers={familyMembers} maxUploadMb={maxUploadMb} canUpload={!user.demo && user.uploadsEnabled === true} onUpgrade={!user.demo ? () => { setView("billing"); setEditor(null); } : undefined} onChangeAddDocumentDestination={(draft) => window.dispatchEvent(new CustomEvent<AddDocumentFlowDraft>(ADD_DOCUMENT_DESTINATION_EVENT, { detail: draft }))} onClose={() => setEditor(null)} onSave={handleSaveItem} />}
     {todoEditor !== false && user && <TodoEditorDialog key={`${todoEditorType}:${todoEditor?.id || "new"}`} kind={todoEditorType} item={todoEditor || undefined} canUpload={!user.demo && user.uploadsEnabled === true} maxUploadMb={maxUploadMb} onUpgrade={!user.demo ? () => { setView("billing"); setTodoEditor(false); } : undefined} onClose={() => setTodoEditor(false)} onSave={async (draft, onProgress) => { await handleSaveItem(draft, onProgress); setTodoEditor(false); }} />}
     {focusedItem && <ItemDetailDialog
       item={focusedItem}

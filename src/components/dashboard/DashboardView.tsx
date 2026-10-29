@@ -220,7 +220,6 @@ export default function CustomizableDashboardView(props: CustomizableDashboardPr
             {buildGreeting(user.fullName)}
             <span className="greeting-period">.</span>
           </h2>
-          <p>Your live schedule, tasks, documents, renewals, and tools — arranged the way you work.</p>
         </div>
 
         <div className="welcome-actions flex flex-wrap items-center gap-2">

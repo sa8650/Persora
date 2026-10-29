@@ -285,7 +285,7 @@ export default function PhotoStudioView({ user, canUpload, maxUploadMb, onUpgrad
     finally { setDeleting(false); }
   };
 
-  const heading = <div className="section-page-heading"><div><div className="section-page-eyebrow"><IconTile variant="soft" size="xs" className="ds-tone-blue"><Camera size={13}/></IconTile>Official photos</div><h2>Photo Studio</h2><p>Keep passport, visa, ID and application photos ready — sized correctly and organized in one private place.</p></div><PersoraAsideStat icon={<Camera size={18}/>} label="PHOTOS" value={photos.length} tone="blue" note="Private to your account · edits run on this device" noteIcon={<ShieldCheck size={13}/>}/></div>;
+  const heading = <div className="section-page-heading"><div><div className="section-page-eyebrow"><IconTile variant="soft" size="xs" className="ds-tone-blue"><Camera size={13}/></IconTile>Official photos</div><h2>Photo Studio</h2><p>Keep passport, visa, ID and application photos ready — sized correctly and organized in one private place.</p></div><PersoraAsideStat icon={<Camera size={18}/>} label="PHOTOS" value={photos.length} tone="blue"/></div>;
 
   if (!available) {
     return <div className="section-view ps-page">{heading}<PersoraEmptyState icon={<Lock size={20}/>} tone="blue" title="Photo Studio needs a Persora account" description="Saved photos live in your private cloud storage, so Photo Studio is available after signing in to a connected Persora account."/></div>;

@@ -1,0 +1,372 @@
+/* ==========================================================================
+   Persora — Full-page Note Editor (src/components/notes/note-editor-page.css)
+   The Tasks & Notes editor is a real page (Evernote-style), not a drawer:
+   breadcrumb bar, quiet meta line, borderless title, rich body, tags and a
+   single sticky action bar. Every color comes from --ds-* design tokens.
+   ========================================================================== */
+
+.note-page {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: var(--ds-canvas-bg);
+  color: var(--ds-text);
+  font-family: var(--ds-font-sans);
+}
+
+/* ---- Breadcrumb bar ------------------------------------------------------ */
+
+.note-page-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex: 0 0 auto;
+  min-height: 60px;
+  padding: 10px clamp(16px, 3vw, 32px);
+  border-bottom: 1px solid var(--ds-divider);
+  background: var(--ds-overlay-bg);
+}
+
+.note-page-bar-left,
+.note-page-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.note-page-back {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--ds-border);
+  border-radius: 9px;
+  background: var(--ds-card-bg);
+  color: var(--ds-text-secondary);
+  cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.note-page-back:hover,
+.note-page-back:focus-visible {
+  border-color: var(--ds-primary-border);
+  background: var(--ds-primary-soft);
+  color: var(--ds-primary);
+  outline: 0;
+}
+
+.note-page-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--ds-text-muted);
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.note-page-breadcrumb > svg {
+  flex: 0 0 auto;
+  color: var(--ds-text-soft);
+}
+
+.note-page-breadcrumb .is-current {
+  overflow: hidden;
+  max-width: min(46vw, 420px);
+  color: var(--ds-text);
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.note-page-state {
+  color: var(--ds-text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.note-page-state.is-dirty {
+  color: var(--ds-amber);
+}
+
+.note-page-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--ds-primary);
+  border-radius: 9px;
+  background: var(--ds-primary);
+  color: var(--ds-primary-fg);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 140ms ease, filter 140ms ease;
+}
+
+.note-page-save:hover:not(:disabled) {
+  background: var(--ds-primary-hover);
+  border-color: var(--ds-primary-hover);
+}
+
+.note-page-save:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ---- Scroll area & sheet ------------------------------------------------- */
+
+.note-page-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 34px clamp(16px, 3vw, 32px) 56px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ds-border-strong) transparent;
+}
+
+.note-page-sheet {
+  width: min(100%, 760px);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.note-page-meta {
+  margin: 0;
+  color: var(--ds-text-soft);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.workspace-content input.note-page-title {
+  width: 100%;
+  border-radius: 0;
+  padding: 6px 0 10px;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  color: var(--ds-text);
+  font-family: var(--ds-font-heading);
+  font-size: clamp(30px, 3.6vw, 40px);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+  outline: 0;
+  box-shadow: none;
+  transition: border-color 160ms ease;
+}
+
+.note-page-title:focus,
+.note-page-title:focus-visible {
+  border-top: 0;
+  border-right: 0;
+  border-left: 0;
+  border-bottom-color: var(--ds-border);
+  outline: 0;
+  box-shadow: none;
+}
+
+/* The title reads as page text, not a field: the caret marks focus. */
+.note-page-title:focus-visible {
+  box-shadow: none !important;
+}
+
+.note-page-title::placeholder {
+  color: var(--ds-text-soft);
+  font-weight: 600;
+}
+
+.note-page-title:focus {
+  border-bottom-color: var(--ds-border);
+}
+
+/* The rich body is borderless inside the page so the page *is* the note. */
+.note-page .rich-note-editor {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.note-page .rich-note-toolbar {
+  position: sticky;
+  top: -34px;
+  z-index: 2;
+  gap: 2px;
+  border: 1px solid var(--ds-border);
+  border-radius: 10px;
+  padding: 5px 6px;
+  margin-bottom: 12px;
+  background: var(--ds-card-bg);
+  box-shadow: var(--ds-shadow-xs);
+}
+
+.note-page .rich-note-toolbar button {
+  color: var(--ds-text-secondary);
+}
+
+.note-page .rich-note-toolbar button:hover {
+  background: var(--ds-subtle-bg);
+  color: var(--ds-primary);
+}
+
+.note-page .rich-note-toolbar > span {
+  background: var(--ds-border);
+}
+
+.note-page .rich-note-content {
+  min-height: clamp(240px, 34vh, 460px);
+  max-height: none;
+  padding: 0;
+  color: var(--ds-text-secondary);
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+.note-page .rich-note-content:empty::before {
+  color: var(--ds-text-soft);
+}
+
+/* ---- Tags & attachment --------------------------------------------------- */
+
+.note-page-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--ds-border);
+}
+
+.note-page-field-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ds-text-secondary);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.note-page-field-label > svg {
+  color: var(--ds-text-muted);
+}
+
+.note-page-field-label small {
+  color: var(--ds-text-soft);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.note-page-tag-input {
+  flex: 1 1 220px;
+  min-width: 160px;
+  padding: 6px 0;
+  border: 0;
+  background: transparent;
+  color: var(--ds-text);
+  font-family: var(--ds-font-sans);
+  font-size: 13px;
+  outline: 0;
+}
+
+.note-page-tag-input::placeholder {
+  color: var(--ds-text-soft);
+}
+
+.note-page-tag-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.note-page-attachment {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-md);
+  background: var(--ds-subtle-bg);
+}
+
+.note-page-attachment .upload-field-block,
+.note-page-attachment .rich-note-hint {
+  margin: 0;
+}
+
+/* ---- Sticky action bar --------------------------------------------------- */
+
+.note-page-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex: 0 0 auto;
+  padding: 12px clamp(16px, 3vw, 32px);
+  border-top: 1px solid var(--ds-divider);
+  background: var(--ds-overlay-footer-bg);
+}
+
+.note-page-footnote {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--ds-text-muted);
+  font-size: 12px;
+}
+
+.note-page-footnote > svg {
+  flex: 0 0 auto;
+  color: var(--ds-text-soft);
+}
+
+.note-page-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+/* ---- Responsive ---------------------------------------------------------- */
+
+@media (max-width: 720px) {
+  .note-page-bar {
+    flex-wrap: wrap;
+    padding: 9px 14px;
+  }
+
+  .note-page-breadcrumb .is-current {
+    max-width: 40vw;
+  }
+
+  .note-page-scroll {
+    padding: 22px 14px 40px;
+  }
+
+  .note-page-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 10px 14px 14px;
+  }
+
+  .note-page-actions {
+    justify-content: flex-end;
+  }
+
+  .note-page-footnote span {
+    font-size: 11.5px;
+  }
+}
