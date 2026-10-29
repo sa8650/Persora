@@ -51,6 +51,7 @@ import { buildFormThemeCssVars } from "../../lib/form-themes";
 import { Badge, PersoraDeleteModal, PersoraEmptyState } from "@/design-system";
 import { Spinner } from "@/components/ui/spinner";
 import ModalPortal from "../ModalPortal";
+import { TemplateCardThumb } from "../shared/template-card";
 import { LauncherModuleIcon } from "../launcher/LauncherIcons";
 import FormRespondentRenderer from "./FormRespondentRenderer";
 import {
@@ -989,9 +990,9 @@ export default function FormsDashboard({
               disabled={creating}
               onClick={() => void onCreate(buildStarterSeed("blank"))}
             >
-              <span className="pf-starter-thumb">
+              <TemplateCardThumb className="pf-starter-thumb">
                 <BlankFormArtwork />
-              </span>
+              </TemplateCardThumb>
               <span className="pf-starter-label">Blank form</span>
             </button>
           </li>
@@ -1005,9 +1006,9 @@ export default function FormsDashboard({
                 title={tpl.description}
                 onClick={() => void onCreate(buildStarterSeed(tpl.id))}
               >
-                <span className="pf-starter-thumb">
+                <TemplateCardThumb className="pf-starter-thumb">
                   <FormContentMiniature input={miniature} compact />
-                </span>
+                </TemplateCardThumb>
                 <span className="pf-starter-label">{tpl.label}</span>
               </button>
             </li>

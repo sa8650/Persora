@@ -845,7 +845,7 @@
 .workspace-brand .brand-mark { display: inline-grid; flex: 0 0 29px; }
 .workspace-brand > span:nth-child(2) { display: inline-block; }
 .workspace-brand .brand-period { flex: 0 0 auto; margin-left: -6px; margin-right: -5px; line-height: .9; }
-@media (max-width: 540px) { .sidebar-header { flex-basis: 64px; } }
+@media (max-width: 540px) { .sidebar-header { flex-basis: 60px; } }
 
 /* Medical records: private health archive, editor and cards */
 .medical-page { max-width: 1120px; padding: 3px 0 24px; }

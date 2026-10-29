@@ -231,8 +231,11 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 6px;
+  justify-content: flex-start;
+  gap: var(--ds-template-card-gap);
   width: 100%;
+  /* Shared template-card geometry (src/components/shared/template-card.css) */
+  height: var(--ds-template-card-height);
   padding: 0;
   border: 0;
   background: transparent;
@@ -243,16 +246,8 @@
   min-width: 0;
 }
 .tb-starter-card:disabled { opacity: 0.52; cursor: not-allowed; }
-.tb-starter-thumb {
-  display: block;
-  height: 124px;
-  border: 1px solid var(--ds-border-strong);
-  border-radius: var(--ds-radius-xs);
-  background: var(--ds-card-bg);
-  overflow: hidden;
-  box-shadow: var(--ds-shadow-xs);
-  transition: border-color 0.14s ease, box-shadow 0.14s ease;
-}
+/* Surface / size / gradient live on the shared .ds-template-thumb class. */
+.tb-starter-thumb { display: block; }
 .tb-starter-card:hover:not(:disabled) .tb-starter-thumb {
   border-color: var(--ds-primary);
   box-shadow: var(--ds-shadow-card);
@@ -1563,7 +1558,7 @@
 @media (max-width: 680px) {
   .tb-start-shelf { padding: 12px 12px 14px; }
   .tb-starter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-  .tb-starter-thumb { height: 108px; }
+  .tb-start-shelf { --ds-template-card-height: 128px; --ds-template-thumb-min-height: 78px; }
   .tb-recent-bar { align-items: stretch; }
   .tb-recent-controls { width: 100%; flex-wrap: wrap; justify-content: flex-start; }
   .tb-home .tb-home-search { width: 100%; flex: 1 1 100%; }

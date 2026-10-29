@@ -111,7 +111,9 @@ test("Tasks & Notes open in a full-page editor instead of a drawer", () => {
   assert.match(page, /className="note-page-title"/);
   assert.match(page, /RichNoteEditor/);
   assert.match(page, /note-page-tag-input/);
-  assert.match(page, /note-page-footer/);
+  // The page autosaves, so it has no footer action bar of its own.
+  assert.doesNotMatch(page, /note-page-footer/);
+  assert.doesNotMatch(pageCss, /\.note-page-footer/);
 
   // Rich editor is shared with the invoice/vault editors (single implementation).
   assert.match(vaultDialogs, /export function RichNoteEditor/);
@@ -129,4 +131,128 @@ test("Tasks & Notes open in a full-page editor instead of a drawer", () => {
   // Token-driven styling only.
   assert.match(pageCss, /var\(--ds-canvas-bg\)/);
   assert.doesNotMatch(pageCss, /#[0-9a-fA-F]{3,8}\b(?!.*var\()/);
+});
+
+test("Tasks & Notes notes autosave like Persora Table and Docs", () => {
+  const page = read("src/components/notes/NoteEditorPage.tsx");
+  const app = read("src/App.tsx");
+
+  // Debounced autosave: the note persists itself without a Save/Create footer.
+  assert.match(page, /AUTOSAVE_DELAY/);
+  assert.match(page, /persistRef\.current/);
+  assert.match(page, /window\.setTimeout\(\(\) => \{ void persistRef\.current\(\); \}, AUTOSAVE_DELAY\)/);
+  assert.match(page, /lastSavedKeyRef/);
+  // Opening a note is not an edit.
+  assert.match(page, /initializedRef/);
+
+  // App exposes an in-place save that keeps the page open and returns the id.
+  assert.match(app, /const persistVaultItem = async/);
+  assert.match(app, /const handleSaveNoteDraft = async/);
+  assert.match(app, /return \{ id: saved\.id, file: saved\.file \}/);
+  assert.match(app, /onSave=\{handleSaveNoteDraft\}/);
+});
+
+test("Note attachments moved into the rich-note toolbar and stay plan-gated", () => {
+  const page = read("src/components/notes/NoteEditorPage.tsx");
+  const pageCss = read("src/components/notes/note-editor-page.css");
+  const vaultDialogs = read("src/components/VaultDialogs.tsx");
+
+  // The old attachment section is removed outright, not hidden.
+  assert.doesNotMatch(page, /ReuiFileAttachmentField/);
+  assert.doesNotMatch(page, /note-page-attachment"/);
+  assert.doesNotMatch(pageCss, /\.note-page-attachment \{/);
+  assert.doesNotMatch(page, /<footer/);
+
+  // A frozen toolbar icon replaces it.
+  assert.match(page, /attachment=\{\{/);
+  assert.match(page, /disabled: !canUpload/);
+  assert.match(vaultDialogs, /is-frozen/);
+  assert.match(vaultDialogs, /className=\{\`rich-note-tool/);
+  assert.match(vaultDialogs, /aria-label=\{attachment\.disabled \? "Attach a file — requires an active paid plan/);
+  assert.match(pageCss, /\.note-page \.rich-note-tool\.is-frozen/);
+});
+
+test("Note tools fix the list commands and offer a light page background", () => {
+  const vaultDialogs = read("src/components/VaultDialogs.tsx");
+  const page = read("src/components/notes/NoteEditorPage.tsx");
+  const pageCss = read("src/components/notes/note-editor-page.css");
+  const tokens = read("src/design-system/tokens.css");
+
+  // Lists are built from real blocks instead of relying on execCommand.
+  assert.match(vaultDialogs, /const applyList = \(mode: NoteListMode\)/);
+  assert.match(vaultDialogs, /const selectedBlocks = /);
+  assert.match(vaultDialogs, /const normalizeBlocks = /);
+  assert.doesNotMatch(vaultDialogs, /insertUnorderedList/);
+  assert.doesNotMatch(vaultDialogs, /insertHTML/);
+  assert.match(vaultDialogs, /applyList\("ul"\)/);
+  assert.match(vaultDialogs, /applyList\("ol"\)/);
+  assert.match(vaultDialogs, /applyList\("check"\)/);
+
+  // Background picker lives in the same toolbar as the formatting tools.
+  assert.match(vaultDialogs, /NOTE_SURFACES/);
+  assert.match(vaultDialogs, /rich-note-surface-menu/);
+  assert.match(page, /data-note-surface=\{surface\}/);
+  assert.match(pageCss, /\.note-page-sheet\[data-note-surface="sand"\]/);
+  for (const surface of ["sand", "mint", "sky", "blush", "lilac"]) {
+    assert.match(tokens, new RegExp(`--ds-note-surface-${surface}:`), `missing ${surface} surface token`);
+  }
+});
+
+test("Template and starter cards share one geometry and the canonical gradients", () => {
+  const card = read("src/components/shared/template-card.tsx");
+  const cardCss = read("src/components/shared/template-card.css");
+  const tokens = read("src/design-system/tokens.css");
+  const tableCss = read("src/components/table/table.css");
+  const docsCss = read("src/components/docs/docs.css");
+  const formsCss = read("src/components/forms/forms.css");
+
+  // One shared component, one shared surface rule.
+  assert.match(card, /export function TemplateCardThumb/);
+  assert.match(card, /export function templateGradient/);
+  assert.match(cardCss, /\.ds-template-thumb \{[^}]*height:/);
+
+  // Canonical card height + gradient stops live in the token layer.
+  assert.match(tokens, /--ds-template-card-height:\s*140px/);
+  const stops = [
+    "linear-gradient(90deg, rgb(87, 154, 252) 0%, rgb(87, 99, 252) 100%)",
+    "linear-gradient(90deg, rgb(255, 90, 194) 0%, rgb(253, 91, 115) 100%)",
+    "linear-gradient(90deg, rgb(253, 172, 62) 0%, rgb(250, 212, 63) 100%)",
+    "linear-gradient(90deg, rgb(1, 187, 177) 0%, rgb(1, 198, 129) 100%)",
+    "linear-gradient(90deg, rgb(255, 119, 90) 0%, rgb(255, 163, 90) 100%)",
+  ];
+  stops.forEach((stop, index) => {
+    assert.ok(tokens.includes(stop), `--ds-template-gradient-${index + 1} must use the exact stops`);
+  });
+
+  // Only the band is painted: the white preview stays white.
+  assert.match(cardCss, /\.ds-template-thumb\.is-gradient \.tb-mini-sheet-paper,/);
+  assert.match(cardCss, /background-color: #ffffff/);
+
+  // Every product card opts into the shared height; page files keep no sizes.
+  for (const css of [tableCss, docsCss, formsCss]) {
+    assert.match(css, /height: var\(--ds-template-card-height\)/);
+    assert.doesNotMatch(css, /height:\s*124px/);
+  }
+  assert.doesNotMatch(tableCss, /\.tb-starter-thumb \{[^}]*border:/);
+  assert.doesNotMatch(docsCss, /\.pd-starter-thumb \{[^}]*height:/);
+  assert.doesNotMatch(formsCss, /\.pf-starter-thumb \{[^}]*height:/);
+
+  // Table and Docs template cards carry the gradient; blank cards stay neutral.
+  assert.match(read("src/components/table/TableHome.tsx"), /gradient=\{templateGradient\(index\)\}/);
+  assert.match(read("src/components/docs/DocsHome.tsx"), /gradient=\{templateGradient\(index\)\}/);
+});
+
+test("Sidebar and topbar headers are 60px with no seam between brand and nav", () => {
+  const systemCss = read("src/design-system/system.css");
+  const refinements = read("src/console-refinements.css");
+  const theme = read("src/persora-theme.css");
+
+  // Only the app shell headers are 60px (the admin console keeps its own scale).
+  assert.doesNotMatch(theme, /\.sidebar-header \{[^}]*height: 74px/);
+  assert.doesNotMatch(theme, /\.workspace-topbar \{[^}]*height: 74px/);
+  assert.doesNotMatch(refinements, /height: 70px/);
+  assert.match(systemCss, /\.sidebar-header \{[^}]*height: 60px/);
+  assert.match(systemCss, /\.sidebar-header \{[^}]*border-bottom: 0/);
+  assert.match(systemCss, /\.workspace-topbar \{[^}]*height: 60px/);
+  assert.doesNotMatch(systemCss, /border-bottom: 1px solid var\(--ds-divider\);\s*backdrop-filter: none/);
 });

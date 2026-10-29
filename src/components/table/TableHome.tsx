@@ -19,6 +19,7 @@ import type { AppUser } from "../../types";
 import ImportDialog from "./ImportDialog";
 import ShareTableDialog from "./ShareTableDialog";
 import { BlankTableArtwork, TableCardPreview, TableContentMiniature, clearTablePreviewCache } from "./TableCardPreview";
+import { TemplateCardThumb, templateGradient } from "../shared/template-card";
 import { Menu, PromptDialog } from "./table-ui";
 
 export function KindIcon({ kind, size = 16 }: { kind: TableKind; size?: number }) {
@@ -621,10 +622,11 @@ export default function TableHome({ user, notify, onOpen, onTrashChanged }: {
               disabled={atLimit || busy === "create"}
               onClick={() => void createBlank("spreadsheet")}
             >
-              <span className="tb-starter-thumb">
+              <TemplateCardThumb className="tb-starter-thumb">
                 <BlankTableArtwork kind="spreadsheet" />
-              </span>
+              </TemplateCardThumb>
               <span className="tb-starter-label">Blank spreadsheet</span>
+              <span className="tb-starter-kind">Spreadsheet</span>
             </button>
           </li>
           <li className="tb-starter-item">
@@ -634,13 +636,14 @@ export default function TableHome({ user, notify, onOpen, onTrashChanged }: {
               disabled={atLimit || busy === "create"}
               onClick={() => void createBlank("smart")}
             >
-              <span className="tb-starter-thumb">
+              <TemplateCardThumb className="tb-starter-thumb">
                 <BlankTableArtwork kind="smart" />
-              </span>
+              </TemplateCardThumb>
               <span className="tb-starter-label">Blank Smart Table</span>
+              <span className="tb-starter-kind">Smart Table</span>
             </button>
           </li>
-          {starterTemplates.map(({ info, content }) => (
+          {starterTemplates.map(({ info, content }, index) => (
             <li key={info.id} className="tb-starter-item">
               <button
                 type="button"
@@ -649,7 +652,7 @@ export default function TableHome({ user, notify, onOpen, onTrashChanged }: {
                 title={info.description}
                 onClick={() => void createFromTemplate(info.id)}
               >
-                <span className="tb-starter-thumb">
+                <TemplateCardThumb className="tb-starter-thumb" gradient={templateGradient(index)}>
                   {content ? (
                     <TableContentMiniature
                       content={content}
@@ -659,7 +662,7 @@ export default function TableHome({ user, notify, onOpen, onTrashChanged }: {
                   ) : (
                     <BlankTableArtwork kind={info.kind} />
                   )}
-                </span>
+                </TemplateCardThumb>
                 <span className="tb-starter-label">{info.name}</span>
                 <span className="tb-starter-kind">
                   {info.kind === "spreadsheet" ? "Spreadsheet" : "Smart Table"}

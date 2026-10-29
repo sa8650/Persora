@@ -35,7 +35,7 @@
 .workspace-shell { position: relative; display: flex; gap: 0; align-items: stretch; width: 100%; height: 100vh; height: 100dvh; min-height: 0; margin: 0; overflow: hidden; color: var(--p-text); background: var(--p-bg); font-size: 14px; }
 .workspace-main, .admin-portal, .admin-access-page { isolation: isolate; }
 .workspace-sidebar { z-index: 30; position: relative; display: flex; flex: 0 0 254px; flex-direction: column; width: 254px; min-width: 254px; height: 100%; border-right: 1px solid var(--p-line); background: transparent; }
-.sidebar-header { position: relative; z-index: 2; display: flex; align-items: center; justify-content: flex-start; height: 74px; min-height: 74px; flex: 0 0 74px; box-sizing: border-box; border-bottom: 1px solid rgba(232,234,237,.72); padding: 0 22px; background: rgba(255,255,255,.60); backdrop-filter: blur(12px); }
+.sidebar-header { position: relative; z-index: 2; display: flex; align-items: center; justify-content: flex-start; height: 60px; min-height: 60px; flex: 0 0 60px; box-sizing: border-box; padding: 0 18px; background: rgba(255,255,255,.60); backdrop-filter: blur(12px); }
 .workspace-brand { display: inline-flex; align-items: center; gap: 9px; border: 0; padding: 0; color: #202124; background: transparent; font-size: 20px; font-weight: 710; letter-spacing: -.055em; cursor: pointer; }
 .workspace-brand .brand-mark { width: 30px; height: 30px; border-radius: 9px; }
 .brand-period { margin-left: -8px; color: var(--p-blue); }
@@ -63,7 +63,7 @@
 .sidebar-secure-card small { display: block; margin-top: 3px; color: #80868b; font-size: 9px; }
 .secure-mini-check { display: grid; place-items: center; width: 18px; height: 18px; margin-left: auto; border-radius: 50%; color: var(--p-blue); background: var(--p-blue-pale); }
 .workspace-main { z-index: 1; position: relative; display: flex; flex: 1; flex-direction: column; min-width: 0; height: 100%; overflow: auto; background: transparent; scrollbar-width: thin; scrollbar-color: #dadce0 transparent; }
-.workspace-topbar { z-index: 20; position: sticky; top: 0; display: flex; align-items: center; justify-content: space-between; height: 74px; min-height: 74px; flex: 0 0 74px; box-sizing: border-box; border-bottom: 1px solid rgba(218,220,224,.76); padding: 0 clamp(20px,3vw,42px); background: rgba(255,255,255,.60); backdrop-filter: blur(12px); }
+.workspace-topbar { z-index: 20; position: sticky; top: 0; display: flex; align-items: center; justify-content: space-between; height: 60px; min-height: 60px; flex: 0 0 60px; box-sizing: border-box; border-bottom: 1px solid rgba(218,220,224,.76); padding: 0 clamp(20px,3vw,42px); background: rgba(255,255,255,.60); backdrop-filter: blur(12px); }
 .breadcrumb-area { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .breadcrumb-overline { color: #80868b; font-size: 10px; font-weight: 540; }
 .breadcrumb-title { display: flex; align-items: center; gap: 10px; }
@@ -699,7 +699,7 @@
   .workspace-sidebar.sidebar-open { transform: translateX(0); box-shadow: 12px 0 40px rgba(32,33,36,.16); }
   .mobile-sidebar-scrim { z-index: 80; position: fixed; inset: 0; display: block; border: 0; background: rgba(32,33,36,.34); }
   .workspace-main { width: 100%; }
-  .workspace-topbar { min-height: 65px; gap: 10px; padding-inline: 15px; }
+  .workspace-topbar { min-height: 60px; gap: 10px; padding-inline: 15px; }
   .mobile-menu-button { display: inline-flex; align-items: center; justify-content: center; min-height: 35px; border: 1px solid #dadce0; border-radius: 999px; padding: 0 11px; color: #3c4043; background: #fff; font-size: 10px; cursor: pointer; }
   .breadcrumb-area { flex: 1; }
   .breadcrumb-title h1 { font-size: 16px; }
@@ -722,7 +722,7 @@
   .admin-overview-grid,.admin-overview-columns { grid-template-columns: 1fr; }
 }
 @media (max-width: 560px) {
-  .workspace-topbar { flex-wrap: wrap; min-height: 64px; padding: 9px 12px; }
+  .workspace-topbar { flex-wrap: wrap; min-height: 60px; padding: 9px 12px; }
   .mobile-menu-button { min-width: 73px; }
   .breadcrumb-area { min-width: 90px; }
   .breadcrumb-overline { display: none; }

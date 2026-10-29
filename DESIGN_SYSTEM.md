@@ -12,7 +12,8 @@ The **Persora UI/UX Design System** is the canonical visual, theming, primitive,
 | `src/design-system/tokens.css` | Single source of truth for `--ds-*` design tokens across `:root` (Light) and `.dark, [data-theme="dark"]` (Dark), plus shadcn (`--background`, `--card`, `--popover`, `--sidebar`, `--border`, `--ring`) and workspace (`--p-*`) semantic bridges. Imported first in `src/index.css`. |
 | `src/design-system/system.css` | Canonical layout shell, surface hierarchy, structural dividers, card themes, drawer/modal surfaces, icon-safe inputs, segmented tabs, and dark-mode contrast rules. Imported last in `src/main.tsx` so design-system surfaces govern legacy module stylesheets cleanly. |
 | `src/design-system/theme.tsx` | `PersoraThemeProvider`, `usePersoraTheme()`, topbar `ThemeToggleButton`, and Settings `AppearanceSettingsCard` (`Light` / `Dark` / `System`, persisted in `localStorage["persora.theme"]` and synchronized to `<html class="dark" data-theme="...">`). |
-| `src/components/notes/NoteEditorPage.tsx` + `note-editor-page.css` | Full-page Tasks & Notes editor (Evernote-style): breadcrumb bar, quiet meta line, borderless title, shared `RichNoteEditor` body, tags and attachments, sticky action bar. Replaces the old right-hand note drawer. |
+| `src/components/notes/NoteEditorPage.tsx` + `note-editor-page.css` | Full-page Tasks & Notes editor (Evernote-style): breadcrumb bar with autosave state, quiet meta line, borderless title, shared `RichNoteEditor` body (toolbar carries the attachment trigger and the page-background picker) and tags. Autosaves like Persora Table/Docs and has **no** page footer. Replaces the old right-hand note drawer. |
+| `src/components/shared/template-card.tsx` + `template-card.css` | Shared starter/template card primitive (`TemplateCardThumb`, `templateGradient`, `TEMPLATE_GRADIENTS`) used by the Persora Table, Persora Docs and Persora Forms shelves. Owns the single card geometry and paints the canonical gradient band behind the white document preview. |
 | `src/design-system/primitives.tsx` | Shared layout & composition primitives: `PersoraEmptyState` (ReUI `IconStack` 3D layered card stack or `IconTile` badge), `PersoraAsideStat` (hero stat pill with `IconTile`), `PersoraSearchField` (flex-isolated icon search input), and `PersoraDeleteModal` (portaled `document.body` destructive confirmation `alertdialog`). |
 | `src/design-system/index.ts` | Unified barrel exporting theme hooks/controls, Persora layout primitives (`PersoraEmptyState`, `PersoraAsideStat`, `PersoraSearchField`, `PersoraDeleteModal`), and all in-repo ReUI & shadcn UI primitives (`Badge`, `IconTile`, `IconStack`, `Frame`, `FileType`, `Attachment`, `ReuiFileAttachmentField`, `Checkbox`, `Progress`, `Spinner`, `Button`, `ContextMenu*`, `Menubar*`, `StageProgressIndicator`, `ImportProgressIndicator`, `TransferProgressIndicator`). |
 | `src/components/reui/{badge,file-type,frame,icon-stack,icon-tile,c-attachment-6}.tsx` | In-repo ReUI (`radix-vega`) primitives saved directly inside the repository (no runtime CDN dependencies). |
@@ -85,6 +86,16 @@ Sidebar ink, background and type scale are all token-driven, so Dark mode and th
 
 The navigation rail ends with **one** action: `<button className="sidebar-logout">Sign out</button>`. The old `.sidebar-profile` trigger and its `.user-popover` menu (account navigation, admin console, sign out) were removed; account/plan/admin entry points live in the topbar avatar, the Account nav group and the app launcher instead.
 
+### App shell headers (60px, one frame)
+
+| Element | Contract |
+| --- | --- |
+| `.sidebar-header` | **60px** tall (`flex: 0 0 60px`), `padding: 0 12px 0 18px`, **no** `border-bottom` — the brand header and `#workspace-sidebar-nav` read as one continuous frame. The collapse toggle is 28px so it stays proportional. |
+| `.workspace-topbar` | **60px** tall, `.breadcrumb-title h1` 17px, `.workspace-add-document` 34px, icon buttons (`global-search-trigger`, `theme`, `notifications`) 34px. Below 820px it becomes `height: auto; min-height: 60px` so the wrapped mobile bar never clips. |
+| Admin console | Unchanged — `.admin-brand` / `.admin-topbar` keep their own 74px scale. |
+
+Header height is declared once in `src/design-system/system.css` (imported last) and mirrored in `src/console-refinements.css` / `src/persora-theme.css`; no `70px`/`74px` app-shell header heights remain.
+
 ### Topbar global search
 
 `.global-search-trigger` is a **38px icon-only** button (magnifier, `aria-label="Search your vault (Ctrl/⌘ K)"`, `title` carries the shortcut). No visible label, no `kbd` chip; the command palette itself still shows the shortcut. Legacy text-trigger rules were deleted from `persora-theme.css` / `workspace.css` rather than overridden.
@@ -136,17 +147,35 @@ Import design system primitives from `@/design-system` (or their component modul
 
 ---
 
-## 6. Tasks & Notes — Full-Page Editor
+## 6. Template & Starter Cards (Persora Table / Docs / Forms)
+
+Every template card and every empty "add" card across the three document products uses one shared geometry so the three shelves can never drift apart:
+
+| Aspect | Contract |
+| --- | --- |
+| Component | `<TemplateCardThumb gradient?={templateGradient(index)}>` from `src/components/shared/template-card.tsx` — the preview area of a starter card. Page stylesheets add only grid layout and interaction states. |
+| Geometry | `--ds-template-card-height: 140px` for the whole card (thumb + caption rows), `--ds-template-thumb-min-height: 88px`, `--ds-template-card-gap: 6px`. `.tb-starter-card`, `.pd-starter-card` and `.pf-starter-card` all consume the same height token, so Table, Docs and Forms cards are identical in size (mobile shelves override the tokens to 128px at ≤820px). |
+| Surface | `.ds-template-thumb` owns border (`--ds-border-strong`), radius (`--ds-radius-xs`), overflow clipping, base `--ds-card-bg` and the optional gradient. Per-product classes (`.tb-starter-thumb`, `.pd-starter-thumb`, `.pf-starter-thumb`) no longer declare sizes, borders or backgrounds. |
+| Gradients | `--ds-template-gradient-1…5` in `tokens.css`, applied left-to-right on the **header band only**: `rgb(87,154,252)→rgb(87,99,252)`, `rgb(255,90,194)→rgb(253,91,115)`, `rgb(253,172,62)→rgb(250,212,63)`, `rgb(1,187,177)→rgb(1,198,129)`, `rgb(255,119,90)→rgb(255,163,90)`. No overlays, no banding — one raster, `background-size: 100% 100%`. |
+| Preview | The white document preview stays white: inside a gradient band the miniature surface is made transparent and `.tb-mini-sheet-paper` / `.pd-mini-paper` keep `#ffffff`, floating on the band with a soft shadow. Captions, borders, radii and spacing are unchanged. |
+| Scope | Persora Table and Persora Docs template cards carry the gradient ramp (blank cards stay neutral white); Persora Forms keeps neutral cards but inherits the shared height. |
+
+---
+
+## 7. Tasks & Notes — Full-Page Editor
 
 Tasks & Notes no longer opens a drawer. Plain notes (`section.id === "notes"`, i.e. records **without** `recordType` of `todo` / `reminder` / `alarm`) render `NoteEditorPage` as the workspace page surface:
 
 | Aspect | Contract |
 | --- | --- |
 | Route | `App.tsx` keeps `editor.section === "notes"` and passes `<NoteEditorPage>` to `Workspace` via the `notePage` prop; `ItemEditorDialog` is only mounted for `editor.section !== "notes"`. Tasks, reminders and alarms still use the `TodoEditorDialog` drawer. |
-| Chrome | `.workspace-content.workspace-content-note-page` drops padding/max-width and the topbar + footer step aside (`.workspace-main:has(.note-page)`), so the page owns the viewport like Persora Docs. |
-| Layout | `.note-page-bar` (back button + `Tasks & Notes › title` breadcrumb + save state + primary save) → `.note-page-scroll` → `.note-page-sheet` (760px measure) → sticky `.note-page-footer`. |
+| Chrome | `.workspace-content.workspace-content-note-page` drops padding/max-width and the workspace **topbar** steps aside (`.workspace-main:has(.note-page) > .workspace-topbar`), so the page owns the content area like Persora Docs. The workspace footer keeps its place underneath the page, in normal flow (`position: static`) — it is **not** sticky and there is no page-level footer. |
+| Layout | `.note-page-bar` (back button + `Tasks & Notes › title` breadcrumb + autosave state + `Create note` / `Done`) → `.note-page-scroll` → `.note-page-sheet` (760px measure) → tags. No `footer.note-page-footer`, no cancel/save action bar. |
 | Typography | Borderless `.note-page-title` (30–40px, `--ds-font-heading`) that reads as page text, not a field — the workspace blanket input rules explicitly exclude `.note-page-title` / `.note-page-tag-input`. |
-| Body | The shared `RichNoteEditor` (toolbar: bold, italic, underline, strike, lists, checklist, clear formatting) with `showHint={false}`; content is sanitized with `sanitizeNoteHtml` before saving. |
-| Metadata | Quiet `Edited …` meta line, comma-separated tag chips, optional private attachment (`ReuiFileAttachmentField`, Smart Scan unchanged in the task drawer). |
-| Safety | `Cmd/Ctrl + S` saves, `Escape` closes, unsaved edits raise the shared clean `PersoraDeleteModal` ("Discard these changes?") instead of silently dropping work. |
+| Body | The shared `RichNoteEditor` (toolbar: bold, italic, underline, strike, bulleted list, numbered list, checklist, clear formatting, then the attachment and page-background tools) with `showHint={false}`; content is sanitized with `sanitizeNoteHtml` before saving. |
+| Lists | The three list tools never rely on `execCommand`: `applyList("ul" \| "ol" \| "check")` rebuilds the selected top-level blocks into one `<ul>` / `<ol>` (checklists prefix each `<li>` with a real `<input type="checkbox">`) and unwraps them back into paragraphs when the same tool is used again. The caret is placed at the end of the result, and the DOM is never restructured while typing. |
+| Attachments | The old attachment section is **removed** (not hidden). `Paperclip` inside `div.rich-note-toolbar` opens the picker; without an active paid plan the icon renders frozen (`disabled`, `aria-disabled`, lock badge, explanatory `title`). A chosen file shows as a compact `.note-page-attachment-chip` under the body; it is uploaded on the next autosave. |
+| Page background | `Palette` in the same toolbar opens a swatch menu (`--ds-note-surface-paper/sand/mint/sky/blush/lilac`) that writes `data-note-surface` on `.note-page-sheet`. Light tints only, with deep tints in Dark mode; the value is stored in `metadata.surface`. |
+| Autosave | 900ms debounce after the last edit (like Persora Docs' `DocSaver`), an in-flight queue, `Cmd/Ctrl + S` to save now, and a flush before `Escape` or `Done` closes the page. `App.tsx` exposes `handleSaveNoteDraft` (built on `persistVaultItem`) which saves **in place** and returns `{ id, file }` so the page updates the same note instead of creating duplicates. An empty new note is never persisted just by opening it. Status chip: `Autosave on` → `Unsaved changes` → `Saving…` → `Saved`, or `Save failed · Retry`. |
+| Safety | Nothing is discarded silently: closing flushes pending edits first, and a failed save keeps the page open with the text intact and a Retry action. |
 | Tokens | Every color in `note-editor-page.css` is a `--ds-*` token, so Light, Dark and System themes are automatic. |

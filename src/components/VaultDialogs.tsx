@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ClipboardEvent as ReactClipboardEvent, type FormEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
-import { AlarmClock, ArrowUpRight, BellRing, Bold, CalendarDays, Check, Copy, Download, Italic, List, ListOrdered, ListTodo, LockKeyhole, MessageSquare, Music2, Paperclip, Pause, Play, RefreshCw, RemoveFormatting, Send, Share2, ShieldCheck, Strikethrough, Underline, X } from "lucide-react";
+import { AlarmClock, ArrowUpRight, BellRing, Bold, CalendarDays, Check, Copy, Download, Italic, List, ListOrdered, ListTodo, LockKeyhole, MessageSquare, Music2, Palette, Paperclip, Pause, Play, RefreshCw, RemoveFormatting, Send, Share2, ShieldCheck, Strikethrough, Underline, X } from "lucide-react";
 import { SECTION_BY_ID } from "../data";
 import ItemModalShell from "./ItemModalShell";
 import QRPreview from "./QRPreview";
@@ -637,73 +637,368 @@ export function TodoEditorDialog({ kind = "todo", item, canUpload, maxUploadMb =
   );
 }
 
-export function RichNoteEditor({ id, value, onChange, placeholder = "Write a note… Format it, add lists, or make a checklist.", showHint = true }: { id: string; value: string; onChange: (value: string) => void; placeholder?: string; showHint?: boolean }) {
+export type NoteSurfaceId = "default" | "paper" | "sand" | "mint" | "sky" | "blush" | "lilac";
+
+/** Light note-page surfaces offered from the note toolbar. */
+export const NOTE_SURFACES: { id: NoteSurfaceId; label: string }[] = [
+  { id: "default", label: "Default" },
+  { id: "paper", label: "Paper white" },
+  { id: "sand", label: "Warm sand" },
+  { id: "mint", label: "Mint" },
+  { id: "sky", label: "Sky" },
+  { id: "blush", label: "Blush" },
+  { id: "lilac", label: "Lilac" },
+];
+
+type NoteListMode = "ul" | "ol" | "check";
+
+const INLINE_ONLY = /^(SPAN|B|STRONG|I|EM|U|S|A|BR|CODE|SMALL|MARK)$/i;
+
+export function RichNoteEditor({
+  id,
+  value,
+  onChange,
+  placeholder = "Write a note… Format it, add lists, or make a checklist.",
+  showHint = true,
+  attachment,
+  surface,
+}: {
+  id: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  showHint?: boolean;
+  /** Toolbar attachment trigger. Rendered frozen (disabled) without an active plan. */
+  attachment?: { onClick: () => void; disabled?: boolean; disabledHint?: string; busy?: boolean };
+  /** Note-page background picker rendered in the same toolbar. */
+  surface?: { value: string; onChange: (value: NoteSurfaceId) => void };
+}) {
   const editorRef = useRef<HTMLDivElement>(null);
   const touchedRef = useRef(false);
   const savedRangeRef = useRef<Range | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const paletteRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => { if (!touchedRef.current && editorRef.current) editorRef.current.innerHTML = sanitizeNoteHtml(value); }, [value]);
+
+  useEffect(() => {
+    if (!paletteOpen) return;
+    const onDocumentDown = (event: MouseEvent) => {
+      if (!paletteRef.current?.contains(event.target as Node)) setPaletteOpen(false);
+    };
+    document.addEventListener("mousedown", onDocumentDown);
+    return () => document.removeEventListener("mousedown", onDocumentDown);
+  }, [paletteOpen]);
+
   const saveSelection = () => {
     const editor = editorRef.current;
     const selection = window.getSelection();
     if (editor && selection?.rangeCount && editor.contains(selection.anchorNode)) savedRangeRef.current = selection.getRangeAt(0).cloneRange();
   };
-  const restoreSelection = () => {
-    editorRef.current?.focus();
+
+  /**
+   * Live caret if it already sits in the editor, otherwise the last known caret,
+   * otherwise the end of the note. Every toolbar command goes through this so a
+   * formatting/list action can never fire with a lost selection.
+   */
+  const currentRange = (): Range | null => {
+    const editor = editorRef.current;
+    if (!editor) return null;
     const selection = window.getSelection();
-    if (!selection || !savedRangeRef.current || !editorRef.current?.contains(savedRangeRef.current.commonAncestorContainer)) return;
-    selection.removeAllRanges();
-    selection.addRange(savedRangeRef.current);
+    const live = selection?.rangeCount ? selection.getRangeAt(0) : null;
+    if (live && editor.contains(live.commonAncestorContainer)) return live;
+    editor.focus({ preventScroll: true });
+    const stored = savedRangeRef.current;
+    if (stored && editor.contains(stored.commonAncestorContainer)) {
+      selection?.removeAllRanges();
+      selection?.addRange(stored);
+      if (selection?.rangeCount) return selection.getRangeAt(0);
+    }
+    const fallback = document.createRange();
+    fallback.selectNodeContents(editor);
+    fallback.collapse(false);
+    selection?.removeAllRanges();
+    selection?.addRange(fallback);
+    return selection?.rangeCount ? selection.getRangeAt(0) : null;
   };
-  const sync = () => { if (editorRef.current) { touchedRef.current = true; onChange(sanitizeNoteHtml(editorRef.current.innerHTML)); saveSelection(); } };
-  const command = (name: string, value?: string) => {
-    restoreSelection();
-    document.execCommand(name, false, value);
-    sync();
-  };
-  const insertChecklist = () => {
-    restoreSelection();
-    document.execCommand("insertHTML", false, '<ul><li><input type="checkbox"> New task</li><li><input type="checkbox"> Another task</li></ul><p><br></p>');
-    sync();
-  };
-  const insertTextAtSelection = (text: string) => {
+
+  const placeCaretAtEndOf = (node: Node | null) => {
+    if (!node) return;
     const selection = window.getSelection();
-    if (!selection || !selection.rangeCount || !editorRef.current?.contains(selection.anchorNode)) return;
-    const range = selection.getRangeAt(0);
-    range.deleteContents();
-    const textNode = document.createTextNode(text);
-    range.insertNode(textNode);
-    range.setStartAfter(textNode);
-    range.collapse(true);
+    if (!selection) return;
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    range.collapse(false);
     selection.removeAllRanges();
     selection.addRange(range);
+    savedRangeRef.current = range.cloneRange();
   };
+
+  /** Keep every top-level node a real block so list tools always have a block to work on. */
+  const normalizeBlocks = () => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const strays = Array.from(editor.childNodes).filter((node) =>
+      node.nodeType === Node.TEXT_NODE
+        ? Boolean(node.textContent?.trim())
+        : node instanceof HTMLElement && INLINE_ONLY.test(node.tagName),
+    );
+    if (!strays.length) return;
+    const paragraph = document.createElement("p");
+    strays.forEach((node) => paragraph.appendChild(node));
+    if (!paragraph.textContent?.trim() && !paragraph.querySelector("br")) paragraph.appendChild(document.createElement("br"));
+    editor.insertBefore(paragraph, editor.firstChild);
+  };
+
+  const sync = () => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    touchedRef.current = true;
+    // Never restructure the DOM while the user is typing — that would move the
+    // caret. Bare inline nodes are normalised only when a list tool runs.
+    onChange(sanitizeNoteHtml(editor.innerHTML));
+    saveSelection();
+  };
+
+  const command = (name: string) => {
+    currentRange();
+    document.execCommand("styleWithCSS", false, "false");
+    document.execCommand(name, false);
+    sync();
+  };
+
+  const topBlocks = (editor: HTMLElement) => Array.from(editor.children) as HTMLElement[];
+
+  const selectedBlocks = (editor: HTMLElement, range: Range): HTMLElement[] => {
+    let blocks = topBlocks(editor);
+    if (!blocks.length) {
+      const paragraph = document.createElement("p");
+      paragraph.appendChild(document.createElement("br"));
+      editor.appendChild(paragraph);
+      blocks = [paragraph];
+    }
+    const containing = blocks.filter((block) => block === range.startContainer || block.contains(range.startContainer));
+    if (containing.length) {
+      if (range.collapsed) return containing;
+      const hit = blocks.filter((block) => range.intersectsNode(block));
+      return hit.length ? hit : containing;
+    }
+    const hit = range.collapsed ? [] : blocks.filter((block) => range.intersectsNode(block));
+    if (hit.length) return hit;
+    const before = blocks.filter((block) => Boolean(block.compareDocumentPosition(range.startContainer) & Node.DOCUMENT_POSITION_FOLLOWING));
+    return before.length ? [before[before.length - 1]] : [blocks[0]];
+  };
+
+  const itemsOf = (block: HTMLElement): HTMLElement[] =>
+    block.tagName === "UL" || block.tagName === "OL" ? (Array.from(block.children) as HTMLElement[]) : [block];
+
+  const contentOf = (source: HTMLElement): DocumentFragment => {
+    const clone = source.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll('input[type="checkbox"]').forEach((input) => input.remove());
+    const fragment = document.createDocumentFragment();
+    while (clone.firstChild) fragment.appendChild(clone.firstChild);
+    return fragment;
+  };
+
+  const fillBlock = (target: HTMLElement, source: HTMLElement) => {
+    target.appendChild(contentOf(source));
+    if (!target.textContent?.trim() && !target.querySelector("br")) target.appendChild(document.createElement("br"));
+  };
+
+  /**
+   * Deterministic list handling: replaces the selected top-level blocks with a
+   * single <ul>/<ol> (or a checkbox list), and unwraps them again when the same
+   * tool is used twice. Never relies on execCommand list behaviour.
+   */
+  const applyList = (mode: NoteListMode) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const range = currentRange();
+    if (!range) return;
+    normalizeBlocks();
+    const blocks = selectedBlocks(editor, range);
+    const tag = mode === "ol" ? "OL" : "UL";
+    const isChecklist = (block: HTMLElement) => block.tagName === "UL" && Boolean(block.querySelector('input[type="checkbox"]'));
+    const alreadyApplied = blocks.every((block) => block.tagName === tag && (mode === "check") === isChecklist(block));
+
+    if (alreadyApplied) {
+      blocks.forEach((block) => {
+        const fragment = document.createDocumentFragment();
+        itemsOf(block).forEach((item) => {
+          const paragraph = document.createElement("p");
+          fillBlock(paragraph, item);
+          fragment.appendChild(paragraph);
+        });
+        block.replaceWith(fragment);
+      });
+      normalizeBlocks();
+      sync();
+      const blocksNow = topBlocks(editor);
+      placeCaretAtEndOf(blocksNow[blocksNow.length - 1] ?? null);
+      return;
+    }
+
+    const list = document.createElement(mode === "ol" ? "ol" : "ul");
+    blocks.forEach((block) => {
+      itemsOf(block).forEach((item) => {
+        const li = document.createElement("li");
+        if (mode === "check") {
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          li.appendChild(checkbox);
+        }
+        li.appendChild(contentOf(item));
+        if (!li.textContent?.trim() && !li.querySelector("br")) li.appendChild(document.createElement("br"));
+        list.appendChild(li);
+      });
+    });
+
+    blocks[0].replaceWith(list);
+    blocks.slice(1).forEach((block) => { if (block.parentElement === editor) block.remove(); });
+    sync();
+    placeCaretAtEndOf(list.lastElementChild ?? list);
+  };
+
   const toggleTask = (event: ReactMouseEvent<HTMLDivElement>) => {
     const target = event.target;
     if (!(target instanceof HTMLInputElement) || target.type !== "checkbox") return;
     if (target.checked) target.setAttribute("checked", ""); else target.removeAttribute("checked");
     sync();
   };
+
   const pastePlainText = (event: ReactClipboardEvent<HTMLDivElement>) => {
     event.preventDefault();
     const text = event.clipboardData.getData("text/plain");
-    if (!document.execCommand("insertText", false, text)) insertTextAtSelection(text);
+    if (!document.execCommand("insertText", false, text)) {
+      const selection = window.getSelection();
+      if (selection?.rangeCount && editorRef.current?.contains(selection.anchorNode)) {
+        const range = selection.getRangeAt(0);
+        range.deleteContents();
+        const textNode = document.createTextNode(text);
+        range.insertNode(textNode);
+        range.setStartAfter(textNode);
+        range.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+    }
     sync();
   };
-  return <div className="rich-note-editor">
-    <div className="rich-note-toolbar" role="toolbar" aria-label="Note formatting">
-      <button type="button" title="Bold" aria-label="Bold" onMouseDown={(event) => { event.preventDefault(); saveSelection(); }} onClick={() => command("bold")}><Bold size={15}/></button>
-      <button type="button" title="Italic" aria-label="Italic" onMouseDown={(event) => { event.preventDefault(); saveSelection(); }} onClick={() => command("italic")}><Italic size={15}/></button>
-      <button type="button" title="Underline" aria-label="Underline" onMouseDown={(event) => { event.preventDefault(); saveSelection(); }} onClick={() => command("underline")}><Underline size={15}/></button>
-      <button type="button" title="Strikethrough" aria-label="Strikethrough" onMouseDown={(event) => { event.preventDefault(); saveSelection(); }} onClick={() => command("strikeThrough")}><Strikethrough size={15}/></button>
-      <span/>
-      <button type="button" title="Bulleted list" aria-label="Bulleted list" onMouseDown={(event) => { event.preventDefault(); saveSelection(); }} onClick={() => command("insertUnorderedList")}><List size={15}/></button>
-      <button type="button" title="Numbered list" aria-label="Numbered list" onMouseDown={(event) => { event.preventDefault(); saveSelection(); }} onClick={() => command("insertOrderedList")}><ListOrdered size={15}/></button>
-      <button type="button" title="Checklist" aria-label="Insert checklist" onMouseDown={(event) => { event.preventDefault(); saveSelection(); }} onClick={insertChecklist}><ListTodo size={15}/></button>
-      <button type="button" title="Clear formatting" aria-label="Clear formatting" onMouseDown={(event) => { event.preventDefault(); saveSelection(); }} onClick={() => command("removeFormat")}><RemoveFormatting size={15}/></button>
+
+  const formatButton = (label: string, icon: ReactNode, onClick: () => void) => (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      onMouseDown={(event) => { event.preventDefault(); saveSelection(); }}
+      onClick={onClick}
+    >
+      {icon}
+    </button>
+  );
+
+  return (
+    <div className="rich-note-editor">
+      <div className="rich-note-toolbar" role="toolbar" aria-label="Note formatting">
+        {formatButton("Bold", <Bold size={15}/>, () => command("bold"))}
+        {formatButton("Italic", <Italic size={15}/>, () => command("italic"))}
+        {formatButton("Underline", <Underline size={15}/>, () => command("underline"))}
+        {formatButton("Strikethrough", <Strikethrough size={15}/>, () => command("strikeThrough"))}
+        <span/>
+        {formatButton("Bulleted list", <List size={15}/>, () => applyList("ul"))}
+        {formatButton("Numbered list", <ListOrdered size={15}/>, () => applyList("ol"))}
+        {formatButton("Checklist", <ListTodo size={15}/>, () => applyList("check"))}
+        {formatButton("Clear formatting", <RemoveFormatting size={15}/>, () => command("removeFormat"))}
+
+        {attachment && (
+          <>
+            <span/>
+            <button
+              type="button"
+              className={`rich-note-tool${attachment.disabled ? " is-frozen" : ""}`}
+              title={attachment.disabled ? attachment.disabledHint || "Attachments require an active paid plan." : "Attach a file"}
+              aria-label={attachment.disabled ? "Attach a file — requires an active paid plan" : "Attach a file"}
+              aria-disabled={attachment.disabled || undefined}
+              disabled={attachment.disabled || attachment.busy}
+              onMouseDown={(event) => { event.preventDefault(); saveSelection(); }}
+              onClick={() => attachment.onClick()}
+            >
+              <Paperclip size={15}/>
+              {attachment.disabled && <LockKeyhole size={9} className="rich-note-tool-lock" aria-hidden="true"/>}
+            </button>
+          </>
+        )}
+
+        {surface && (
+          <>
+            <span/>
+            <div
+              className="rich-note-surface"
+              ref={paletteRef}
+              onKeyDown={(event) => {
+                // Escape closes the palette only — the note page keeps its own Escape handling.
+                if (event.key === "Escape" && paletteOpen) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setPaletteOpen(false);
+                }
+              }}
+            >
+              <button
+                type="button"
+                className="rich-note-tool"
+                title="Note background colour"
+                aria-label="Note background colour"
+                aria-haspopup="true"
+                aria-expanded={paletteOpen}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => setPaletteOpen((open) => !open)}
+              >
+                <Palette size={15}/>
+              </button>
+              {paletteOpen && (
+                <div className="rich-note-surface-menu" role="menu" aria-label="Note background colour">
+                  <span className="rich-note-surface-title" aria-hidden="true">Page background</span>
+                  <div className="rich-note-surface-grid">
+                    {NOTE_SURFACES.map((entry) => (
+                      <button
+                        key={entry.id}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={surface.value === entry.id}
+                        className={`rich-note-surface-swatch${surface.value === entry.id ? " is-active" : ""}`}
+                        data-note-swatch={entry.id}
+                        title={entry.label}
+                        aria-label={entry.label}
+                        onClick={() => { surface.onChange(entry.id); setPaletteOpen(false); }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+      <div
+        id={id}
+        ref={editorRef}
+        className="rich-note-content"
+        contentEditable
+        role="textbox"
+        aria-multiline="true"
+        aria-label="Note content"
+        data-placeholder={placeholder}
+        onInput={sync}
+        onClick={toggleTask}
+        onPaste={pastePlainText}
+        onKeyUp={saveSelection}
+        onMouseUp={saveSelection}
+        onFocus={saveSelection}
+      />
+      {showHint && <div className="rich-note-hint">Use the toolbar for formatting, lists and checklists.</div>}
     </div>
-    <div id={id} ref={editorRef} className="rich-note-content" contentEditable role="textbox" aria-multiline="true" aria-label="Note content" data-placeholder={placeholder} onInput={sync} onClick={toggleTask} onPaste={pastePlainText} onKeyUp={saveSelection} onMouseUp={saveSelection} onFocus={saveSelection}/>
-    {showHint && <div className="rich-note-hint">Use the toolbar for formatting and checklists.</div>}
-  </div>;
+  );
 }
 
 export function ItemDetailDialog({ item, familyMembers = [], filePreview, shareAccess, comments = [], onClose, onEdit, onDownloadFile, onManageSharing, onAddComment }: { item: VaultItem; familyMembers?: Pick<VaultItem, "id" | "title" | "metadata">[]; filePreview?: VaultFilePreview | null; shareAccess?: SharedItemAccess; comments?: ShareComment[]; onClose: () => void; onEdit: () => void; onDownloadFile: () => void; onManageSharing?: () => void; onAddComment?: (body: string) => Promise<void> }) {

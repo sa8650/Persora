@@ -1,0 +1,62 @@
+/* ==========================================================================
+   Shared template / starter card (src/components/shared/template-card.css)
+   One geometry for Persora Table, Persora Docs and Persora Forms shelves.
+   Page stylesheets only add layout (grid) and interaction states; the surface,
+   size and gradient ramp are owned here so the three products cannot drift.
+   ========================================================================== */
+
+.ds-template-thumb {
+  position: relative;
+  display: block;
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: var(--ds-template-thumb-min-height);
+  border: 1px solid var(--ds-border-strong);
+  border-radius: var(--ds-radius-xs);
+  overflow: hidden;
+  background-color: var(--ds-card-bg);
+  background-image: var(--ds-template-gradient, none);
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  box-shadow: var(--ds-shadow-xs);
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+/* Templated cards: the gradient band is only ever the area around the white
+   document preview, so the miniature surfaces below it stay transparent. */
+.ds-template-thumb.is-gradient .tb-mini,
+.ds-template-thumb.is-gradient .pd-mini,
+.ds-template-thumb.is-gradient .tb-blank-art,
+.ds-template-thumb.is-gradient .pf-mini {
+  background-color: transparent;
+  background-image: none;
+}
+
+/* The white paper preview itself is never tinted. */
+.ds-template-thumb.is-gradient .tb-mini-sheet-paper,
+.ds-template-thumb.is-gradient .pd-mini-paper {
+  background-color: #ffffff;
+}
+
+/* Inside a gradient band the white page floats free, like a real template card. */
+.ds-template-thumb.is-gradient .tb-mini {
+  justify-content: center;
+  padding: 10px 12px;
+}
+
+.ds-template-thumb.is-gradient .tb-mini-sheet-paper {
+  border: 0;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.18);
+}
+
+.ds-template-thumb[data-template-gradient="1"] { --ds-template-gradient: var(--ds-template-gradient-1); }
+.ds-template-thumb[data-template-gradient="2"] { --ds-template-gradient: var(--ds-template-gradient-2); }
+.ds-template-thumb[data-template-gradient="3"] { --ds-template-gradient: var(--ds-template-gradient-3); }
+.ds-template-thumb[data-template-gradient="4"] { --ds-template-gradient: var(--ds-template-gradient-4); }
+.ds-template-thumb[data-template-gradient="5"] { --ds-template-gradient: var(--ds-template-gradient-5); }
+
+/* No banding: the gradient is painted once, as a single smooth raster. */
+@media (prefers-reduced-motion: reduce) {
+  .ds-template-thumb { transition: none; }
+}

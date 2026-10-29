@@ -53,6 +53,7 @@ import {
 import { PersoraDeleteModal, PersoraEmptyState } from "@/design-system";
 import { Spinner } from "@/components/ui/spinner";
 import ModalPortal from "../ModalPortal";
+import { TemplateCardThumb, templateGradient } from "../shared/template-card";
 import { LauncherModuleIcon } from "../launcher/LauncherIcons";
 import ShareTableDialog from "../table/ShareTableDialog";
 import {
@@ -553,15 +554,15 @@ export default function DocsHome({
             disabled={Boolean(busy) || atLimit}
             aria-label="New blank document"
           >
-            <div className="pd-starter-thumb pd-starter-thumb-blank">
+            <TemplateCardThumb className="pd-starter-thumb pd-starter-thumb-blank">
               <BlankDocArtwork />
-            </div>
+            </TemplateCardThumb>
             <div className="pd-starter-caption">
               <strong className="pd-starter-name">Blank document</strong>
             </div>
           </button>
 
-          {starterTemplates.map(({ info, seed }) => (
+          {starterTemplates.map(({ info, seed }, index) => (
             <button
               key={info.id}
               type="button"
@@ -569,11 +570,11 @@ export default function DocsHome({
               onClick={() => void handleCreateFromTemplate(info.id)}
               disabled={Boolean(busy) || atLimit}
             >
-              <div className="pd-starter-thumb">
+              <TemplateCardThumb className="pd-starter-thumb" gradient={templateGradient(index)}>
                 <div className="pd-mini">
                   <DocContentMiniature content={seed.content} />
                 </div>
-              </div>
+              </TemplateCardThumb>
               <div className="pd-starter-caption">
                 <strong className="pd-starter-name">{info.label}</strong>
               </div>

@@ -713,7 +713,8 @@ commitContacts(getLocalContacts(DEMO_USER.id));
     notify("You've signed out.");
   };
 
-  const handleSaveItem = async (draft: EditorDraft, onUploadProgress?: (progress: TransferProgress) => void) => {
+  /** Persist a record without changing navigation state (autosaving editors use this). */
+  const persistVaultItem = async (draft: EditorDraft, onUploadProgress?: (progress: TransferProgress) => void): Promise<{ item: VaultItem; created: boolean }> => {
     if (!user) throw new Error("Please sign in before adding a record.");
     if (draft.fileUpload && (user.demo || user.uploadsEnabled !== true)) throw new Error("New file uploads require an active paid plan. You can still save this record without an attachment.");
     const sharedAccess = draft.sharedAccess;
@@ -735,13 +736,11 @@ commitContacts(getLocalContacts(DEMO_USER.id));
         const saved = await saveSharedDocument(sharedAccess.shareId, candidate);
         saved.sharedAccess = sharedAccess;
         setSharedWithMe((current) => current.map((entry) => entry.shareId === sharedAccess.shareId ? { ...entry, item: saved } : entry));
-        setEditor(null); setFocusedItem(null);
-        notify("Your changes are saved to the original owner's document.");
+        return { item: saved, created: false };
       } catch (error) {
         if (uploaded) { try { await deleteUnattachedSharedUpload(sharedAccess.shareId, uploaded); } catch { /* File cleanup can be retried; the owner's record remains untouched. */ } }
         throw error;
       }
-      return;
     }
     const oldItem = draft.id ? items.find((entry) => entry.id === draft.id) : undefined;
     const id = draft.id || createId();
@@ -771,6 +770,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       createdAt: oldItem?.createdAt || now, updatedAt: now,
     };
 
+    let stored: VaultItem = candidate;
     if (user.demo) {
       const next = oldItem ? items.map((entry) => entry.id === id ? candidate : entry) : [candidate, ...items];
       if (oldItem?.file?.localOnly && !candidate.file) {
@@ -783,6 +783,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
     } else {
       try {
         const saved = await saveVaultItem(candidate);
+        stored = saved;
         const next = oldItem ? items.map((entry) => entry.id === id ? saved : entry) : [saved, ...items];
         setItems(next);
         setSharedByMe((current) => current.map((entry) => entry.item.id === saved.id ? { ...entry, item: saved } : entry));
@@ -795,9 +796,23 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       }
     }
     if (localUrlToRevoke) { URL.revokeObjectURL(localUrlToRevoke); localFiles.current.delete(id); }
+    return { item: stored, created: !oldItem };
+  };
+
+  const handleSaveItem = async (draft: EditorDraft, onUploadProgress?: (progress: TransferProgress) => void) => {
+    const { item: saved, created } = await persistVaultItem(draft, onUploadProgress);
     setEditor(null);
     setFocusedItem(null);
-    notify(oldItem ? "Your changes are saved." : `${candidate.title} is safely in your vault.`);
+    notify(created ? `${saved.title} is safely in your vault.` : "Your changes are saved.");
+  };
+
+  /**
+   * Tasks & Notes autosave: stores the note in place and reports the record id
+   * back to the page so the next debounce updates the same note.
+   */
+  const handleSaveNoteDraft = async (draft: EditorDraft, onUploadProgress?: (progress: TransferProgress) => void) => {
+    const { item: saved } = await persistVaultItem(draft, onUploadProgress);
+    return { id: saved.id, file: saved.file };
   };
 
   const handleMoveVaultItem = async (item: VaultItem, folderId: string | null) => {
@@ -1649,7 +1664,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       onCloseDocumentPanel={() => { setEditor((current) => current?.section === "documents" ? null : current); setFocusedItem((current) => current?.section === "documents" ? null : current); }}
       onAdd={(section, initialMetadata, initialFile, initialScanResult, initialScanComplete, initialProtectedKeys) => { if (section === "documents" && view !== "documents") { navigateWorkspace("documents"); setSearch(""); } setEditor({ section, initialMetadata, initialFile, initialScanResult, initialScanComplete, initialProtectedKeys }); setFocusedItem(null); }}
       onSaveItem={handleSaveItem}
-      notePage={editor && user && editor.section === "notes" ? <NoteEditorPage key={editor.item?.id || "new-note"} item={editor.item} initialMetadata={editor.initialMetadata} canUpload={!user.demo && user.uploadsEnabled === true} maxUploadMb={maxUploadMb} onUpgrade={!user.demo ? () => { setView("billing"); setEditor(null); } : undefined} onClose={() => setEditor(null)} onSave={handleSaveItem} /> : null}
+      notePage={editor && user && editor.section === "notes" ? <NoteEditorPage key={editor.item?.id || "new-note"} item={editor.item} initialMetadata={editor.initialMetadata} canUpload={!user.demo && user.uploadsEnabled === true} maxUploadMb={maxUploadMb} onUpgrade={!user.demo ? () => { setView("billing"); setEditor(null); } : undefined} onClose={() => setEditor(null)} onSave={handleSaveNoteDraft} /> : null}
       onAddTodo={(kind = "todo") => { setTodoEditorType(kind); setTodoEditor(null); setFocusedItem(null); }}
       onEditTodoItem={(item) => { const type = item.metadata.recordType; setTodoEditorType(type === "reminder" || type === "alarm" ? type : "todo"); setTodoEditor(item); setFocusedItem(null); }}
       onToggleTodo={handleToggleTodo}
