@@ -26,6 +26,7 @@ export const LAUNCHER_MODULE_IDS = Object.freeze([
   "academics",
   "family",
   "photo-studio",
+  "audio-space",
   "subscriptions",
   "purchases",
   "accounts",

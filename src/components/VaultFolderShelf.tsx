@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Check, Folder, FolderOpen, FolderPlus, Pencil, Pin, Trash2, X } from "lucide-react";
 import type { VaultFolder, VaultFolderColor, VaultFolderScope } from "../types";
 import { loadPageFolders, removePageFolder, savePageFolder, VAULT_FOLDER_COLORS } from "../lib/folders";
@@ -21,9 +21,11 @@ interface Props {
   notify: (message: string, kind?: "success" | "error") => void;
   /** Optional: change to reload folders created elsewhere on the page (e.g. Photo Studio's save modal). */
   reloadToken?: number;
+  /** Optional: change to open the create-folder dialog from outside the shelf. */
+  openCreateToken?: number;
 }
 
-export default function VaultFolderShelf({ userId, scope, pageLabel, demoMode, totalCount, folderCounts, selectedFolderId, onSelectFolder, onFoldersChange, notify, reloadToken = 0 }: Props) {
+export default function VaultFolderShelf({ userId, scope, pageLabel, demoMode, totalCount, folderCounts, selectedFolderId, onSelectFolder, onFoldersChange, notify, reloadToken = 0, openCreateToken = 0 }: Props) {
   const [folders, setFolders] = useState<VaultFolder[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -46,6 +48,14 @@ export default function VaultFolderShelf({ userId, scope, pageLabel, demoMode, t
   }, [userId, scope, demoMode, reloadToken]);
 
   const openNewFolder = () => { setFolderDialog(null); setFolderName(""); setFolderColor("blue"); };
+  const openCreateTokenRef = useRef(openCreateToken);
+  useEffect(() => {
+    if (openCreateToken > 0 && openCreateToken !== openCreateTokenRef.current) {
+      openCreateTokenRef.current = openCreateToken;
+      openNewFolder();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openCreateToken]);
   const openEditFolder = (folder: VaultFolder) => { setFolderDialog(folder); setFolderName(folder.name); setFolderColor(folder.color); };
   const persistFolder = async (folder: VaultFolder, patch: Partial<VaultFolder>) => {
     try {

@@ -1,4 +1,4 @@
-import type { PdfStudioDocument, PdfStudioFileMeta, PdfStudioSaveInput, PhotoStudioPhoto, PhotoStudioSaveInput, RecordShareType, SharedPhotoRecord, AdminConsoleSnapshot, AdminMetrics, AiControls, AlarmRingtone, BillingSnapshot, BusinessCardDraft, BusinessSocialLink, DigitalBusinessCard, DocumentTypeOption, MedicalRecord, MedicalRecordDraft, MedicalRecordFile, MedicalRecordLink, PersoraContact, PaymentRecord, ProjectActivityRange, ProjectActivityStats, ProjectDetail, ProjectField, ProjectFieldAttachment, ProjectFieldComment, ProjectFieldRequest, ProjectFolder, ProjectFolderColor, ProjectFieldStatus, ProjectKind, ProjectMemberRole, ProjectRecord, ProjectSummary, ProjectNotification, ProjectNotificationPreferences, ProjectTask, ProjectTaskAttachment, ProjectTaskComment, ProjectTaskStatus, PublicDigitalBusinessCard, ShareComment, ShareNotification, SharePermission, SharedDirection, SharedVaultEntry, RecordShareEntry, SiteContent, SmartScanFieldDefinition, SmartScanResult, SubscriptionPlan, TimelineAttachment, TimelineDraft, TimelineEvent, TransferProgress, VaultFile, VaultFolder, VaultFolderDraft, VaultFolderScope, VaultItem } from "../types";
+import type { AudioSpaceItem, AudioSpaceLinkInput, AudioSpacePatch, AudioSpaceSaveInput, PdfStudioDocument, PdfStudioFileMeta, PdfStudioSaveInput, PhotoStudioPhoto, PhotoStudioSaveInput, RecordShareType, SharedPhotoRecord, AdminConsoleSnapshot, AdminMetrics, AiControls, AlarmRingtone, BillingSnapshot, BusinessCardDraft, BusinessSocialLink, DigitalBusinessCard, DocumentTypeOption, MedicalRecord, MedicalRecordDraft, MedicalRecordFile, MedicalRecordLink, PersoraContact, PaymentRecord, ProjectActivityRange, ProjectActivityStats, ProjectDetail, ProjectField, ProjectFieldAttachment, ProjectFieldComment, ProjectFieldRequest, ProjectFolder, ProjectFolderColor, ProjectFieldStatus, ProjectKind, ProjectMemberRole, ProjectRecord, ProjectSummary, ProjectNotification, ProjectNotificationPreferences, ProjectTask, ProjectTaskAttachment, ProjectTaskComment, ProjectTaskStatus, PublicDigitalBusinessCard, ShareComment, ShareNotification, SharePermission, SharedDirection, SharedVaultEntry, RecordShareEntry, SiteContent, SmartScanFieldDefinition, SmartScanResult, SubscriptionPlan, TimelineAttachment, TimelineDraft, TimelineEvent, TransferProgress, VaultFile, VaultFolder, VaultFolderDraft, VaultFolderScope, VaultItem } from "../types";
 import { DEFAULT_SITE_CONTENT } from "../data/siteContent";
 
 // Cloudflare Pages always serves the authenticated Functions API from /api in production.
@@ -1068,4 +1068,73 @@ export async function requestCloudBackgroundRemoval(image: Blob, signal?: AbortS
   const form = new FormData();
   form.append("file", image, image.type === "image/png" ? "portrait.png" : "portrait.jpg");
   return fetch(`${apiBase}/photo-studio/background-removal`, { method: "POST", body: form, credentials: "same-origin", cache: "no-store", signal });
+}
+
+// ---------------------------------------------------------------------------
+// AudioSpace API (2026-10-30) — private audio library. Uploaded and recorded
+// audio writes one private R2 object through saveAudioSpaceItem(); external
+// links are validated server-side and store no bytes.
+// ---------------------------------------------------------------------------
+function audioItemFromRow(row: Record<string, unknown>): AudioSpaceItem {
+  const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata) ? row.metadata as Record<string, unknown> : {};
+  const tags = Array.isArray(row.tags) ? row.tags.filter((tag): tag is string => typeof tag === "string") : [];
+  return {
+    id: String(row.id || ""),
+    folderId: typeof row.folder_id === "string" && row.folder_id ? row.folder_id : null,
+    title: String(row.title || "Untitled audio"),
+    description: typeof row.description === "string" ? row.description : "",
+    source: (row.source === "recording" ? "recording" : row.source === "link" ? "link" : "upload") as AudioSpaceItem["source"],
+    fileName: typeof row.file_name === "string" && row.file_name ? row.file_name : null,
+    fileSize: row.file_size === null || row.file_size === undefined ? null : Number(row.file_size),
+    fileType: typeof row.file_type === "string" && row.file_type ? row.file_type : null,
+    durationSeconds: row.duration_seconds === null || row.duration_seconds === undefined ? null : Number(row.duration_seconds),
+    externalUrl: typeof row.external_url === "string" && row.external_url ? row.external_url : null,
+    tags,
+    favorite: Boolean(row.favorite),
+    metadata,
+    lastPlayedAt: typeof row.last_played_at === "string" && row.last_played_at ? row.last_played_at : null,
+    createdAt: String(row.created_at || new Date().toISOString()),
+    updatedAt: String(row.updated_at || new Date().toISOString()),
+  };
+}
+
+export async function listAudioSpaceItems(): Promise<AudioSpaceItem[]> {
+  const data = await pagesApiJson<{ items?: Record<string, unknown>[] }>("/audio-space/audios");
+  return Array.isArray(data.items) ? data.items.map(audioItemFromRow) : [];
+}
+
+export async function saveAudioSpaceItem(file: Blob, fileName: string, input: AudioSpaceSaveInput, onProgress?: (progress: TransferProgress) => void): Promise<{ item: AudioSpaceItem; folder: VaultFolder | null; createdFolder: boolean }> {
+  const form = new FormData();
+  form.append("file", file, fileName);
+  form.append("meta", JSON.stringify(input));
+  const data = await uploadMultipart<{ item: Record<string, unknown>; folder?: Record<string, unknown> | null; createdFolder?: boolean }>("/audio-space/audios", form, onProgress);
+  return { item: audioItemFromRow(data.item), folder: data.folder ? folderFromRow(data.folder, "audio-space") : null, createdFolder: Boolean(data.createdFolder) };
+}
+
+export async function saveAudioSpaceLink(input: AudioSpaceLinkInput): Promise<{ item: AudioSpaceItem; folder: VaultFolder | null; createdFolder: boolean }> {
+  const data = await postJson<{ item: Record<string, unknown>; folder?: Record<string, unknown> | null; createdFolder?: boolean }>("/audio-space/links", input);
+  return { item: audioItemFromRow(data.item), folder: data.folder ? folderFromRow(data.folder, "audio-space") : null, createdFolder: Boolean(data.createdFolder) };
+}
+
+/** Server-side link check without saving; throws a clear error when unplayable. */
+export async function validateAudioSpaceLink(url: string): Promise<{ ok: boolean; host: string; contentType: string; contentLength: number | null }> {
+  return postJson<{ ok: boolean; host: string; contentType: string; contentLength: number | null }>("/audio-space/links/validate", { url });
+}
+
+export async function updateAudioSpaceItem(id: string, patch: AudioSpacePatch): Promise<AudioSpaceItem> {
+  const data = await patchJson<{ item: Record<string, unknown> }>(`/audio-space/audios/${encodeURIComponent(id)}`, patch);
+  return audioItemFromRow(data.item);
+}
+
+export async function deleteAudioSpaceItem(id: string): Promise<void> {
+  await deleteJson(`/audio-space/audios/${encodeURIComponent(id)}`);
+}
+
+export async function loadAudioSpaceFile(id: string, signal?: AbortSignal): Promise<Blob> {
+  return (await pagesApiRequest(`/audio-space/audios/${encodeURIComponent(id)}/file`, { signal })).blob();
+}
+
+export async function markAudioSpacePlayed(id: string): Promise<AudioSpaceItem> {
+  const data = await pagesApiJson<{ item: Record<string, unknown> }>(`/audio-space/audios/${encodeURIComponent(id)}/play`, { method: "POST" });
+  return audioItemFromRow(data.item);
 }

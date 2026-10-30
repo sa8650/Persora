@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ClipboardEvent as ReactClipboardEvent, type FormEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
-import { AlarmClock, ArrowUpRight, BellRing, Bold, CalendarDays, Check, Copy, Download, Italic, List, ListOrdered, ListTodo, LockKeyhole, MessageSquare, Music2, Palette, Paperclip, Pause, Play, RefreshCw, RemoveFormatting, Send, Share2, ShieldCheck, Strikethrough, Underline, X } from "lucide-react";
+import { AlarmClock, AlignCenter, AlignLeft, AlignRight, ArrowUpRight, BellRing, Bold, CalendarDays, Check, ChevronDown, ChevronUp, Copy, Download, ImagePlus, Italic, List, ListOrdered, ListTodo, LockKeyhole, Maximize2, MessageSquare, Minus, Music2, Palette, Paperclip, Pause, Play, Plus, RefreshCw, RemoveFormatting, Send, Share2, ShieldCheck, Strikethrough, Trash2, Underline, X } from "lucide-react";
 import { SECTION_BY_ID } from "../data";
 import ItemModalShell from "./ItemModalShell";
 import QRPreview from "./QRPreview";
@@ -15,7 +15,7 @@ import { FileType, getFileType } from "./reui/file-type";
 import { IconTile } from "./reui/icon-tile";
 import { PersoraDeleteModal } from "@/design-system";
 import type { AddDocumentFlowDraft, AlarmRingtone, FieldDefinition, NotesRecordKind, SectionId, ShareComment, SharedItemAccess, SmartScanFieldDefinition, SmartScanResult, VaultFile, VaultFilePreview, VaultItem, TransferProgress } from "../types";
-import { daysUntil, formatDate, formatRelativeDate, humanSize, makeVCard, sanitizeNoteHtml } from "../lib/utils";
+import { compressNoteImage, daysUntil, formatDate, formatRelativeDate, humanSize, makeVCard, sanitizeNoteHtml } from "../lib/utils";
 import { alarmRingtoneAudioPath, fetchVaultFile, isPagesApiConfigured, loadAlarmRingtones, smartScanDocument } from "../lib/cloud";
 import { isSmartScanFileSizeAllowed, SmartScanActionPanel, SmartScanFieldNote, supportsSmartScanFile } from "./SmartScan";
 import { BUILTIN_RINGTONES, startBuiltinRingtone } from "../lib/ringtone";
@@ -760,6 +760,172 @@ export function RichNoteEditor({
     saveSelection();
   };
 
+  /* ---------------- note images: insert, select, resize, position ---------------- */
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const [activeImage, setActiveImage] = useState<HTMLImageElement | null>(null);
+  const activeImageRef = useRef<HTMLImageElement | null>(null);
+  const [imageBarPosition, setImageBarPosition] = useState<{ left: number; top: number } | null>(null);
+
+  const imageFigureOf = (img: HTMLImageElement | null): HTMLElement | null =>
+    ((img?.closest("figure.note-image") as HTMLElement | null) || null);
+
+  const refreshImageBar = () => {
+    const figure = imageFigureOf(activeImageRef.current);
+    if (!figure || !figure.isConnected) { setImageBarPosition(null); return; }
+    const rect = figure.getBoundingClientRect();
+    setImageBarPosition({ left: Math.max(8, Math.min(rect.left, window.innerWidth - 340)), top: Math.max(8, rect.top - 52) });
+  };
+
+  const selectImage = (img: HTMLImageElement | null) => {
+    imageFigureOf(activeImageRef.current)?.classList.remove("is-image-selected");
+    activeImageRef.current = img;
+    setActiveImage(img);
+    if (!img) { setImageBarPosition(null); return; }
+    const figure = imageFigureOf(img);
+    if (figure) {
+      figure.classList.add("is-image-selected");
+      if (!figure.querySelector(".note-image-resize")) {
+        const handle = document.createElement("span");
+        handle.className = "note-image-resize";
+        handle.contentEditable = "false";
+        handle.title = "Drag to resize";
+        handle.addEventListener("pointerdown", (event) => startImageResize(event, figure));
+        figure.appendChild(handle);
+      }
+    }
+    refreshImageBar();
+  };
+
+  const startImageResize = (event: PointerEvent, figure: HTMLElement) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const editor = editorRef.current;
+    if (!editor) return;
+    const startX = event.clientX;
+    const startWidth = figure.getBoundingClientRect().width;
+    const editorWidth = editor.getBoundingClientRect().width || 1;
+    const onMove = (moveEvent: PointerEvent) => {
+      const next = Math.max(0.1, Math.min(1, (startWidth + (moveEvent.clientX - startX)) / editorWidth));
+      figure.style.width = `${Math.round(next * 1000) / 10}%`;
+      refreshImageBar();
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      sync();
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  const applyImageLayout = (changes: (figure: HTMLElement, img: HTMLImageElement) => void) => {
+    const img = activeImageRef.current;
+    const figure = imageFigureOf(img);
+    if (!img || !figure) return;
+    changes(figure, img);
+    sync();
+    refreshImageBar();
+  };
+
+  const imageWidthPercent = (figure: HTMLElement): number => {
+    const editorWidth = editorRef.current?.getBoundingClientRect().width || 1;
+    return Math.round((figure.getBoundingClientRect().width / editorWidth) * 100);
+  };
+
+  const stepImageWidth = (delta: number) => applyImageLayout((figure) => {
+    const next = Math.max(10, Math.min(100, imageWidthPercent(figure) + delta));
+    figure.style.width = `${next}%`;
+  });
+
+  const alignImage = (align: "left" | "center" | "right" | "full") => applyImageLayout((figure) => {
+    figure.style.display = "block";
+    figure.style.float = align === "left" ? "left" : align === "right" ? "right" : "none";
+    figure.style.margin = align === "left" ? "8px 14px 8px 0" : align === "right" ? "8px 0 8px 14px" : "12px auto";
+    if (align === "full") figure.style.width = "100%";
+  });
+
+  const moveImage = (direction: -1 | 1) => applyImageLayout((figure) => {
+    const sibling = direction < 0 ? figure.previousElementSibling : figure.nextElementSibling;
+    if (!sibling || sibling === figure) return;
+    if (direction < 0) figure.parentElement?.insertBefore(figure, sibling);
+    else figure.parentElement?.insertBefore(sibling, figure);
+  });
+
+  const deleteImage = () => {
+    const figure = imageFigureOf(activeImageRef.current);
+    if (figure) {
+      figure.remove();
+      sync();
+    }
+    selectImage(null);
+  };
+
+  const insertImageAtCaret = (dataUrl: string, alt: string) => {
+    const range = currentRange();
+    const editor = editorRef.current;
+    if (!editor || !range) return;
+    const figure = document.createElement("figure");
+    figure.className = "note-image";
+    figure.style.width = "60%";
+    figure.style.display = "block";
+    figure.style.margin = "12px auto";
+    figure.style.float = "none";
+    const img = document.createElement("img");
+    img.src = dataUrl;
+    img.alt = alt.slice(0, 120) || "Note image";
+    figure.appendChild(img);
+    const paragraph = document.createElement("p");
+    paragraph.appendChild(document.createElement("br"));
+    range.deleteContents();
+    range.insertNode(figure);
+    // Promote the figure to a top-level block so block tools and repositioning work.
+    if (figure.parentElement && figure.parentElement !== editor) {
+      let top = figure;
+      while (top.parentElement && top.parentElement !== editor) top = top.parentElement;
+      top.after(figure);
+    }
+    figure.after(paragraph);
+    placeCaretAtEndOf(paragraph);
+    sync();
+    selectImage(img);
+  };
+
+  const handleImagePicked = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.target;
+    const file = input.files?.[0];
+    input.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      window.alert("Please choose an image file.");
+      return;
+    }
+    try {
+      const dataUrl = await compressNoteImage(file);
+      insertImageAtCaret(dataUrl, file.name.replace(/\.[a-z0-9]+$/i, ""));
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Could not insert this image.");
+    }
+  };
+
+  const onEditorClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    if (target.closest(".note-image-resize")) return;
+    const img = target instanceof HTMLImageElement ? target : target.closest("figure.note-image")?.querySelector("img") || null;
+    selectImage(img);
+  };
+
+  useEffect(() => {
+    if (!activeImage) return;
+    const onScrollOrResize = () => refreshImageBar();
+    window.addEventListener("resize", onScrollOrResize);
+    const editor = editorRef.current;
+    editor?.addEventListener("scroll", onScrollOrResize);
+    return () => {
+      window.removeEventListener("resize", onScrollOrResize);
+      editor?.removeEventListener("scroll", onScrollOrResize);
+    };
+  }, [activeImage]);
+
   const command = (name: string) => {
     currentRange();
     document.execCommand("styleWithCSS", false, "false");
@@ -909,6 +1075,7 @@ export function RichNoteEditor({
         {formatButton("Numbered list", <ListOrdered size={15}/>, () => applyList("ol"))}
         {formatButton("Checklist", <ListTodo size={15}/>, () => applyList("check"))}
         {formatButton("Clear formatting", <RemoveFormatting size={15}/>, () => command("removeFormat"))}
+        {formatButton("Insert image", <ImagePlus size={15}/>, () => imageInputRef.current?.click())}
 
         {attachment && (
           <>
@@ -990,13 +1157,28 @@ export function RichNoteEditor({
         aria-label="Note content"
         data-placeholder={placeholder}
         onInput={sync}
-        onClick={toggleTask}
+        onClick={(event) => { toggleTask(event); onEditorClick(event); }}
         onPaste={pastePlainText}
         onKeyUp={saveSelection}
         onMouseUp={saveSelection}
         onFocus={saveSelection}
       />
       {showHint && <div className="rich-note-hint">Use the toolbar for formatting, lists and checklists.</div>}
+      <input ref={imageInputRef} type="file" accept="image/*" className="rich-note-image-input" onChange={(event) => void handleImagePicked(event)}/>
+      {activeImage && imageBarPosition && <div className="note-image-bar" style={{ left: imageBarPosition.left, top: imageBarPosition.top }} onMouseDown={(event) => event.preventDefault()}>
+        <button type="button" title="Align left" onClick={() => alignImage("left")}><AlignLeft size={13}/></button>
+        <button type="button" title="Center" onClick={() => alignImage("center")}><AlignCenter size={13}/></button>
+        <button type="button" title="Align right" onClick={() => alignImage("right")}><AlignRight size={13}/></button>
+        <button type="button" title="Full width" onClick={() => alignImage("full")}><Maximize2 size={13}/></button>
+        <span className="note-image-bar-sep"/>
+        <button type="button" title="Smaller" onClick={() => stepImageWidth(-10)}><Minus size={13}/></button>
+        <span className="note-image-size">{activeImage && imageFigureOf(activeImage) ? `${imageWidthPercent(imageFigureOf(activeImage)!)}` : ""}%</span>
+        <button type="button" title="Bigger" onClick={() => stepImageWidth(10)}><Plus size={13}/></button>
+        <span className="note-image-bar-sep"/>
+        <button type="button" title="Move up" onClick={() => moveImage(-1)}><ChevronUp size={13}/></button>
+        <button type="button" title="Move down" onClick={() => moveImage(1)}><ChevronDown size={13}/></button>
+        <button type="button" title="Remove image" className="note-image-bar-danger" onClick={deleteImage}><Trash2 size={13}/></button>
+      </div>}
     </div>
   );
 }

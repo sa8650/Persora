@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { ArrowLeft, ArrowRight, Eye, EyeOff, KeyRound, LockKeyhole, Mail, ShieldCheck, X } from "lucide-react";
 import { ShimmerButton } from "./magic-ui";
+import { PersoraMark, PersoraLockup } from "./PersoraLogo";
 import { sendPasswordRecoveryCode, resetPasswordWithRecoveryCode } from "../lib/cloud";
 import { Spinner } from "@/components/ui/spinner";
 
@@ -110,7 +111,7 @@ export default function AuthDialog({ initialMode, connected, variant = "user", b
         <button type="button" className="icon-button auth-close" onClick={onClose} aria-label="Close dialog"><X size={19} /></button>
         <div className="auth-art">
           <div className="auth-art-glow" />
-          <div className="auth-brand-mark"><ShieldCheck size={21} strokeWidth={2.2} /></div>
+          <div className="auth-brand-mark"><PersoraLockup /></div>
           <div className="auth-art-copy">
             <span className="auth-kicker">{admin ? "A protected workspace" : "A quieter kind of organized"}</span>
             <h2>{admin ? <>Steward the<br /><em>Persora space.</em></> : <>Everything important,<br /><em>close at hand.</em></>}</h2>
@@ -125,7 +126,7 @@ export default function AuthDialog({ initialMode, connected, variant = "user", b
         </div>
         <div className="auth-panel">
           <div className="auth-panel-top">
-            <div className="auth-logo"><span className="brand-mark small"><ShieldCheck size={17} /></span><span>persora</span></div>
+            <div className="auth-logo"><span className="brand-mark small"><PersoraMark/></span><span>persora</span></div>
             <div className={`auth-connected ${admin ? "auth-connected-admin" : ""}`}><span className={`status-dot ${connected ? "is-live" : "is-demo"}`} />{connected ? admin ? "Admin service ready" : "Secure sign in" : "Setup required"}</div>
           </div>
           <div className="auth-heading">

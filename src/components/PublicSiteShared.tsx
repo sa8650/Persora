@@ -1,24 +1,12 @@
 import { useState } from "react";
 import { ArrowRight, Menu, Moon, Sun, X } from "lucide-react";
 import { LauncherModuleIcon } from "./launcher/LauncherIcons";
+import { PersoraMark } from "./PersoraLogo";
 import type { LauncherModuleId } from "../lib/app-launcher";
 import { usePersoraTheme } from "../design-system";
 
 export function PersoraBrandMark({ size = 26 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 64 64" fill="none" aria-hidden="true">
-      <rect width="64" height="64" rx="18" fill="var(--ds-primary)" />
-      <path d="M32 9.5 49 16v13.4c0 12.1-7.4 20.5-17 25.1-9.6-4.6-17-13-17-25.1V16L32 9.5Z" fill="#ffffff" />
-      <path
-        d="m24 31.5 5.4 5.4L40.8 25.5"
-        fill="none"
-        stroke="var(--ds-primary)"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="4.2"
-      />
-    </svg>
-  );
+  return <PersoraMark size={size} />;
 }
 
 export type PublicPage =

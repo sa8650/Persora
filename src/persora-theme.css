@@ -1,6 +1,7 @@
 /* Persora's fresh light UI layer. Legacy layout rules remain only where they provide behavior; these tokens replace the old visual language. */
 
-.brand-mark { display: inline-grid; place-items: center; flex: 0 0 auto; width: 34px; height: 34px; border: 0; border-radius: 11px; color: #fff; background: #1a73e8; box-shadow: none; }
+.brand-mark { display: inline-grid; place-items: center; flex: 0 0 auto; width: 34px; height: 34px; border: 0; border-radius: 11px; color: inherit; background: transparent; box-shadow: none; }
+.brand-mark > svg { display: block; width: 100%; height: 100%; }
 .brand-mark.small { width: 29px; height: 29px; border-radius: 9px; }
 .brand-mark.tiny { width: 23px; height: 23px; border-radius: 7px; }
 .avatar { display: inline-grid; place-items: center; flex: 0 0 auto; width: 35px; height: 35px; border: 2px solid #fff; border-radius: 50%; color: #174ea6; background: #d2e3fc; font-size: 12px; font-weight: 680; letter-spacing: 0; }
@@ -574,7 +575,8 @@
 .admin-portal { display: grid; grid-template-columns: 258px minmax(0,1fr)!important; min-height: 100vh; color: #3c4043; background: var(--p-bg); }
 .admin-sidebar { width: auto; min-height: 100vh; border-color: #e8eaed; padding: 0 14px 18px; background: #fff; }
 .admin-brand { color: #202124; font-size: 20px; font-weight: 710; letter-spacing: -.05em; }
-.admin-brand > span { width: 31px; height: 31px; border-radius: 9px; color: #fff; background: #1a73e8; }
+.admin-brand > span { width: 31px; height: 31px; border-radius: 9px; color: inherit; background: transparent; }
+.admin-brand > span > svg { display: block; width: 100%; height: 100%; }
 .admin-brand i { color: #174ea6; background: #e8f0fe; font-size: 8px; }
 .admin-sidebar-label { color: #80868b; font-size: 9px; letter-spacing: .08em; }
 .admin-nav { gap: 3px; }
@@ -656,7 +658,8 @@
 .public-card-frame { width: min(100%,760px); }
 .public-card-brand { color: #202124; }
 .public-card-wordmark { color: #202124; font-size: 15px; font-weight: 700; }
-.public-card-brand-mark { color: #fff; background: #1a73e8; }
+.public-card-brand-mark { display: inline-grid; place-items: center; width: 22px; height: 22px; color: inherit; background: transparent; }
+.public-card-brand-mark > svg { display: block; width: 100%; height: 100%; }
 .public-card-surface { border-color: #e8eaed; border-radius: 20px; background: #fff; box-shadow: 0 10px 32px rgba(60,64,67,.1); }
 .public-card-cover { height: 175px; }
 .public-card-profile-copy h1 { color: #202124; font-family: inherit; font-weight: 620; letter-spacing: -.05em; }
@@ -789,7 +792,8 @@
 .auth-art { color: #fff; background: linear-gradient(148deg,#1a73e8 0%,#1765cc 57%,#174ea6 100%); }
 .auth-art::before { opacity: .11; background-image: radial-gradient(rgba(255,255,255,.9) .6px,transparent .8px); }
 .auth-art-glow { background: radial-gradient(ellipse,rgba(174,208,255,.26),transparent 70%); }
-.auth-brand-mark { border-color: rgba(255,255,255,.24); color: #fff; background: rgba(255,255,255,.13); }
+.auth-brand-mark { border-color: rgba(255,255,255,.4); color: #202124; background: #fff; }
+.auth-brand-mark > svg { display: block; width: 190px; height: auto; }
 .auth-kicker { color: #d2e3fc; }
 .auth-art-copy h2 { color: #fff; font-family: inherit; font-weight: 600; }
 .auth-art-copy h2 em { color: #d2e3fc; }

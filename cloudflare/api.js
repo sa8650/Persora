@@ -4,6 +4,7 @@ import { AIPasswordError, aiPasswordCandidates } from "./ai-password.js";
 import { DEFAULT_AI_CONTROLS, resolveAiControls } from "./ai-controls.js";
 import { handleProjects, PROJECTS_ROUTE_PREFIX } from "./projects.js";
 import { handlePhotoStudio, handleSharedPhotoFile, backgroundProviders, PHOTO_STUDIO_ROUTE_PREFIX } from "./photo-studio.js";
+import { handleAudioSpace, exportAudioSpaceData, AUDIO_SPACE_ROUTE_PREFIX } from "./audio-space.js";
 import { handlePdfStudio, PDF_STUDIO_ROUTE_PREFIX } from "./pdf-studio.js";
 import { handlePasswordVault, PASSWORD_VAULT_ROUTE_PREFIX } from "./password-vault.js";
 import { handleCalendar, dispatchCalendarReminders, scheduleCalendarDispatch, exportCalendarData, CALENDAR_ROUTE_PREFIX } from "./calendar.js";
@@ -835,6 +836,21 @@ export default {
         }
         return await handlePdfStudio(request, identity, env, origin);
       }
+      if (url.pathname === AUDIO_SPACE_ROUTE_PREFIX || url.pathname.startsWith(AUDIO_SPACE_ROUTE_PREFIX + "/")) {
+        const identity = await authorize(request, env);
+        if (!identity) return json({ error: "Sign in is required to open AudioSpace." }, 401, origin);
+        // Uploads and recordings write one private R2 object; external links
+        // write no bytes. Only the saving routes need an active upload plan,
+        // the storage quota, and the admin upload size.
+        const savesFile = request.method === "POST" && url.pathname === AUDIO_SPACE_ROUTE_PREFIX + "/audios";
+        const savesLink = request.method === "POST" && url.pathname === AUDIO_SPACE_ROUTE_PREFIX + "/links";
+        if (savesFile || savesLink) {
+          if (!(await hasActivePaidUploadPlan(identity.id, env))) throw uploadPlanRequiredError();
+          const settings = await loadSettings(env);
+          return await handleAudioSpace(request, identity, env, origin, { storageUsage: userStorageUsage, maxUploadMb: settings.storage.maxUploadMb });
+        }
+        return await handleAudioSpace(request, identity, env, origin);
+      }
       if (url.pathname === "/upload" && request.method === "POST") {
         const identity = await authorize(request, env);
         if (!identity) return json({ error: "Sign in is required to upload a private file." }, 401, origin);
@@ -1180,7 +1196,7 @@ function randomLoginId() {
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
 const DUMMY_PASSWORD = "persora-login-timing-padding-never-use";
 const VALID_SECTIONS = new Set(["documents", "academics", "subscriptions", "family", "purchases", "accounts", "memberships", "wallet-cards", "study", "business-card", "urls", "notes", "personal-finance"]);
-const VALID_FOLDER_SCOPES = new Set([...VALID_SECTIONS, "contacts", "business-cards", "medical-records", "password-manager", "photo-studio", "pdf-studio"]);
+const VALID_FOLDER_SCOPES = new Set([...VALID_SECTIONS, "contacts", "business-cards", "medical-records", "password-manager", "photo-studio", "pdf-studio", "audio-space"]);
 const VALID_FOLDER_COLORS = new Set(["blue", "sky", "teal", "violet", "amber", "rose", "slate", "mint"]);
 function validPasswordLength(password) { return typeof password === "string" && password.length >= 12 && new TextEncoder().encode(password).length <= 72; }
 function rpcValue(value) {
@@ -1760,9 +1776,10 @@ async function deleteTrashFileIfUnreferenced(userId, key, env) {
   const stillTrashed = encodeURIComponent(`["${key}"]`);
   const photoStudioKey = key.startsWith(`${userId}/photo-studio/`);
   const pdfStudioKey = key.startsWith(`${userId}/pdf-studio/`);
+  const audioSpaceKey = key.startsWith(`${userId}/audio-space/`);
   const tableKey = key.startsWith(`${userId}/persora-table/`);
   const formKey = key.startsWith(`${userId}/persora-forms/`);
-  const [items, medical, contacts, cardsByPhoto, cardsByLogo, otherTrash, studioPhotos, studioPdfs, tableFiles, formFiles] = await Promise.all([
+  const [items, medical, contacts, cardsByPhoto, cardsByLogo, otherTrash, studioPhotos, studioPdfs, audioItems, tableFiles, formFiles] = await Promise.all([
     restRows(`vault_items?user_id=eq.${owner}&file_key=eq.${encoded}&select=id&limit=1`, env),
     restRows(`medical_records?user_id=eq.${owner}&file_key=eq.${encoded}&select=id&limit=1`, env),
     restRows(`contacts?user_id=eq.${owner}&photo_key=eq.${encoded}&select=id&limit=1`, env),
@@ -1771,10 +1788,11 @@ async function deleteTrashFileIfUnreferenced(userId, key, env) {
     restRows(`trash_items?owner_id=eq.${owner}&file_keys=cs.${stillTrashed}&status=in.(active,restoring)&select=id&limit=1`, env),
     photoStudioKey ? restRows(`photo_studio_photos?user_id=eq.${owner}&file_key=eq.${encoded}&select=id&limit=1`, env) : Promise.resolve([]),
     pdfStudioKey ? restRows(`pdf_studio_documents?user_id=eq.${owner}&file_key=eq.${encoded}&select=id&limit=1`, env) : Promise.resolve([]),
+    audioSpaceKey ? restRows(`audio_space_items?user_id=eq.${owner}&file_key=eq.${encoded}&select=id&limit=1`, env) : Promise.resolve([]),
     tableKey ? restRows(`persora_table_attachments?user_id=eq.${owner}&file_key=eq.${encoded}&select=id&limit=1`, env) : Promise.resolve([]),
     formKey ? restRows(`persora_form_assets?owner_id=eq.${owner}&file_key=eq.${encoded}&select=id&limit=1`, env) : Promise.resolve([]),
   ]);
-  if (items.length || medical.length || contacts.length || cardsByPhoto.length || cardsByLogo.length || otherTrash.length || studioPhotos.length || studioPdfs.length || tableFiles.length || formFiles.length) return;
+  if (items.length || medical.length || contacts.length || cardsByPhoto.length || cardsByLogo.length || otherTrash.length || studioPhotos.length || studioPdfs.length || audioItems.length || tableFiles.length || formFiles.length) return;
   const object = await env.VAULT_FILES.head(key);
   if (!object) return;
   if (object.customMetadata?.ownerId && object.customMetadata.ownerId !== userId) {
@@ -1825,6 +1843,7 @@ async function restoreTrashEntry(identity, id, env) {
   const rows = await restRows(`trash_items?id=eq.${encodeURIComponent(id)}&owner_id=eq.${encodeURIComponent(identity.id)}&select=kind&limit=1`, env);
   if (rows[0]?.kind === "photo_studio_photo") return callTrashRpc("persora_photo_studio_trash_restore", { p_owner: identity.id, p_trash_id: id }, env);
   if (rows[0]?.kind === "pdf_studio_document") return callTrashRpc("persora_pdf_studio_trash_restore", { p_owner: identity.id, p_trash_id: id }, env);
+  if (rows[0]?.kind === "audio_space_item") return callTrashRpc("persora_audio_space_trash_restore", { p_owner: identity.id, p_trash_id: id }, env);
   if (rows[0]?.kind === "persora_table") return callTrashRpc("persora_table_trash_restore", { p_owner: identity.id, p_trash_id: id }, env);
   if (rows[0]?.kind === "persora_doc") return callTrashRpc("persora_doc_trash_restore", { p_owner: identity.id, p_trash_id: id }, env);
   return callTrashRpc("persora_trash_restore", { p_owner: identity.id, p_trash_id: id }, env);
@@ -3205,7 +3224,7 @@ async function reviewPayment(body, identity, env) {
 async function createAccountExport(identity, env) {
   if (!env.VAULT_FILES) throw new Error("Private file storage is unavailable for this export.");
   const owner = encodeURIComponent(identity.id);
-  const [profileRows, items, contacts, cards, medicalRecords, medicalRecordLinks, documentShares, recordShares, notifications, authoredComments, subscriptions, payments, files, timelineExport, calendarExport, workspacePreferences, dashboardLayout, habitExport, loanExport, tableExport, formsExport, docsExport] = await Promise.all([
+  const [profileRows, items, contacts, cards, medicalRecords, medicalRecordLinks, documentShares, recordShares, notifications, authoredComments, subscriptions, payments, files, timelineExport, calendarExport, workspacePreferences, dashboardLayout, habitExport, loanExport, tableExport, formsExport, docsExport, audioSpaceExport] = await Promise.all([
     restRows(`profiles?id=eq.${owner}&select=id,login_id,email,full_name,timezone,avatar_url,created_at,updated_at`, env),
     restRowsPaged(`vault_items?user_id=eq.${owner}&select=*&order=id.asc`, env),
     restRowsPaged(`contacts?user_id=eq.${owner}&select=*&order=id.asc`, env),
@@ -3228,6 +3247,7 @@ async function createAccountExport(identity, env) {
     exportTableData(identity.id, env),
     exportFormsData(identity.id, env),
     exportDocsData(identity.id, env),
+    exportAudioSpaceData(identity.id, env),
   ]);
   const ordinaryFiles = files.filter((file) => !file.key.startsWith(`${identity.id}/timeline/`));
   const indexedFiles = [
@@ -3241,7 +3261,7 @@ async function createAccountExport(identity, env) {
   const manifest = {
     format: "persora-complete-export-v1", exportedAt: new Date().toISOString(),
     account: profileRows[0] || { login_id: identity.login_id || "", email: identity.email || "", full_name: identity.full_name || "" },
-    data: { vaultItems: items, contacts, businessCards: cards, medicalRecords, medicalRecordLinks, documentShares, recordShares, notifications, authoredShareComments: authoredComments, subscriptions, paymentHistory: payments, timelineEvents: timelineExport.events, calendarEvents: calendarExport.events, calendarReminders: calendarExport.reminders, calendarPreferences: calendarExport.preferences, workspacePreferences, dashboardLayout, habits: habitExport.habits, habitCheckins: habitExport.checkins, habitReminders: habitExport.reminders, loans: loanExport.loans, loanInstallments: loanExport.installments, loanPayments: loanExport.payments, loanReminders: loanExport.reminders, tables: tableExport.tables, tableSheets: tableExport.sheets, tableRecords: tableExport.records, tableAttachments: tableExport.attachments, forms: formsExport.forms, formResponses: formsExport.responses, docs: docsExport.docs },
+    data: { vaultItems: items, contacts, businessCards: cards, medicalRecords, medicalRecordLinks, documentShares, recordShares, notifications, authoredShareComments: authoredComments, subscriptions, paymentHistory: payments, timelineEvents: timelineExport.events, calendarEvents: calendarExport.events, calendarReminders: calendarExport.reminders, calendarPreferences: calendarExport.preferences, workspacePreferences, dashboardLayout, habits: habitExport.habits, habitCheckins: habitExport.checkins, habitReminders: habitExport.reminders, loans: loanExport.loans, loanInstallments: loanExport.installments, loanPayments: loanExport.payments, loanReminders: loanExport.reminders, tables: tableExport.tables, tableSheets: tableExport.sheets, tableRecords: tableExport.records, tableAttachments: tableExport.attachments, forms: formsExport.forms, formResponses: formsExport.responses, docs: docsExport.docs, audioItems: audioSpaceExport.audioItems },
     attachments: attachmentManifest,
     note: "Private attachment bytes, including medical-record files, are included under files/. Timeline text is decrypted only for this authenticated account export; timeline attachment files are decrypted into the archive. Session tokens, password hashes, and other accounts' private records are excluded.",
   };
