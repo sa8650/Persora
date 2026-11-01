@@ -373,7 +373,9 @@ test('backup: export → restore into another account through /loans/import; re-
   assert.equal(restoredDetail.payments.length, 2);
   assert.equal(restoredDetail.timeZone, 'America/New_York');
   // The restored loan is fully usable (remapped md5 ids pass the route guards).
-  assert.equal((await call('POST', `/loans/${restored[0].id}/installments/${restoredDetail.installments[0].id}/payments`, payment(1), target)).status, 201);
+  // The date is "today" in the restored loan's own time zone — the suite's shared
+  // `today` (Asia/Dhaka) can already be tomorrow in America/New_York near midnight.
+  assert.equal((await call('POST', `/loans/${restored[0].id}/installments/${restoredDetail.installments[0].id}/payments`, payment(1, { paidOn: localDateOf(Date.now(), 'America/New_York') }), target)).status, 201);
   result = await call('POST', '/loans/import', backup, target);
   assert.deepEqual(result.body, { ok: true, loansCreated: 0, loansMatched: 1, loansSkipped: 0, installmentsAdded: 0, paymentsAdded: 0 });
   // A tampered loan is skipped whole; non-backup bodies are refused.

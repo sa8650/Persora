@@ -95,7 +95,7 @@ create table if not exists public.vault_folders (
   constraint vault_folders_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id) ON DELETE CASCADE,
   constraint vault_folders_color_check CHECK (color = ANY (ARRAY['blue'::text, 'sky'::text, 'teal'::text, 'violet'::text, 'amber'::text, 'rose'::text, 'slate'::text, 'mint'::text])),
   constraint vault_folders_name_check CHECK (char_length(name) >= 1 AND char_length(name) <= 64),
-  constraint vault_folders_scope_check CHECK (scope = ANY (ARRAY['documents'::text, 'academics'::text, 'subscriptions'::text, 'family'::text, 'purchases'::text, 'accounts'::text, 'memberships'::text, 'wallet-cards'::text, 'study'::text, 'business-card'::text, 'urls'::text, 'notes'::text, 'contacts'::text, 'business-cards'::text, 'medical-records'::text, 'password-manager'::text, 'photo-studio'::text, 'pdf-studio'::text]))
+  constraint vault_folders_scope_check CHECK (scope = ANY (ARRAY['documents'::text, 'academics'::text, 'subscriptions'::text, 'family'::text, 'purchases'::text, 'accounts'::text, 'memberships'::text, 'wallet-cards'::text, 'study'::text, 'business-card'::text, 'urls'::text, 'notes'::text, 'contacts'::text, 'business-cards'::text, 'medical-records'::text, 'password-manager'::text, 'photo-studio'::text, 'pdf-studio'::text, 'audio-space'::text]))
 );
 alter table public.vault_folders enable row level security;
 revoke all on public.vault_folders from public, anon, authenticated;
@@ -1024,6 +1024,51 @@ alter table public.photo_studio_photos enable row level security;
 revoke all on public.photo_studio_photos from public, anon, authenticated;
 grant all on public.photo_studio_photos to service_role;
 
+create table if not exists public.audio_space_items (
+  id uuid not null default gen_random_uuid(),
+  user_id uuid not null,
+  folder_id uuid,
+  title text not null,
+  description text not null default ''::text,
+  source text not null default 'upload'::text,
+  file_key text,
+  file_name text,
+  file_size bigint,
+  file_type text,
+  duration_seconds numeric(14,3),
+  external_url text,
+  tags text[] not null default '{}'::text[],
+  favorite boolean not null default false,
+  metadata jsonb not null default '{}'::jsonb,
+  last_played_at timestamp with time zone,
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now(),
+  constraint audio_space_items_pkey PRIMARY KEY (id),
+  constraint audio_space_items_file_key_key UNIQUE (file_key),
+  constraint audio_space_items_folder_id_fkey FOREIGN KEY (folder_id) REFERENCES public.vault_folders(id) ON DELETE SET NULL,
+  constraint audio_space_items_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id) ON DELETE CASCADE,
+  constraint audio_space_items_source_check CHECK (source = ANY (ARRAY['upload'::text, 'recording'::text, 'link'::text])),
+  constraint audio_space_items_title_check CHECK (char_length(btrim(title)) >= 1 AND char_length(btrim(title)) <= 120),
+  constraint audio_space_items_description_check CHECK (char_length(description) <= 1000),
+  constraint audio_space_items_duration_check CHECK (duration_seconds IS NULL OR (duration_seconds > 0 AND duration_seconds <= 604800)),
+  constraint audio_space_items_file_size_check CHECK (file_size IS NULL OR file_size > 0),
+  constraint audio_space_items_file_name_check CHECK (file_name IS NULL OR (char_length(file_name) >= 1 AND char_length(file_name) <= 200)),
+  constraint audio_space_items_file_type_check CHECK (file_type IS NULL OR file_type = ANY (ARRAY['audio/mpeg'::text, 'audio/wav'::text, 'audio/mp4'::text, 'audio/aac'::text, 'audio/ogg'::text, 'audio/flac'::text, 'audio/webm'::text])),
+  constraint audio_space_items_source_shape_check CHECK (
+    (source = 'link'::text AND external_url IS NOT NULL AND file_key IS NULL)
+    OR (source <> 'link'::text AND file_key IS NOT NULL AND external_url IS NULL)
+  ),
+  constraint audio_space_items_external_url_check CHECK (external_url IS NULL OR char_length(external_url) <= 2000),
+  constraint audio_space_items_tags_check CHECK (cardinality(tags) <= 24 AND pg_column_size(tags) <= 4096),
+  constraint audio_space_items_metadata_check CHECK (jsonb_typeof(metadata) = 'object'::text AND pg_column_size(metadata) <= 8192)
+);
+create index if not exists audio_space_items_user_created_idx on public.audio_space_items using btree (user_id, created_at desc);
+create index if not exists audio_space_items_user_folder_idx on public.audio_space_items using btree (user_id, folder_id);
+create index if not exists audio_space_items_user_favorite_idx on public.audio_space_items using btree (user_id, favorite);
+alter table public.audio_space_items enable row level security;
+revoke all on public.audio_space_items from public, anon, authenticated;
+grant all on public.audio_space_items to service_role;
+
 create table if not exists public.platform_settings (
   setting_key text not null,
   value jsonb not null default '{}'::jsonb,
@@ -1505,7 +1550,7 @@ create table if not exists public.trash_items (
   updated_at timestamp with time zone not null default now(),
   constraint trash_items_pkey PRIMARY KEY (id),
   constraint trash_items_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES public.profiles(id) ON DELETE CASCADE,
-  constraint trash_items_kind_check CHECK (kind = ANY (ARRAY['vault_item'::text, 'contact'::text, 'business_card'::text, 'medical_record'::text, 'timeline_event'::text, 'photo_studio_photo'::text, 'pdf_studio_document'::text, 'persora_table'::text, 'persora_doc'::text])),
+  constraint trash_items_kind_check CHECK (kind = ANY (ARRAY['vault_item'::text, 'contact'::text, 'business_card'::text, 'medical_record'::text, 'timeline_event'::text, 'photo_studio_photo'::text, 'pdf_studio_document'::text, 'persora_table'::text, 'persora_doc'::text, 'audio_space_item'::text])),
   constraint trash_items_retention_check CHECK (expires_at > deleted_at),
   constraint trash_items_status_check CHECK (status = ANY (ARRAY['active'::text, 'restoring'::text, 'purging'::text]))
 );
@@ -4522,6 +4567,204 @@ $function$;
 revoke all on function public.persora_photo_studio_trash_restore(p_owner uuid, p_trash_id uuid) from public, anon, authenticated;
 grant execute on function public.persora_photo_studio_trash_restore(p_owner uuid, p_trash_id uuid) to service_role;
 
+CREATE OR REPLACE FUNCTION public.persora_audio_space_folder_guard()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SET search_path TO 'pg_catalog', 'public'
+AS $function$
+begin
+  if new.folder_id is not null and not exists (
+    select 1 from public.vault_folders folder
+    where folder.id = new.folder_id and folder.user_id = new.user_id and folder.scope = 'audio-space'
+  ) then
+    raise exception 'Choose an AudioSpace folder from your account.' using errcode = 'P0403';
+  end if;
+  if cardinality(new.tags) > 24 then
+    raise exception 'Keep tags to 24 or fewer per audio.' using errcode = 'P0400';
+  end if;
+  if exists (select 1 from unnest(new.tags) tag where char_length(btrim(tag)) < 1 or char_length(btrim(tag)) > 40) then
+    raise exception 'Each tag must be between 1 and 40 characters.' using errcode = 'P0400';
+  end if;
+  new.updated_at := now();
+  return new;
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.persora_audio_space_save(p_owner uuid, p_folder_id uuid, p_new_folder_name text, p_new_folder_color text, p_title text, p_description text, p_source text, p_file_key text, p_file_name text, p_file_size bigint, p_file_type text, p_duration numeric, p_external_url text, p_tags text[], p_favorite boolean, p_metadata jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'public'
+AS $function$
+declare
+  v_folder public.vault_folders%rowtype;
+  v_folder_id uuid := null;
+  v_created_folder boolean := false;
+  v_name text := btrim(coalesce(p_new_folder_name, ''));
+  v_item public.audio_space_items%rowtype;
+  v_source text := coalesce(p_source, 'upload');
+begin
+  if p_owner is null or not exists (select 1 from public.profiles where id = p_owner) then
+    raise exception 'That account is unavailable.' using errcode = 'P0404';
+  end if;
+  if v_source not in ('upload', 'recording', 'link') then
+    raise exception 'Choose a valid audio source.' using errcode = 'P0400';
+  end if;
+
+  if v_name <> '' then
+    if char_length(v_name) > 64 then
+      raise exception 'Enter a folder name between 1 and 64 characters.' using errcode = 'P0400';
+    end if;
+    -- Reuse an existing AudioSpace folder with the same name instead of failing.
+    select * into v_folder from public.vault_folders
+    where user_id = p_owner and scope = 'audio-space' and lower(name) = lower(v_name)
+    limit 1;
+    if not found then
+      insert into public.vault_folders (user_id, scope, name, color)
+      values (p_owner, 'audio-space', v_name,
+        case when p_new_folder_color in ('blue','sky','teal','violet','amber','rose','slate','mint') then p_new_folder_color else 'blue' end)
+      returning * into v_folder;
+      v_created_folder := true;
+    end if;
+    v_folder_id := v_folder.id;
+  elsif p_folder_id is not null then
+    select * into v_folder from public.vault_folders
+    where id = p_folder_id and user_id = p_owner and scope = 'audio-space';
+    if not found then
+      raise exception 'That folder is no longer available. Choose another folder.' using errcode = 'P0404';
+    end if;
+    v_folder_id := v_folder.id;
+  end if;
+
+  if v_source = 'link' then
+    if p_external_url is null or char_length(p_external_url) < 10 or char_length(p_external_url) > 2000 then
+      raise exception 'Provide a valid audio link to save.' using errcode = 'P0400';
+    end if;
+    if p_file_key is not null then
+      raise exception 'An audio link cannot carry an uploaded file.' using errcode = 'P0400';
+    end if;
+  else
+    if p_file_key is null or left(p_file_key, char_length(p_owner::text) + 13) <> p_owner::text || '/audio-space/' then
+      raise exception 'The uploaded audio is not stored in your account.' using errcode = 'P0403';
+    end if;
+  end if;
+
+  insert into public.audio_space_items (
+    user_id, folder_id, title, description, source, file_key, file_name, file_size, file_type,
+    duration_seconds, external_url, tags, favorite, metadata
+  ) values (
+    p_owner, v_folder_id, btrim(p_title), coalesce(p_description, ''), v_source, p_file_key, p_file_name, p_file_size, p_file_type,
+    p_duration, p_external_url, coalesce(p_tags, '{}'::text[]), coalesce(p_favorite, false), coalesce(p_metadata, '{}'::jsonb)
+  )
+  returning * into v_item;
+
+  return jsonb_build_object(
+    'item', to_jsonb(v_item),
+    'folder', case when v_folder_id is null then null else jsonb_build_object(
+      'id', v_folder.id, 'scope', v_folder.scope, 'name', v_folder.name, 'color', v_folder.color,
+      'pinned', v_folder.pinned, 'created_at', v_folder.created_at, 'updated_at', v_folder.updated_at
+    ) end,
+    'createdFolder', v_created_folder
+  );
+end;
+$function$;
+revoke all on function public.persora_audio_space_save(p_owner uuid, p_folder_id uuid, p_new_folder_name text, p_new_folder_color text, p_title text, p_description text, p_source text, p_file_key text, p_file_name text, p_file_size bigint, p_file_type text, p_duration numeric, p_external_url text, p_tags text[], p_favorite boolean, p_metadata jsonb) from public, anon, authenticated;
+grant execute on function public.persora_audio_space_save(p_owner uuid, p_folder_id uuid, p_new_folder_name text, p_new_folder_color text, p_title text, p_description text, p_source text, p_file_key text, p_file_name text, p_file_size bigint, p_file_type text, p_duration numeric, p_external_url text, p_tags text[], p_favorite boolean, p_metadata jsonb) to service_role;
+
+CREATE OR REPLACE FUNCTION public.persora_audio_space_trash_move(p_owner uuid, p_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'public'
+AS $function$
+declare
+  v_row jsonb;
+  v_now timestamptz := clock_timestamp();
+  v_trash public.trash_items%rowtype;
+  v_keys jsonb;
+begin
+  select to_jsonb(item) into v_row from public.audio_space_items item where item.id = p_id and item.user_id = p_owner;
+  if v_row is null then
+    raise exception 'That audio is not available in your account.' using errcode = 'P0404';
+  end if;
+  if v_row ->> 'file_key' is null then
+    v_keys := '[]'::jsonb;
+  else
+    v_keys := jsonb_build_array(v_row ->> 'file_key');
+  end if;
+  delete from public.audio_space_items where id = p_id and user_id = p_owner;
+  insert into public.trash_items (id, owner_id, kind, title, context, payload, file_keys, status, deleted_at, expires_at)
+  values (
+    p_id, p_owner, 'audio_space_item',
+    coalesce(nullif(v_row ->> 'title', ''), 'Untitled audio'),
+    jsonb_build_object('space', 'audio_space', 'folderId', v_row -> 'folder_id', 'recordType', v_row ->> 'source'),
+    jsonb_build_object('row', v_row, 'relations', '{}'::jsonb),
+    v_keys,
+    'active', v_now, v_now + interval '7 days'
+  )
+  returning * into v_trash;
+  return to_jsonb(v_trash);
+end;
+$function$;
+revoke all on function public.persora_audio_space_trash_move(p_owner uuid, p_id uuid) from public, anon, authenticated;
+grant execute on function public.persora_audio_space_trash_move(p_owner uuid, p_id uuid) to service_role;
+
+CREATE OR REPLACE FUNCTION public.persora_audio_space_trash_restore(p_owner uuid, p_trash_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'public'
+AS $function$
+declare
+  v_trash public.trash_items%rowtype;
+  v_row jsonb;
+  v_note text := null;
+begin
+  update public.trash_items
+  set status = 'restoring', updated_at = clock_timestamp()
+  where id = p_trash_id and owner_id = p_owner and kind = 'audio_space_item'
+    and status = 'active' and expires_at > clock_timestamp()
+  returning * into v_trash;
+  if not found then
+    raise exception 'That item is no longer restorable — it expired or is already being processed.' using errcode = 'P0409';
+  end if;
+
+  v_row := coalesce(v_trash.payload -> 'row', '{}'::jsonb);
+  if (v_row ->> 'folder_id') is not null and not exists (
+    select 1 from public.vault_folders
+    where id = (v_row ->> 'folder_id')::uuid and user_id = p_owner and scope = 'audio-space'
+  ) then
+    v_row := jsonb_set(v_row, '{folder_id}', 'null'::jsonb);
+    v_note := 'Restored without its folder because that folder no longer exists.';
+  end if;
+
+  insert into public.audio_space_items select * from jsonb_populate_record(null::public.audio_space_items, v_row);
+  delete from public.trash_items where id = v_trash.id;
+  return jsonb_build_object('ok', true, 'kind', v_trash.kind, 'id', v_trash.id, 'note', v_note);
+end;
+$function$;
+revoke all on function public.persora_audio_space_trash_restore(p_owner uuid, p_trash_id uuid) from public, anon, authenticated;
+grant execute on function public.persora_audio_space_trash_restore(p_owner uuid, p_trash_id uuid) to service_role;
+
+CREATE OR REPLACE FUNCTION public.persora_audio_space_export(p_owner uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'public'
+AS $function$
+declare
+  v_items jsonb;
+begin
+  select coalesce(jsonb_agg(to_jsonb(item) order by item.created_at asc), '[]'::jsonb)
+  into v_items
+  from public.audio_space_items item
+  where item.user_id = p_owner;
+  return jsonb_build_object('audioItems', v_items);
+end;
+$function$;
+revoke all on function public.persora_audio_space_export(p_owner uuid) from public, anon, authenticated;
+grant execute on function public.persora_audio_space_export(p_owner uuid) to service_role;
+
 CREATE OR REPLACE FUNCTION public.persora_project_attachment_add(p_user uuid, p_field uuid, p_file_key text, p_file_name text, p_file_size bigint, p_file_type text)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -7211,6 +7454,8 @@ drop trigger if exists pdf_studio_documents_folder_guard on public.pdf_studio_do
 CREATE TRIGGER pdf_studio_documents_folder_guard BEFORE INSERT OR UPDATE OF folder_id, title, notes, file_key ON public.pdf_studio_documents FOR EACH ROW EXECUTE FUNCTION persora_pdf_studio_folder_guard();
 drop trigger if exists photo_studio_photos_folder_guard on public.photo_studio_photos;
 CREATE TRIGGER photo_studio_photos_folder_guard BEFORE INSERT OR UPDATE OF folder_id, title, category, notes ON public.photo_studio_photos FOR EACH ROW EXECUTE FUNCTION persora_photo_studio_folder_guard();
+drop trigger if exists audio_space_items_folder_guard on public.audio_space_items;
+CREATE TRIGGER audio_space_items_folder_guard BEFORE INSERT OR UPDATE OF folder_id, title, description, tags ON public.audio_space_items FOR EACH ROW EXECUTE FUNCTION persora_audio_space_folder_guard();
 drop trigger if exists project_activity_notify on public.project_activity;
 CREATE TRIGGER project_activity_notify AFTER INSERT ON public.project_activity FOR EACH ROW EXECUTE FUNCTION persora__project_activity_notify();
 drop trigger if exists project_field_assignment_notify on public.project_fields;

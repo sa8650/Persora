@@ -2,7 +2,7 @@
 
 export type LauncherModuleId =
   | "dashboard" | "calendar" | "habits" | "loans" | "tables" | "forms" | "docs" | "timeline" | "medical-records" | "contacts" | "shared" | "personal-finance"
-  | "documents" | "academics" | "family" | "photo-studio" | "subscriptions" | "purchases" | "accounts"
+  | "documents" | "academics" | "family" | "photo-studio" | "audio-space" | "subscriptions" | "purchases" | "accounts"
   | "memberships" | "wallet-cards" | "password-manager" | "projects" | "pdf-studio" | "study" | "notes"
   | "business-card" | "urls" | "connections";
 

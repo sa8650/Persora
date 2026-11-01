@@ -158,7 +158,7 @@ try {
     await drawer(page).waitFor({ state: 'detached' });
     await ready(page);
     assert.equal(desktop.pages().length, pagesBefore, 'opens in the same tab');
-    assert.equal(await page.locator('.breadcrumb-title h1').innerText(), 'Loan Tracker');
+    assert.equal(await page.locator('nav[aria-label="Workspace navigation"] .sidebar-link[aria-current="page"] > span').first().innerText(), 'Loan Tracker');
     const nav = page.locator('nav[aria-label="Workspace navigation"]');
     assert.equal(await nav.getByRole('button', { name: 'Loan Tracker', exact: true }).count(), 1, 'one sidebar entry');
     assert.equal(await nav.locator('.sidebar-link[aria-current="page"] > span').first().innerText(), 'Loan Tracker');
@@ -537,7 +537,10 @@ try {
     writeFileSync(file, JSON.stringify(manifest));
     const bobContext = await browser.newContext({ viewport: { width: 1280, height: 860 }, locale: 'en-US', timezoneId: ZONE });
     const bobPage = await signIn(bobContext, bob.email, 'bob');
-    await bobPage.locator('.topbar-avatar').click();
+    // The account menu lives in the dynamic island: expand it, then open the profile menu.
+    await bobPage.getByRole('button', { name: /^Open workspace controls/ }).click();
+    await bobPage.locator('.island-avatar').click();
+    await bobPage.getByRole('button', { name: 'Account settings' }).click();
     await bobPage.locator('.import-row input[type="file"]').setInputFiles(file);
     await toast(bobPage, 'Loan Tracker restored: 2 loans added');
     assert.equal(sql(`select count(*) from loans where user_id = '${bob.id}'`), '2');

@@ -56,7 +56,7 @@ export default function AppLauncher({ user, activeView, onNavigate, onOpen }: Ap
     const button = buttonRef.current;
     if (!button) return;
     const rect = button.getBoundingClientRect();
-    const edge = button.closest(".topbar-actions")?.getBoundingClientRect().right ?? rect.right;
+    const edge = button.closest(".island-actions")?.getBoundingClientRect().right ?? rect.right;
     setAnchor({ top: Math.round(rect.bottom + 10), right: Math.max(8, Math.round(window.innerWidth - edge)) });
   }, []);
 

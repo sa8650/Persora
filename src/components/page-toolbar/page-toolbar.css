@@ -1,0 +1,252 @@
+/* Persora page toolbar — the full-width 50px strip that owns a page's tools.
+   It is portaled into the workspace shell's top slot, so it sits flush under
+   the dynamic island, spans the whole workspace width, and stays put while the
+   page scrolls. Component styles for the tools themselves live with their
+   components; this file only owns the strip. */
+
+/* No page tools: the strip collapses completely, so its pages start right
+   under the floating island. `:empty`-style rules cannot be used here because
+   the host always renders its three slot elements. */
+.page-toolbar-host.is-empty {
+  flex: 0 0 0;
+  height: 0;
+  min-height: 0;
+  padding: 0;
+  border-bottom: 0;
+  overflow: hidden;
+}
+
+.page-toolbar-host {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  box-sizing: border-box;
+  flex: 0 0 50px;
+  height: 50px;
+  min-height: 50px;
+  padding: 0 clamp(20px, 3vw, 40px);
+  border-bottom: 1px solid var(--ds-divider);
+  background: var(--ds-canvas-bg);
+  font-family: var(--ds-font-sans);
+}
+
+.page-toolbar-start,
+.page-toolbar-tools,
+.page-toolbar-end {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 100%;
+}
+
+/* The middle slot takes the space between navigation and the primary action. */
+.page-toolbar-start {
+  flex: 0 0 auto;
+}
+
+.page-toolbar-tools {
+  flex: 0 1 auto;
+  justify-content: flex-end;
+}
+
+.page-toolbar-end {
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
+.page-toolbar-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Tools keep their natural width; the row scrolls rather than squashing them. */
+.page-toolbar-start > *,
+.page-toolbar-label > *,
+.page-toolbar-tools > *,
+.page-toolbar-end > * {
+  flex: 0 0 auto;
+}
+
+.page-toolbar-label .hb-date-heading,
+.page-toolbar-label .cal-range-heading {
+  flex: 0 0 auto;
+}
+
+/* The calendar's search scales with the viewport so its tools fit one line. */
+.page-toolbar-host .cal-search {
+  width: clamp(104px, 9.5vw, 190px);
+}
+
+.page-toolbar-label .cal-range-heading {
+  white-space: nowrap;
+}
+
+/* Each page keeps its own palette in the bar. The tools render outside the
+   page root, so the active page's palette is applied to the bar itself. */
+.page-toolbar-host.is-habits {
+  --hb-surface: var(--p-surface, #fff);
+  --hb-bg: var(--hb-surface);
+  --hb-line: var(--p-line, #e8eaed);
+  --hb-line-strong: var(--p-line-strong, #dadce0);
+  --hb-ink: var(--p-ink, #202124);
+  --hb-text: var(--p-text, #3c4043);
+  --hb-muted: var(--p-muted, #5f6368);
+  --hb-soft: var(--p-soft, #80868b);
+  --hb-accent: var(--p-blue, #1a73e8);
+  --hb-accent-soft: var(--p-blue-pale, #e8f0fe);
+  --hb-accent-ink: var(--p-blue-dark, #174ea6);
+  --hb-hover: var(--p-hover, #f1f3f4);
+  border-bottom-color: var(--hb-line);
+  background: var(--hb-bg);
+}
+
+.page-toolbar-host.is-loans {
+  --ln-surface: var(--p-surface, #fff);
+  --ln-bg: var(--ln-surface);
+  --ln-line: var(--p-line, #e8eaed);
+  --ln-line-strong: var(--p-line-strong, #dadce0);
+  --ln-ink: var(--p-ink, #202124);
+  --ln-text: var(--p-text, #3c4043);
+  --ln-muted: var(--p-muted, #5f6368);
+  --ln-soft: var(--p-soft, #80868b);
+  --ln-accent: var(--p-blue, #1a73e8);
+  --ln-accent-soft: var(--p-blue-pale, #e8f0fe);
+  --ln-accent-ink: var(--p-blue-dark, #174ea6);
+  --ln-hover: var(--p-hover, #f1f3f4);
+  border-bottom-color: var(--ln-line);
+  background: var(--ln-bg);
+}
+
+.page-toolbar-host.is-calendar {
+  --cal-surface: var(--p-surface, #fff);
+  --cal-bg: var(--cal-surface);
+  --cal-line: var(--p-line, #e8eaed);
+  --cal-line-strong: #dadce0;
+  --cal-ink: var(--p-ink, #202124);
+  --cal-text: var(--p-text, #3c4043);
+  --cal-muted: var(--p-muted, #5f6368);
+  --cal-soft: var(--p-soft, #80868b);
+  --cal-accent: var(--primary, #1a73e8);
+  --cal-accent-soft: var(--p-blue-pale, #e8f0fe);
+  --cal-hover: var(--p-hover, #f1f3f4);
+  border-bottom-color: var(--cal-line);
+  background: var(--cal-bg);
+}
+
+/* Dark theme mirrors the page roots' palette. */
+.dark .page-toolbar-host.is-habits, [data-theme="dark"] .page-toolbar-host.is-habits {
+  --hb-surface: var(--ds-card-bg);
+  --hb-bg: var(--ds-canvas-bg);
+  --hb-line: var(--ds-divider);
+  --hb-ink: var(--ds-text);
+  --hb-text: var(--ds-text-secondary);
+  --hb-muted: var(--ds-text-muted);
+  --hb-soft: var(--ds-text-soft);
+  --hb-accent: var(--ds-primary);
+  --hb-accent-ink: var(--ds-sidebar-active-text);
+  --hb-accent-soft: var(--ds-primary-soft);
+  --hb-hover: var(--ds-card-hover-bg);
+}
+
+.dark .page-toolbar-host.is-loans, [data-theme="dark"] .page-toolbar-host.is-loans {
+  --ln-surface: var(--ds-card-bg);
+  --ln-bg: var(--ds-canvas-bg);
+  --ln-line: var(--ds-divider);
+  --ln-ink: var(--ds-text);
+  --ln-text: var(--ds-text-secondary);
+  --ln-muted: var(--ds-text-muted);
+  --ln-soft: var(--ds-text-soft);
+  --ln-accent: var(--ds-primary);
+  --ln-accent-ink: var(--ds-sidebar-active-text);
+  --ln-accent-soft: var(--ds-primary-soft);
+  --ln-hover: var(--ds-card-hover-bg);
+}
+
+.dark .page-toolbar-host.is-calendar, [data-theme="dark"] .page-toolbar-host.is-calendar {
+  --cal-surface: var(--ds-card-bg);
+  --cal-bg: var(--ds-canvas-bg);
+  --cal-line: var(--ds-divider);
+  --cal-ink: var(--ds-text);
+  --cal-text: var(--ds-text-secondary);
+  --cal-muted: var(--ds-text-muted);
+  --cal-soft: var(--ds-text-soft);
+  --cal-accent: var(--ds-primary);
+  --cal-accent-soft: var(--ds-primary-soft);
+  --cal-hover: var(--ds-card-hover-bg);
+}
+
+/* Compact controls inside the bar. */
+.page-toolbar-host .hb-icon-button,
+.page-toolbar-host .cal-icon-button,
+.page-toolbar-host .ln-icon-button {
+  width: 30px;
+  height: 30px;
+}
+
+/* Below ~1130px the calendar's tool set is wider than the bar. The row scrolls
+   sideways so every tool stays present and reachable, the create button drops
+   its label, and under 760px the primary action is pinned to the right edge. */
+@media (max-width: 1130px) {
+  .page-toolbar-host {
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .page-toolbar-host::-webkit-scrollbar {
+    display: none;
+  }
+
+  .page-toolbar-tools {
+    justify-content: flex-start;
+  }
+
+  .page-toolbar-host .cal-views button {
+    padding-inline: 9px;
+  }
+
+  .page-toolbar-label .cal-range-heading {
+    padding-inline: 6px;
+  }
+
+  .page-toolbar-host .cal-split-main {
+    padding: 0 11px;
+  }
+
+  .page-toolbar-host .cal-split-main span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 760px) {
+  .page-toolbar-host {
+    padding-inline: 14px;
+  }
+
+  .page-toolbar-end {
+    position: sticky;
+    right: 0;
+    padding-left: 8px;
+    background: inherit;
+  }
+
+  .page-toolbar-label .cal-toolbar-nav,
+  .page-toolbar-label .hb-date-nav {
+    gap: 4px;
+  }
+
+  .page-toolbar-host .hb-modes button {
+    padding: 0 10px;
+  }
+}

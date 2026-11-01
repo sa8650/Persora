@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { ArrowLeft, ArrowRight, KeyRound, LockKeyhole, ShieldCheck } from "lucide-react";
 import type { AppUser } from "../types";
 import type { AuthMode } from "./AuthDialog";
+import { PersoraMark } from "./PersoraLogo";
 import { claimFirstAdmin } from "../lib/cloud";
 import { IconTile } from "@/components/reui/icon-tile";
 import { Spinner } from "@/components/ui/spinner";
@@ -42,7 +43,7 @@ export default function AdminAccessPage({ user, status, backendConnected, pagesA
   const setupUnavailable = status.initialized === null || !pagesApiConnected;
 
   return <div className="admin-access-page relative">
-    <header className="admin-access-header"><a className="admin-access-brand" href="/"><span className="brand-mark"><ShieldCheck size={18} /></span><b>persora</b></a><span className="admin-access-lock"><LockKeyhole size={14} /> Protected administrator area</span></header>
+    <header className="admin-access-header"><a className="admin-access-brand" href="/"><span className="brand-mark"><PersoraMark/></span><b>persora</b></a><span className="admin-access-lock"><LockKeyhole size={14} /> Protected administrator area</span></header>
     <main className="admin-access-main"><div className="admin-access-orbit orbit-one"/><div className="admin-access-orbit orbit-two"/>
       <section className="admin-access-card">
         <IconTile variant="soft" size="xl" className="admin-access-emblem mb-4"><ShieldCheck size={26} /></IconTile>

@@ -255,6 +255,22 @@ const ICONS: Record<LauncherModuleId, Draw> = {
     <circle cx="35.6" cy="19.6" r="1.9" fill="#fde68a" />
   </>,
 
+  "audio-space": (id) => <>
+    <defs>
+      <Lg id={id("a")} from="#8b7cfb" to="#5b4bd6" vertical />
+      <Lg id={id("b")} from="#4fd9c4" to="#12a594" />
+      <Lg id={id("c")} from="#ffb36b" to="#f97316" />
+    </defs>
+    <rect x="6.5" y="8" width="35" height="32" rx="8.5" fill={`url(#${id("a")})`} />
+    <path d="M12.5 12.6h13" stroke="#fff" strokeOpacity=".4" strokeWidth="1.6" strokeLinecap="round" />
+    <rect x="11.6" y="21" width="3.3" height="6" rx="1.65" fill="#fff" fillOpacity=".8" />
+    <rect x="16.6" y="17.2" width="3.3" height="13.6" rx="1.65" fill="#fff" />
+    <rect x="21.6" y="13.5" width="3.3" height="21" rx="1.65" fill={`url(#${id("b")})`} />
+    <rect x="26.6" y="16" width="3.3" height="16" rx="1.65" fill="#fff" />
+    <rect x="31.6" y="19.6" width="3.3" height="8.8" rx="1.65" fill="#fff" fillOpacity=".8" />
+    <circle cx="37.6" cy="24" r="2.6" fill={`url(#${id("c")})`} stroke="#fff" strokeOpacity=".5" strokeWidth="0.9" />
+  </>,
+
   subscriptions: (id) => <>
     <defs>
       <Lg id={id("a")} from="#ffb36b" to="#f97316" />

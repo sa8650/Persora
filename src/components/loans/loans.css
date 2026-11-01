@@ -1,5 +1,6 @@
 /* Persora Loan Tracker — calm surfaces, Persora tokens, theme-aware (light by default, .dark overrides like calendar.css / habits.css). */
 
+.ln-view { --ln-bg: var(--ln-surface); }
 .ln-view, .ln-editor {
   --ln-surface: var(--p-surface, #fff);
   --ln-bg: var(--p-bg, #f8fafd);
@@ -57,8 +58,6 @@
 .ln-muted { font-size: 12px; color: var(--ln-muted); }
 
 /* ---- buttons ------------------------------------------------------------------ */
-.ln-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
-.ln-tools { display: flex; align-items: center; gap: 8px; }
 .ln-icon-button {
   display: inline-flex; align-items: center; justify-content: center; gap: 2px; min-width: 32px; height: 32px; padding: 0 6px; border: 0; border-radius: 999px;
   background: transparent; color: var(--ln-muted); cursor: pointer; transition: background .15s ease, color .15s ease;
@@ -331,8 +330,6 @@
   .ln-figures { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ln-figures > div:nth-child(3) { border-left: 0; }
   .ln-figures > div:nth-child(n + 3) { border-top: 1px solid var(--ln-line); }
-  .ln-toolbar { align-items: stretch; }
-  .ln-tools { margin-left: auto; }
   .ln-row-side { grid-template-columns: auto; justify-items: end; }
   .ln-row-side .ln-badge { grid-column: 1; grid-row: auto; }
   .ln-row-next { display: none; }

@@ -43,6 +43,7 @@ const VIEW_MODULES: Partial<Record<LauncherModuleId, { label: string; hint: stri
   contacts: { label: "Contacts", hint: "The people in your life" },
   shared: { label: "Shared documents", hint: "Shared with you and by you" },
   "photo-studio": { label: "Photo Studio", hint: "Edit and enhance photos" },
+  "audio-space": { label: "AudioSpace", hint: "Recordings and audio library" },
   "password-manager": { label: "Password Manager", hint: "Encrypted logins and secrets" },
   projects: { label: "Projects", hint: "Plan and track work together" },
   "pdf-studio": { label: "PDF Studio", hint: "Edit, build and secure PDFs" },

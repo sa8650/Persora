@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Archive, ArchiveRestore, ArrowDown, ArrowUp, Check, ChevronLeft, ChevronRight, MoreHorizontal, Pencil, Plus, Trash2, Undo2, X } from "lucide-react";
 import "./habits.css";
+import PageToolbar from "../page-toolbar/PageToolbar";
 import type { AppUser } from "../../types";
 import { PagesApiError, isPagesApiConfigured } from "../../lib/cloud";
 import {
@@ -282,24 +283,30 @@ export default function HabitsView({ user, notify, focusRequest }: {
   };
 
   return <div className="hb-view">
-    <header className="hb-toolbar">
-      <div className="hb-date-nav">
-        <div className="hb-stepper">
-          <button type="button" className="hb-icon-button" onClick={() => step(-1)} aria-label={`Previous ${unitLabel}`} title={`Previous ${unitLabel}`}><ChevronLeft size={18}/></button>
-          <button type="button" className="hb-icon-button" onClick={() => step(1)} aria-label={`Next ${unitLabel}`} title={`Next ${unitLabel}`}><ChevronRight size={18}/></button>
+    <PageToolbar
+      label="Habit tracker tools"
+      palette="habits"
+      start={(
+        <div className="hb-date-nav">
+          <div className="hb-stepper">
+            <button type="button" className="hb-icon-button" onClick={() => step(-1)} aria-label={`Previous ${unitLabel}`} title={`Previous ${unitLabel}`}><ChevronLeft size={18}/></button>
+            <button type="button" className="hb-icon-button" onClick={() => step(1)} aria-label={`Next ${unitLabel}`} title={`Next ${unitLabel}`}><ChevronRight size={18}/></button>
+          </div>
+          <h2 className="hb-date-heading" aria-live="polite">{heading}</h2>
+          {date === today && mode === "today" ? <Badge variant="info-light" size="xs" radius="full" className="hb-today-pill">Today</Badge>
+            : <button type="button" className="hb-button hb-button-small" onClick={() => setDate(today)}>Today</button>}
+          {loadState === "loading" && payload && <Spinner className="hb-spinner size-4 text-primary" aria-label="Loading habits"/>}
         </div>
-        <h2 className="hb-date-heading" aria-live="polite">{heading}</h2>
-        {date === today && mode === "today" ? <Badge variant="info-light" size="xs" radius="full" className="hb-today-pill">Today</Badge>
-          : <button type="button" className="hb-button hb-button-small" onClick={() => setDate(today)}>Today</button>}
-        {loadState === "loading" && payload && <Spinner className="hb-spinner size-4 text-primary" aria-label="Loading habits"/>}
-      </div>
-      <div className="hb-tools">
-        <div className="hb-modes" role="group" aria-label="Habit view">
-          {MODES.map((entry) => <button type="button" key={entry.id} className={mode === entry.id ? "is-active" : ""} aria-pressed={mode === entry.id} onClick={() => setMode(entry.id)}>{entry.label}</button>)}
-        </div>
-        <button type="button" className="hb-primary-button" onClick={openNew} disabled={initialLoading || loadState === "error" && !payload} title="New Habit"><Plus size={16}/><span>New Habit</span></button>
-      </div>
-    </header>
+      )}
+      end={(
+        <>
+          <div className="hb-modes" role="group" aria-label="Habit view">
+            {MODES.map((entry) => <button type="button" key={entry.id} className={mode === entry.id ? "is-active" : ""} aria-pressed={mode === entry.id} onClick={() => setMode(entry.id)}>{entry.label}</button>)}
+          </div>
+          <button type="button" className="hb-primary-button" onClick={openNew} disabled={initialLoading || loadState === "error" && !payload} title="New Habit"><Plus size={16}/><span>New Habit</span></button>
+        </>
+      )}
+    />
 
     {loadState === "error" && <div className="hb-banner" role="alert">
       <span>{loadError}</span>

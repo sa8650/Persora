@@ -153,7 +153,7 @@ try {
     await drawer(page).waitFor({ state: 'detached' });
     await ready(page);
     assert.equal(desktop.pages().length, pagesBefore, 'opens in the same tab');
-    assert.equal(await page.locator('.breadcrumb-title h1').innerText(), 'Habit Tracker');
+    assert.equal(await page.locator('nav[aria-label="Workspace navigation"] .sidebar-link[aria-current="page"] > span').first().innerText(), 'Habit Tracker');
     assert.equal(await page.locator('nav[aria-label="Workspace navigation"] .sidebar-link[aria-current="page"] > span').first().innerText(), 'Habit Tracker');
     ok('one Habit Tracker tile with an SVG icon and label; opens the page in place');
   }
@@ -477,7 +477,10 @@ try {
     writeFileSync(file, JSON.stringify(manifest));
     const bobContext = await browser.newContext({ viewport: { width: 1280, height: 860 }, locale: 'en-US', timezoneId: ZONE });
     const bobPage = await signIn(bobContext, bob.email, 'bob');
-    await bobPage.locator('.topbar-avatar').click();
+    // The account menu lives in the dynamic island: expand it, then open the profile menu.
+    await bobPage.getByRole('button', { name: /^Open workspace controls/ }).click();
+    await bobPage.locator('.island-avatar').click();
+    await bobPage.getByRole('button', { name: 'Account settings' }).click();
     await bobPage.locator('.import-row input[type="file"]').setInputFiles(file);
     await toast(bobPage, 'Habit Tracker restored: 4 habits added');
     assert.equal(sql(`select count(*) from habits where user_id = '${bob.id}'`), '4');

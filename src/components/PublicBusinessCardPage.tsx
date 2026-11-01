@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { ArrowUpRight, Check, CircleAlert, Download, Flag, Globe2, Mail, MapPin, Phone, ShieldCheck, X } from "lucide-react";
 import type { PublicDigitalBusinessCard } from "../types";
 import { fetchPublicBusinessCard, reportPublicBusinessCard } from "../lib/backend";
+import { PersoraMark } from "./PersoraLogo";
 import QRPreview from "./QRPreview";
 import SocialBrandIcon from "./SocialBrandIcon";
 import { BusinessCardImagePublic } from "./BusinessCardsView";
@@ -63,7 +64,7 @@ export default function PublicBusinessCardPage({ cardId }: { cardId: string }) {
   if (loading) return <main className="public-card-page public-card-state"><span className="public-card-loader"/><p>Preparing your introduction…</p></main>;
   if (unavailable || !card) return <main className="public-card-page public-card-state"><span className="public-card-unavailable-icon"><ShieldCheck size={24}/></span><span className="public-card-eyebrow">Persora digital card</span><h1>This card is unavailable.</h1><p>The card may be private, disabled, or the link may be incorrect.</p><a href="/" className="public-card-back-link">Go to Persora <ArrowUpRight size={14}/></a></main>;
   return <main className="public-card-page">
-    <div className="public-card-frame"><header className="public-card-brand"><a href="/" className="public-card-wordmark"><span className="public-card-brand-mark"><ShieldCheck size={15}/></span>persora<span>.</span></a><span className="public-card-label">DIGITAL BUSINESS CARD</span></header>
+    <div className="public-card-frame"><header className="public-card-brand"><a href="/" className="public-card-wordmark"><span className="public-card-brand-mark"><PersoraMark/></span>persora<span>.</span></a><span className="public-card-label">DIGITAL BUSINESS CARD</span></header>
       <article className={`public-card-surface style-${card.style || "garden"}`}>
         <div className="public-card-cover"><span className="public-card-cover-glow public-card-cover-glow-a"/><span className="public-card-cover-glow public-card-cover-glow-b"/><span className="public-card-cover-grid"/><div className="public-card-logo-zone">{card.businessLogoUrl ? <BusinessCardImagePublic cardId={cardId} kind="logo" className="public-card-business-logo" alt={`${card.company || card.fullName} logo`}/> : <span className="public-card-logo-mark"><ShieldCheck size={22}/></span>}</div></div>
         <section className="public-card-profile"><div className="public-card-avatar-wrap">{card.profilePhotoUrl ? <BusinessCardImagePublic cardId={cardId} kind="profile" className="public-card-avatar" alt={card.fullName}/> : <span className="public-card-avatar public-card-avatar-fallback">{initials(card.fullName)}</span>}</div>

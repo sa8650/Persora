@@ -13,12 +13,12 @@ import {
   Pencil,
   Redo2,
   RefreshCw,
-  ShieldCheck,
   Sheet as SheetIcon,
   TriangleAlert,
   Undo2,
 } from "lucide-react";
 import type { AppUser } from "../../types";
+import { PersoraMark } from "../PersoraLogo";
 import {
   getPublicSharedTable,
   postPublicTableCellComment,
@@ -273,7 +273,7 @@ export default function PublicSharedTablePage({
         <div className="tb-public-unavailable-card">
           <header className="tb-public-brand-row">
             <a href="/" className="tb-public-brand">
-              <span className="brand-mark"><ShieldCheck size={16} /></span>
+              <span className="brand-mark"><PersoraMark/></span>
               <span>persora</span><span className="brand-period">.</span>
             </a>
             <ThemeToggleButton />
@@ -312,7 +312,7 @@ export default function PublicSharedTablePage({
       <header className="tb-public-topbar">
         <div className="tb-public-topbar-left">
           <a href="/" className="tb-public-brand" title="Persora home">
-            <span className="brand-mark"><ShieldCheck size={16} /></span>
+            <span className="brand-mark"><PersoraMark/></span>
             <span>persora</span><span className="brand-period">.</span>
           </a>
           <span className="tb-public-divider" aria-hidden="true" />

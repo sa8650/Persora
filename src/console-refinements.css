@@ -2,8 +2,7 @@
    and one shared-card system for every share type. */
 
 /* Align the user and admin navigation/header seams exactly. */
-.sidebar-header,
-.workspace-topbar {
+.sidebar-header {
   box-sizing: border-box;
   height: 60px;
   min-height: 60px;

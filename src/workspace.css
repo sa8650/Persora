@@ -10,14 +10,8 @@
 .secure-card-icon { border: 1px solid var(--p-line); }
 .profile-more { color: var(--p-muted); }
 @keyframes pop-in { from { opacity: 0; transform: translateY(5px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
-.breadcrumb-area.breadcrumb-section-hidden { display: none; }
-.breadcrumb-overline { letter-spacing: .035em; }
-.live-pill-attention { border-color: var(--p-amber-line); color: var(--p-amber); background: var(--p-amber-pale); }
-.live-pill-attention > span { background: var(--p-amber); box-shadow: 0 0 0 3px rgba(60,64,67,0.12); }
 .global-search-trigger:focus-visible { outline: 0; }
 .notification-button:hover { border-color: var(--p-line); background: #fff; }
-.topbar-avatar { border-radius: 11px; }
-.topbar-avatar:hover { box-shadow: 0 0 0 3px var(--p-blue-pale); }
 .notification-row > svg { color: var(--p-soft); }
 .notification-empty { font-family: inherit; font-style: italic; }
 @keyframes content-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
@@ -336,7 +330,6 @@
 @media (max-width: 1200px) {
   .workspace-sidebar { flex-basis: 220px; }
   .workspace-content { padding-right: 22px; padding-left: 22px; }
-  .workspace-topbar { padding-right: 22px; padding-left: 25px; }
   .metric-card { padding-right: 11px; padding-left: 11px; }
   .section-page-heading { padding-right: 24px; padding-left: 24px; }
   .vault-item-card { padding-right: 10px; padding-left: 10px; }
@@ -344,7 +337,6 @@
 @media (max-width: 980px) {
   .workspace-sidebar { flex-basis: 205px; }
   .workspace-content { padding-right: 18px; padding-left: 18px; }
-  .workspace-topbar { padding-right: 18px; padding-left: 19px; }
   .admin-overview-grid { grid-template-columns: 1fr; }
   .admin-banner-art { width: 40%; }
 }
@@ -352,8 +344,6 @@
   .workspace-sidebar { top: 0; bottom: 0; left: 0; box-shadow: 15px 0 40px rgba(60,64,67,0.11); transform: translateX(-105%); transition: transform .24s var(--p-ease); }
   .workspace-sidebar.sidebar-open { transform: translateX(0); }
   .mobile-sidebar-scrim { z-index: 60; position: fixed; inset: 0; border: 0; background: var(--ds-scrim); backdrop-filter: none; -webkit-backdrop-filter: none; }
-  .mobile-menu-button { align-items: center; justify-content: center; flex: 0 0 auto; min-width: 58px; height: 32px; margin-right: 5px; border: 1px solid var(--p-line); border-radius: 8px; padding: 0 8px; color: var(--p-blue); background: #fff; font-size: 9.6px; font-weight: 700; cursor: pointer; }
-  .workspace-topbar .breadcrumb-area { display: none; }
   .welcome-actions { flex-shrink: 0; }
   .welcome-actions .quiet-button { display: none; }
   .spend-panel { padding-bottom: 13px; }
@@ -368,12 +358,8 @@
   .security-admin-aside { min-height: 220px; }
 }
 @media (max-width: 540px) {
-  .workspace-topbar { gap: 5px; }
-  .breadcrumb-title h1 { max-width: 166px; }
   .workspace-footer { justify-content: center; text-align: center; }
   .workspace-footer nav { justify-content: center; width: 100%; }
-  .mobile-menu-button { min-width: 54px; height: 30px; margin-right: 4px; }
-  .topbar-avatar { border-radius: 9px; }
   .dashboard-welcome-row { flex-direction: column; }
   .dashboard-welcome-row h2 { margin-top: 7px; }
   .welcome-actions { width: 100%; }
@@ -999,9 +985,7 @@
 }
 
 /* UI polish: keep compact data views readable, aligned, and intentional. */
-.workspace-topbar { gap: 18px; }
-.workspace-topbar .breadcrumb-area { min-width: 0; flex: 1 1 auto; }
-.workspace-topbar .topbar-actions { position: relative; z-index: 2; flex: 0 0 auto; justify-content: flex-end; margin-left: auto; white-space: nowrap; }
+.island-actions { position: relative; z-index: 2; flex: 0 0 auto; justify-content: flex-end; margin-left: auto; white-space: nowrap; }
 
 /* Overview cards: modestly larger labels and supporting copy for readability. */
 .metric-state { font-size: 8.6px; }
@@ -1349,7 +1333,6 @@ button.vault-folder-tile { width: 100%; text-align: left; cursor: pointer; }
 .add-document-footer-hint { margin-right: auto; color: #8390a0; font-size: 9px; }
 
 @media (max-width: 760px) {
-  .workspace-topbar .topbar-actions { gap: 8px; }
 }
 @media (max-width: 540px) {
   .workspace-add-document { width: 36px; min-height: 36px; padding: 0; border-radius: 10px; }

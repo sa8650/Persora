@@ -15,13 +15,13 @@ export type SectionId =
   | "notes"
   | "personal-finance";
 
-export type ViewId = "dashboard" | SectionId | "contacts" | "settings" | "billing" | "shared" | "timeline" | "medical-records" | "password-manager" | "trash" | "projects" | "photo-studio" | "pdf-studio" | "calendar" | "habits" | "loans" | "tables" | "forms" | "docs" | "connections";
+export type ViewId = "dashboard" | SectionId | "contacts" | "settings" | "billing" | "shared" | "timeline" | "medical-records" | "password-manager" | "trash" | "projects" | "photo-studio" | "pdf-studio" | "audio-space" | "calendar" | "habits" | "loans" | "tables" | "forms" | "docs" | "connections";
 
 /** Content families that flow through the global Trash. */
-export type TrashKind = "vault_item" | "contact" | "business_card" | "medical_record" | "timeline_event" | "password_entry" | "photo_studio_photo" | "pdf_studio_document" | "persora_table" | "persora_doc";
+export type TrashKind = "vault_item" | "contact" | "business_card" | "medical_record" | "timeline_event" | "password_entry" | "photo_studio_photo" | "pdf_studio_document" | "persora_table" | "persora_doc" | "audio_space_item";
 
 /** Space keys used by Trash entries: vault section ids plus whole-app spaces. */
-export type TrashSpace = SectionId | "contacts" | "business-cards" | "medical-records" | "timeline" | "password-manager" | "photo-studio" | "pdf-studio" | "persora-table" | "persora-docs";
+export type TrashSpace = SectionId | "contacts" | "business-cards" | "medical-records" | "timeline" | "password-manager" | "photo-studio" | "pdf-studio" | "audio-space" | "persora-table" | "persora-docs";
 
 export interface TrashEntry {
   /** Stable id of the original record (restoration re-uses it). */
@@ -321,7 +321,7 @@ export interface SectionDefinition {
   dateKey?: string;
 }
 
-export type VaultFolderScope = SectionId | "contacts" | "business-cards" | "medical-records" | "password-manager" | "photo-studio" | "pdf-studio";
+export type VaultFolderScope = SectionId | "contacts" | "business-cards" | "medical-records" | "password-manager" | "photo-studio" | "pdf-studio" | "audio-space";
 export type VaultFolderColor = "blue" | "sky" | "teal" | "violet" | "amber" | "rose" | "slate" | "mint";
 export interface VaultFolder {
   id: string;
@@ -620,4 +620,67 @@ export interface PhotoStudioSaveInput {
   fileName: string;
   metadata: Record<string, unknown>;
   editSettings: Record<string, unknown>;
+}
+
+// ---------------------------------------------------------------------------
+// AudioSpace (2026-10-30) — private audio library
+// ---------------------------------------------------------------------------
+/** Where an audio item came from. 'link' items store no bytes — only the URL. */
+export type AudioSource = "upload" | "recording" | "link";
+
+/** A saved audio item: an uploaded/recorded private file, or an external link. */
+export interface AudioSpaceItem {
+  id: string;
+  folderId: string | null;
+  title: string;
+  description: string;
+  source: AudioSource;
+  fileName: string | null;
+  fileSize: number | null;
+  fileType: string | null;
+  /** Duration in seconds when known (measured in the browser or read from headers). */
+  durationSeconds: number | null;
+  /** Original external URL for 'link' items. */
+  externalUrl: string | null;
+  tags: string[];
+  favorite: boolean;
+  metadata: Record<string, unknown>;
+  lastPlayedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Save-form fields for a new uploaded/recorded audio file. */
+export interface AudioSpaceSaveInput {
+  title: string;
+  description: string;
+  folderId: string | null;
+  newFolder: { name: string; color: VaultFolderColor } | null;
+  tags: string[];
+  favorite: boolean;
+  source: "upload" | "recording";
+  /** Browser-measured duration; the server refines it from headers where possible. */
+  duration: number | null;
+  fileName: string;
+}
+
+/** Save-form fields for a new external audio link (validated server-side). */
+export interface AudioSpaceLinkInput {
+  title: string;
+  description: string;
+  folderId: string | null;
+  newFolder: { name: string; color: VaultFolderColor } | null;
+  tags: string[];
+  favorite: boolean;
+  source: "link";
+  url: string;
+}
+
+/** Partial patch for renaming, retagging, moving or favouriting an item. */
+export interface AudioSpacePatch {
+  title?: string;
+  description?: string;
+  folderId?: string | null;
+  tags?: string[];
+  favorite?: boolean;
 }

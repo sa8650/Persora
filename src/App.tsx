@@ -102,6 +102,7 @@ const TRASH_SPACE_ALIASES: Record<string, TrashSpace> = {
   timeline: "timeline",
   photo_studio: "photo-studio",
   pdf_studio: "pdf-studio",
+  audio_space: "audio-space",
   "persora-table": "persora-table",
   persora_table: "persora-table",
   "persora-docs": "persora-docs",

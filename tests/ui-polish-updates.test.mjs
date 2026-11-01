@@ -250,19 +250,43 @@ test("Template and starter cards share one geometry and the canonical gradients"
   assert.match(read("src/components/docs/DocsHome.tsx"), /gradient=\{templateGradient\(index\)\}/);
 });
 
-test("Sidebar and topbar headers are 60px with no seam between brand and nav", () => {
+test("Sidebar header is 60px and the topbar is now a floating dynamic island", () => {
   const systemCss = read("src/design-system/system.css");
   const refinements = read("src/console-refinements.css");
   const theme = read("src/persora-theme.css");
 
   // Only the app shell headers are 60px (the admin console keeps its own scale).
   assert.doesNotMatch(theme, /\.sidebar-header \{[^}]*height: 74px/);
-  assert.doesNotMatch(theme, /\.workspace-topbar \{[^}]*height: 74px/);
   assert.doesNotMatch(refinements, /height: 70px/);
   assert.match(systemCss, /\.sidebar-header \{[^}]*height: 60px/);
   assert.match(systemCss, /\.sidebar-header \{[^}]*border-bottom: 0/);
-  assert.match(systemCss, /\.workspace-topbar \{[^}]*height: 60px/);
   assert.doesNotMatch(systemCss, /border-bottom: 1px solid var\(--ds-divider\);\s*backdrop-filter: none/);
+
+  // No traditional navigation bar: the workspace has no topbar at all, and the
+  // island floats above the content column without reserving layout space.
+  const chrome = read("src/design-system/system.css") + read("src/persora-theme.css") + refinements + read("src/workspace.css");
+  assert.doesNotMatch(chrome, /\.workspace-topbar/);
+  assert.doesNotMatch(read("src/components/Workspace.tsx"), /workspace-topbar/);
+  const islandCss = read("src/components/dynamic-island/dynamic-island.css");
+  assert.match(islandCss, /\.dynamic-island-anchor \{[^}]*position: absolute[^}]*top: 8px/);
+  assert.match(islandCss, /\.island-shell \{[^}]*border-radius: 999px/);
+
+  // Page tools live in a full-width 50px bar beneath the island, portaled into
+  // the workspace shell instead of sitting inside the scrolling page content.
+  const toolbarCss = read("src/components/page-toolbar/page-toolbar.css");
+  assert.match(toolbarCss, /\.page-toolbar-host \{[^}]*height: 50px/);
+  assert.match(toolbarCss, /\.page-toolbar-host \{[^}]*border-bottom: 1px solid/);
+  // The bar starts where the floating island ends — no dead band above it.
+  assert.match(systemCss, /\.workspace-main > \.page-toolbar-host \{[^}]*margin-top: 48px/);
+  const toolbarSrc = read("src/components/page-toolbar/PageToolbar.tsx");
+  assert.match(toolbarSrc, /export function PageToolbarHost/);
+  assert.match(toolbarSrc, /createPortal/);
+  for (const page of ["src/components/habits/HabitsView.tsx", "src/components/loans/LoansView.tsx", "src/components/calendar/CalendarView.tsx"]) {
+    assert.match(read(page), /<PageToolbar\b/, `${page} renders its tools in the shared toolbar`);
+  }
+  // The bar is hosted by the shell, not nested in the padded content column.
+  assert.match(read("src/components/Workspace.tsx"), /<PageToolbarHost>/);
+  assert.match(theme, /\.workspace-content \{[^}]*padding: 22px/);
 });
 
 test("Shelf cards are 224 × 157 with 5 columns open / 6 collapsed", () => {

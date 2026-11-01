@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, CheckCircle2, ChevronDown, ChevronRight, FileText, HandCoins, History, MoreHorizontal, Pencil, Plus, RotateCcw, Trash2, Undo2 } from "lucide-react";
 import "./loans.css";
+import PageToolbar from "../page-toolbar/PageToolbar";
 import type { AppUser, VaultItem } from "../../types";
 import { PagesApiError, isPagesApiConfigured } from "../../lib/cloud";
 import {
@@ -220,10 +221,14 @@ export default function LoansView({ user, items, notify, onOpenItem, focusReques
   if (selectedId) {
     return <div className="ln-view">
       <p className="ln-visually-hidden" role="status" aria-live="polite">{liveMessage}</p>
-      <div className="ln-toolbar">
-        <button type="button" className="ln-button ln-button-small" onClick={() => openLoan(null)}><ArrowLeft size={15}/> All loans</button>
-        {detailState === "loading" && detail && <Spinner className="ln-spinner size-4 text-primary" aria-label="Refreshing loan"/>}
-      </div>
+      <PageToolbar
+        label="Loan details tools"
+        palette="loans"
+        start={<button type="button" className="ln-button ln-button-small" onClick={() => openLoan(null)}><ArrowLeft size={15}/> All loans</button>}
+        end={detailState === "loading" && detail
+          ? <Spinner className="ln-spinner size-4 text-primary" aria-label="Refreshing loan"/>
+          : undefined}
+      />
       {detailState === "error" && <div className="ln-banner" role="alert">
         <span>{detailError}</span>
         <div className="ln-banner-actions">
@@ -272,19 +277,25 @@ export default function LoansView({ user, items, notify, onOpenItem, focusReques
   // ---- overview -----------------------------------------------------------------
   return <div className="ln-view">
     <p className="ln-visually-hidden" role="status" aria-live="polite">{liveMessage}</p>
-    <header className="ln-toolbar">
-      <div className="ln-chips" role="group" aria-label="Filter loans">
-        {FILTERS.map((entry) => <button key={entry.id} type="button" className={filter === entry.id ? "is-active" : ""} aria-pressed={filter === entry.id} onClick={() => setFilter(entry.id)}>
-          {entry.label}{payload && <Badge variant={filter === entry.id ? "invert" : "secondary"} size="xs" radius="full" className="ln-chip-count">{counts[entry.id]}</Badge>}</button>)}
-      </div>
-      <div className="ln-tools">
-        {loadState === "loading" && payload && <Spinner className="ln-spinner size-4 text-primary" aria-label="Refreshing loans"/>}
-        <button type="button" className="ln-primary-button" onClick={() => { setDialogError(null); setEditor({ loan: null, createId: newId() }); }}
-          disabled={initialLoading || (loadState === "error" && !payload) || (payload ? payload.loans.length >= payload.limits.loans : false)}>
-          <Plus size={16}/><span>New Loan</span>
-        </button>
-      </div>
-    </header>
+    <PageToolbar
+      label="Loan tracker tools"
+      palette="loans"
+      start={(
+        <div className="ln-chips" role="group" aria-label="Filter loans">
+          {FILTERS.map((entry) => <button key={entry.id} type="button" className={filter === entry.id ? "is-active" : ""} aria-pressed={filter === entry.id} onClick={() => setFilter(entry.id)}>
+            {entry.label}{payload && <Badge variant={filter === entry.id ? "invert" : "secondary"} size="xs" radius="full" className="ln-chip-count">{counts[entry.id]}</Badge>}</button>)}
+        </div>
+      )}
+      end={(
+        <>
+          {loadState === "loading" && payload && <Spinner className="ln-spinner size-4 text-primary" aria-label="Refreshing loans"/>}
+          <button type="button" className="ln-primary-button" onClick={() => { setDialogError(null); setEditor({ loan: null, createId: newId() }); }}
+            disabled={initialLoading || (loadState === "error" && !payload) || (payload ? payload.loans.length >= payload.limits.loans : false)}>
+            <Plus size={16}/><span>New Loan</span>
+          </button>
+        </>
+      )}
+    />
 
     {loadState === "error" && <div className="ln-banner" role="alert">
       <span>{loadError}</span>

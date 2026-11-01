@@ -1,0 +1,425 @@
+/* The island floats on its own: a zero-size anchor that sits at the top centre
+   of its column. It reserves no layout space, so the page content and the page
+   toolbar sit directly beneath it. */
+.dynamic-island-anchor {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  width: 0;
+  height: 0;
+  z-index: 70;
+  pointer-events: none;
+  touch-action: none;
+}
+
+/* The grabbable strip: the pill plus a little slack either side, for dragging
+   the island along the top. */
+.dynamic-island-anchor::before {
+  content: "";
+  position: absolute;
+  top: -8px;
+  left: -70px;
+  width: 140px;
+  /* Stops level with the pill, so the page toolbar below stays clickable. */
+  height: 46px;
+  pointer-events: auto;
+  cursor: grab;
+}
+
+.dynamic-island-anchor.is-dragging::before {
+  cursor: grabbing;
+}
+
+.island-shell {
+  position: absolute;
+  top: 0;
+  left: 0;
+  cursor: grab;
+  touch-action: manipulation;
+  display: block;
+  /* No percentage max-width: the anchor is zero-width, so a percentage cap
+     would collapse the shell. The panel caps its own width instead. */
+  max-width: none;
+  overflow: hidden;
+  border: 1px solid var(--ds-border-strong);
+  border-radius: 999px;
+  background: var(--ds-overlay-bg);
+  box-shadow: var(--ds-shadow-popover);
+  pointer-events: auto;
+}
+
+/* The collapsed pill never paints a background of its own. */
+.island-shell.is-settled:not(.is-open) {
+  box-shadow: var(--ds-shadow-card);
+}
+
+/* Both faces are centred in the shell and free to be wider than the frame
+   mid-morph; the shell's overflow does the clipping. */
+.island-panel,
+.island-face {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max-content;
+  transform: translate(-50%, -50%);
+}
+
+/* ---- Collapsed face ------------------------------------------------------ */
+
+.island-face {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 38px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ds-text);
+  cursor: pointer;
+  transition: background-color 140ms ease;
+}
+
+.island-face:hover {
+  background: var(--ds-card-hover-bg);
+}
+
+.island-face:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 3px var(--ds-focus-ring);
+}
+
+.island-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+}
+
+.island-mark svg {
+  width: 22px;
+  height: 22px;
+}
+
+.island-face-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--ds-primary);
+}
+
+/* ---- Expanded panel ------------------------------------------------------ */
+
+.island-panel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(-50%, -50%) scale(0.98);
+  transition: opacity 140ms ease, transform 140ms ease, visibility 0s linear 140ms;
+  white-space: nowrap;
+}
+
+.island-panel[data-open="true"] {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, -50%);
+  transition: opacity 160ms ease 60ms, transform 160ms ease 60ms;
+}
+
+.island-shell.is-open .island-face {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 100ms ease, visibility 0s linear 100ms;
+}
+
+/* ---- Controls ------------------------------------------------------------ */
+
+.island-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.island-divider {
+  width: 1px;
+  height: 20px;
+  margin-inline: 3px;
+  background: var(--ds-divider);
+}
+
+.island-control {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ds-text-muted);
+  cursor: pointer;
+  transition: background-color 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+
+.island-control:hover {
+  background: var(--ds-card-hover-bg);
+  color: var(--ds-text);
+}
+
+.island-control:focus-visible {
+  outline: 0;
+  color: var(--ds-text);
+  box-shadow: 0 0 0 3px var(--ds-focus-ring);
+}
+
+.island-control.is-active {
+  background: var(--ds-primary-soft);
+  color: var(--ds-sidebar-active-text);
+}
+
+.island-control[hidden] {
+  display: none;
+}
+
+/* The island sizes its own controls; keep the shared triggers neutral here. */
+.island-panel .global-search-trigger,
+.island-panel .icon-button,
+.island-panel .notification-button,
+.island-panel .ds-theme-toggle {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ds-text-muted);
+}
+
+.island-panel .global-search-trigger:hover,
+.island-panel .icon-button:hover,
+.island-panel .notification-button:hover,
+.island-panel .ds-theme-toggle:hover {
+  background: var(--ds-card-hover-bg);
+  color: var(--ds-text);
+  box-shadow: none;
+}
+
+.island-panel .notification-button.button-pressed {
+  background: var(--ds-primary-soft);
+  color: var(--ds-sidebar-active-text);
+}
+
+/* Unread indicator: a small dot at the bell's corner — not the 17px count pill
+   the page header used, which sat as large as the icon itself. The exact count
+   is announced in the bell's accessible name. */
+.island-panel .notification-dot {
+  top: 3px;
+  right: 3px;
+  display: block;
+  width: 7px;
+  height: 7px;
+  min-width: 0;
+  padding: 0;
+  border: 1.5px solid var(--ds-overlay-bg);
+  border-radius: 50%;
+  box-sizing: border-box;
+  background: var(--ds-danger);
+  color: transparent;
+  font-size: 0;
+  line-height: 0;
+}
+
+.island-panel .app-launcher-button {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+}
+
+/* Sections is a mobile affordance only: it first appears when the
+   sidebar can be opened here (the shell rail collapses at 760px). */
+.island-sections {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .island-control.island-sections {
+    display: inline-grid;
+  }
+}
+
+.island-avatar {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 50%;
+  background: var(--ds-primary-soft);
+  color: var(--ds-sidebar-active-text);
+  font-size: 11px;
+  font-weight: 680;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.island-avatar:hover,
+.island-avatar.is-active {
+  box-shadow: 0 0 0 2px var(--ds-primary-border);
+}
+
+.island-avatar:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 3px var(--ds-focus-ring);
+}
+
+/* ---- Popovers hosted outside the morphing shell -------------------------- */
+
+/* The popover layer tracks the pill itself (same drag offset, same box), so
+   menus always hang beneath the island, even after a drag. */
+.island-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  /* A zero-width flex row centres popovers on the island, wherever it has been
+     dragged to. */
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.island-layer-anchor {
+  position: relative;
+  flex: 0 0 auto;
+  pointer-events: none;
+}
+
+.island-layer-anchor > * {
+  pointer-events: auto;
+}
+
+
+.dynamic-island-anchor .notification-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  /* Centred on the island so a dragged pill keeps its popover attached. */
+  left: 50%;
+  translate: -50% 0;
+  z-index: 75;
+}
+
+/* ---- Profile menu -------------------------------------------------------- */
+
+.island-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 75;
+  width: min(248px, calc(100vw - 24px));
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--ds-border-strong);
+  border-radius: var(--ds-radius-lg);
+  background: var(--ds-overlay-bg);
+  box-shadow: var(--ds-shadow-popover);
+}
+
+.island-menu-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 8px 10px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--ds-divider);
+  min-width: 0;
+}
+
+.island-menu-identity-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.island-menu-identity-copy b {
+  color: var(--ds-text);
+  font-size: 12.5px;
+  font-weight: 640;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.island-menu-identity-copy small {
+  color: var(--ds-text-muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.island-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 34px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: var(--ds-radius-md);
+  background: transparent;
+  color: var(--ds-text);
+  font-family: var(--ds-font-sans);
+  font-size: 12.5px;
+  font-weight: 560;
+  text-align: left;
+  cursor: pointer;
+}
+
+.island-menu-item:hover,
+.island-menu-item:focus-visible {
+  outline: 0;
+  background: var(--ds-card-hover-bg);
+}
+
+.island-menu-item.is-danger {
+  color: var(--ds-danger);
+}
+
+.island-menu-item.is-danger:hover,
+.island-menu-item.is-danger:focus-visible {
+  background: var(--ds-danger-soft);
+}
+
+@media (max-width: 560px) {
+  .dynamic-island-anchor .notification-popover {
+    width: min(372px, calc(100vw - 24px));
+    max-width: calc(100vw - 24px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .island-panel,
+  .island-panel[data-open="true"],
+  .island-shell.is-open .island-face,
+  .island-face,
+  .island-control {
+    transition-duration: 1ms;
+    transition-delay: 0s;
+  }
+}
+
+/* The note editor owns the whole surface, so the island steps aside there. */
+.workspace-main:has(.note-page) .dynamic-island-anchor {
+  display: none;
+}

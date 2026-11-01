@@ -113,10 +113,10 @@ try {
       prev: element.previousElementSibling?.className || '',
       parent: element.parentElement?.className || '',
     }));
-    assert.match(placement.next, /topbar-avatar/, 'launcher sits immediately before the avatar');
+    assert.match(placement.next, /island-avatar/, 'launcher sits immediately before the avatar');
     assert.match(placement.prev, /notification-wrap/, 'after the notifications button');
-    assert.match(placement.parent, /topbar-actions/);
-    const [b, a] = [await button.boundingBox(), await page.locator('.topbar-avatar').boundingBox()];
+    assert.match(placement.parent, /island-actions/);
+    const [b, a] = [await button.boundingBox(), await page.locator('.island-avatar').boundingBox()];
     assert.ok(Math.abs((b.y + b.height / 2) - (a.y + a.height / 2)) <= 2, 'vertically aligned with the avatar');
     assert.ok(a.x - (b.x + b.width) <= 16 && a.x > b.x, 'directly beside the avatar');
     assert.equal(await button.getAttribute('aria-expanded'), 'false');
@@ -141,7 +141,7 @@ try {
     assert.equal(await page.locator('.app-launcher-panel img').count(), 0, 'no raster icons');
     // Anchored beneath the button, right-aligned with the top-bar actions, inside the viewport.
     const panel = await page.locator('.app-launcher-panel').boundingBox();
-    const actions = await page.locator('.workspace-topbar .topbar-actions').boundingBox();
+    const actions = await page.locator('.dynamic-island-anchor .island-actions').boundingBox();
     assert.ok(panel.y >= b.y + b.height && panel.y - (b.y + b.height) <= 16, 'drawer opens just beneath the button');
     assert.ok(Math.abs(panel.x + panel.width - (actions.x + actions.width)) <= 2, 'right-aligned with the top bar');
     assert.ok(panel.y + panel.height <= 860, 'fits the viewport');
@@ -188,7 +188,7 @@ try {
     assert.equal(await drawer(page).count(), 1, 'clicks and scrolling inside the drawer keep it open');
     ok('clicks inside the drawer never dismiss it');
 
-    await page.locator('.breadcrumb-title h1').click(); // a neutral spot on the page
+    await page.locator('.workspace-content').click({ position: { x: 12, y: 300 } }); // a neutral spot on the page
     await closedDrawer(page);
     ok('outside click closes it');
 
@@ -306,7 +306,7 @@ try {
 
     step('Phone layout');
     const button = await launcher(phone).boundingBox();
-    const avatar = await phone.locator('.topbar-avatar').boundingBox();
+    const avatar = await phone.locator('.island-avatar').boundingBox();
     assert.ok(Math.abs((button.y + button.height / 2) - (avatar.y + avatar.height / 2)) <= 2 && avatar.x > button.x && avatar.x - (button.x + button.width) <= 12, 'launcher stays beside the avatar');
     const panel = await phone.locator('.app-launcher-panel').boundingBox();
     assert.ok(panel.x >= 7 && panel.x + panel.width <= 390 - 7, `drawer inside the viewport (${Math.round(panel.x)}…${Math.round(panel.x + panel.width)})`);
@@ -333,7 +333,7 @@ try {
     const narrow = await phone.locator('.app-launcher-panel').boundingBox();
     assert.ok(narrow.x >= 7 && narrow.x + narrow.width <= 313, '320px: inside the viewport');
     assert.ok(await phone.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), '320px: no horizontal overflow');
-    assert.ok(await launcher(phone).isVisible() && await phone.locator('.topbar-avatar').isVisible(), '320px: launcher and avatar visible');
+    assert.ok(await launcher(phone).isVisible() && await phone.locator('.island-avatar').isVisible(), '320px: launcher and avatar visible');
     await snap(phone, '09-phone-320');
     ok('320px wide: fits, no overflow');
     await phoneContext.close();

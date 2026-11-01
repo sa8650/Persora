@@ -104,7 +104,8 @@ test("Sidebar and page canvas surfaces are separated in both Light and Dark them
   assert.notEqual(darkCanvas, darkCard, "Dark canvas and card must have distinct surface tokens");
 
   assert.match(systemCss, /\.workspace-sidebar\s*\{[\s\S]*?border-right:\s*1px solid var\(--ds-divider\)/);
-  assert.match(systemCss, /\.workspace-topbar\s*\{[\s\S]*?border-bottom:\s*1px solid var\(--ds-divider\)/);
+  // The workspace topbar is gone; the dynamic island floats above the content.
+  assert.match(systemCss, /\.dynamic-island-anchor .island-shell\s*\{[\s\S]*?border-color:\s*var\(--ds-border-strong\)/);
 });
 
 test("MagicCard uses Persora theme context and card surface tokens instead of canvas background", () => {

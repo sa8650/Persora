@@ -406,66 +406,25 @@ textarea {
   scrollbar-color: var(--ds-border-strong) transparent;
 }
 
-.workspace-topbar {
-  flex: 0 0 60px;
-  height: 60px;
-  min-height: 60px;
-  background: var(--ds-topbar-bg);
-  border-bottom: 1px solid var(--ds-divider);
-  backdrop-filter: blur(10px);
+/* The island floats over the workspace column: it is absolutely positioned, so
+   it reserves no layout space. The page toolbar starts exactly where the island
+   ends, and stays full width. `.workspace-main` is its containing block. */
+.workspace-main > .page-toolbar-host {
+  margin-top: 48px;
 }
 
-/* Compact topbar internals scale with the 60px bar. */
-.workspace-topbar .breadcrumb-title h1 {
-  font-size: 17px;
-  line-height: 1.2;
+
+.dynamic-island-anchor .island-shell {
+  background: var(--ds-overlay-bg);
+  border-color: var(--ds-border-strong);
 }
 
-.workspace-topbar .breadcrumb-overline {
-  font-size: 9px;
-}
-
-.workspace-topbar .workspace-add-document {
-  min-height: 34px;
-  padding: 0 12px;
-  font-size: 12px;
-}
-
-.workspace-topbar .global-search-trigger,
-.workspace-topbar .icon-button,
-.workspace-topbar .notification-button,
-.workspace-topbar .ds-theme-toggle {
-  width: 34px;
-  min-width: 34px;
-  height: 34px;
-}
-
-.workspace-topbar .workspace-title-stack {
-  font-size: 12.5px;
-}
-
-@media (max-width: 820px) {
-  .workspace-topbar {
-    flex: 0 0 auto;
-    height: auto;
-    min-height: 60px;
-    flex-wrap: wrap;
-    padding-block: 8px;
-  }
-}
-
-.breadcrumb-overline {
-  color: var(--ds-text-muted);
-}
-
-.breadcrumb-title h1 {
+.dynamic-island-anchor .island-face {
   color: var(--ds-text);
 }
 
-.live-pill {
+.dynamic-island-anchor .island-mark svg {
   color: var(--ds-sidebar-active-text);
-  background: var(--ds-primary-soft);
-  border-color: var(--ds-primary-border);
 }
 
 .topbar-actions {
@@ -1969,11 +1928,6 @@ textarea {
   }
 }
 
-.workspace-topbar .workspace-title-stack {
-  flex-shrink: 0;
-  white-space: nowrap;
-}
-
 /* Full-page Tasks & Notes editor: the page owns the whole content area, so the
    workspace topbar steps aside and the content padding is removed. The note page
    has no footer of its own — the workspace footer keeps its place underneath
@@ -1982,10 +1936,6 @@ textarea {
   height: 100dvh;
   max-height: 100dvh;
   overflow: hidden;
-}
-
-.workspace-main:has(.note-page) > .workspace-topbar {
-  display: none;
 }
 
 .workspace-main:has(.note-page) > .workspace-footer {

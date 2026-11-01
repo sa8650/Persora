@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, ListFilter, PanelLeft, Plus, Repeat, Search, X } from "lucide-react";
 import "./calendar.css";
+import PageToolbar from "../page-toolbar/PageToolbar";
 import type { AppUser } from "../../types";
 import { PagesApiError, isPagesApiConfigured } from "../../lib/cloud";
 import { Spinner } from "@/components/ui/spinner";
@@ -505,42 +506,50 @@ export default function CalendarView({ user, notify, focusRequest }: Props) {
   const moveDisabled = disabled ? undefined : requestMove;
 
   return <div className="cal-view">
-    <header className="cal-toolbar">
-      <div className="cal-toolbar-nav">
-        {wide && <button type="button" className={`cal-icon-button ${sidebarOpen ? "is-active" : ""}`} onClick={toggleSidebar} aria-label={sidebarOpen ? "Hide mini calendar" : "Show mini calendar"} aria-pressed={sidebarOpen} title="Mini calendar"><PanelLeft size={17}/></button>}
-        <button type="button" className="cal-button" onClick={goToday} title="Today (T)" aria-label={`Today, ${formatDay(today, { weekday: "long", month: "long", day: "numeric" })}`}>Today</button>
-        <div className="cal-stepper">
-          <button type="button" className="cal-icon-button" onClick={() => step(-1)} aria-label={`Previous ${viewLabel}`} title={`Previous ${viewLabel} (←)`}><ChevronLeft size={18}/></button>
-          <button type="button" className="cal-icon-button" onClick={() => step(1)} aria-label={`Next ${viewLabel}`} title={`Next ${viewLabel} (→)`}><ChevronRight size={18}/></button>
+    <PageToolbar
+      label="Calendar tools"
+      palette="calendar"
+      start={(
+        <div className="cal-toolbar-nav">
+          {wide && <button type="button" className={`cal-icon-button ${sidebarOpen ? "is-active" : ""}`} onClick={toggleSidebar} aria-label={sidebarOpen ? "Hide mini calendar" : "Show mini calendar"} title={sidebarOpen ? "Hide mini calendar" : "Show mini calendar"}><PanelLeft size={17}/></button>}
+          <button type="button" className="cal-button" onClick={goToday} title="Today (T)" aria-label={`Today, ${formatDay(today, { weekday: "long", month: "long", day: "numeric" })}`}>Today</button>
+          <div className="cal-stepper">
+            <button type="button" className="cal-icon-button" onClick={() => step(-1)} aria-label={`Previous ${viewLabel}`} title={`Previous ${viewLabel} (←)`}><ChevronLeft size={18}/></button>
+            <button type="button" className="cal-icon-button" onClick={() => step(1)} aria-label={`Next ${viewLabel}`} title={`Next ${viewLabel} (→)`}><ChevronRight size={18}/></button>
+          </div>
+          <button
+            ref={headingRef} type="button" className="cal-range-heading"
+            onClick={() => { if (!(wide && sidebarOpen)) setDatePicker(rectOf(headingRef.current)); }}
+            aria-haspopup={wide && sidebarOpen ? undefined : "dialog"}
+            aria-label={`${rangeHeading(mode, anchor)}${wide && sidebarOpen ? "" : ". Choose a date"}`}
+          >
+            <h2 aria-live="polite">{rangeHeading(mode, anchor)}</h2>
+            {!(wide && sidebarOpen) && <ChevronDown size={16} aria-hidden="true"/>}
+          </button>
+          {loadState === "loading" && <Spinner className="cal-spinner size-3.5 text-primary" aria-label="Loading events"/>}
         </div>
-        <button
-          ref={headingRef} type="button" className="cal-range-heading"
-          onClick={() => { if (!(wide && sidebarOpen)) setDatePicker(rectOf(headingRef.current)); }}
-          aria-haspopup={wide && sidebarOpen ? undefined : "dialog"}
-          aria-label={`${rangeHeading(mode, anchor)}${wide && sidebarOpen ? "" : ". Choose a date"}`}
-        >
-          <h2 aria-live="polite">{rangeHeading(mode, anchor)}</h2>
-          {!(wide && sidebarOpen) && <ChevronDown size={16} aria-hidden="true"/>}
-        </button>
-        {loadState === "loading" && <Spinner className="cal-spinner size-3.5 text-primary" aria-label="Loading events"/>}
-      </div>
-      <div className="cal-toolbar-tools">
-        <label className="cal-search">
-          <Search size={15} aria-hidden="true"/>
-          <input ref={searchRef} type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search events" aria-label="Search events by title" maxLength={100}
-            onKeyDown={(event) => { if (event.key === "Escape") { setQuery(""); (event.target as HTMLInputElement).blur(); } }}/>
-          {query && <button type="button" className="cal-search-clear" onClick={() => setQuery("")} aria-label="Clear search"><X size={14}/></button>}
-        </label>
-        <div className="cal-views" role="group" aria-label="Calendar view">
-          {VIEW_MODES.map((entry) => <button type="button" key={entry.id} className={mode === entry.id ? "is-active" : ""} aria-pressed={mode === entry.id} onClick={() => changeMode(entry.id)} title={`${entry.label} (${entry.key.toUpperCase()})`}>{entry.label}</button>)}
-        </div>
-        <FilterMenu filters={filters} onChange={changeFilters} sync={filterSync}/>
+      )}
+      children={(
+        <>
+          <label className="cal-search">
+            <Search size={15} aria-hidden="true"/>
+            <input ref={searchRef} type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search events" aria-label="Search events by title" maxLength={100}
+              onKeyDown={(event) => { if (event.key === "Escape") { setQuery(""); (event.target as HTMLInputElement).blur(); } }}/>
+            {query && <button type="button" className="cal-search-clear" onClick={() => setQuery("")} aria-label="Clear search"><X size={14}/></button>}
+          </label>
+          <div className="cal-views" role="group" aria-label="Calendar view">
+            {VIEW_MODES.map((entry) => <button type="button" key={entry.id} className={mode === entry.id ? "is-active" : ""} aria-pressed={mode === entry.id} onClick={() => changeMode(entry.id)}>{entry.label}</button>)}
+          </div>
+          <FilterMenu filters={filters} onChange={changeFilters} sync={filterSync}/>
+        </>
+      )}
+      end={(
         <div className="cal-split">
           <button type="button" className="cal-primary-button cal-split-main" onClick={openNewEvent} title="New event (C)"><Plus size={16}/><span>New event</span></button>
           <CreateMenu onQuickAdd={(text) => openQuickAdd(text)} onCreate={openNewItem}/>
         </div>
-      </div>
-    </header>
+      )}
+    />
 
     {hiddenFilters > 0 && <div className="cal-filter-strip" role="status">
       <ListFilter size={13} aria-hidden="true"/>
