@@ -407,12 +407,11 @@ textarea {
 }
 
 /* The island floats over the workspace column: it is absolutely positioned, so
-   it reserves no layout space. The page toolbar starts exactly where the island
-   ends, and stays full width. `.workspace-main` is its containing block. */
+   it reserves no layout space. The page toolbar sits flush at the very top of
+   `.workspace-main` with zero top gap while the island floats cleanly over it. */
 .workspace-main > .page-toolbar-host {
-  margin-top: 48px;
+  margin-top: 0;
 }
-
 
 .dynamic-island-anchor .island-shell {
   background: var(--ds-overlay-bg);
@@ -425,32 +424,6 @@ textarea {
 
 .dynamic-island-anchor .island-mark svg {
   color: var(--ds-sidebar-active-text);
-}
-
-.topbar-actions {
-  gap: 9px;
-}
-
-.workspace-add-document {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 38px;
-  padding: 0 14px;
-  border-radius: 999px;
-  border: 1px solid var(--ds-primary-border);
-  background: var(--ds-primary-soft);
-  color: var(--ds-sidebar-active-text);
-  font-size: 12.5px;
-  font-weight: 630;
-  cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
-}
-
-.workspace-add-document:hover {
-  background: var(--ds-primary);
-  border-color: var(--ds-primary);
-  color: var(--ds-primary-fg);
 }
 
 .icon-button,
@@ -1766,7 +1739,7 @@ textarea {
 .modal-backdrop.ds-delete-modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 220;
+  z-index: 1500;
   display: grid;
   place-items: center;
   padding: 20px;
@@ -2125,5 +2098,299 @@ textarea {
   background: var(--ds-rose-soft);
   border-color: var(--ds-rose-border);
 }
+
+/* ==========================================================================
+   Shared PersoraDatePicker & PersoraSegmentedControl Primitives
+   ========================================================================== */
+
+.ds-date-picker-shell {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid var(--ds-input-border);
+  border-radius: var(--ds-radius-sm);
+  background: var(--ds-input-bg);
+  color: var(--ds-text);
+  font-family: var(--ds-font-sans);
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.ds-date-picker-shell:focus-within {
+  border-color: var(--ds-input-border-focus);
+  box-shadow: 0 0 0 3px var(--ds-focus-ring);
+}
+
+.ds-date-picker-shell.is-invalid {
+  border-color: var(--ds-rose);
+}
+
+.ds-date-picker-shell.is-disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.ds-date-picker-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 34px;
+  padding: 0 8px 0 10px;
+  border: 0 !important;
+  outline: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  color: var(--ds-text);
+  font-family: var(--ds-font-sans);
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.ds-date-picker-input::-webkit-calendar-picker-indicator {
+  opacity: 0;
+  width: 0;
+  margin: 0;
+  padding: 0;
+  pointer-events: none;
+}
+
+.ds-date-picker-trigger {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  margin-right: 2px;
+  border: 0;
+  border-radius: var(--ds-radius-xs);
+  background: transparent;
+  color: var(--ds-text-muted);
+  cursor: pointer;
+}
+
+.ds-date-picker-trigger:hover:not(:disabled) {
+  background: var(--ds-subtle-bg);
+  color: var(--ds-primary);
+}
+
+.ds-date-picker-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 1390;
+  background: var(--ds-scrim);
+}
+
+.ds-date-picker-popover {
+  position: fixed;
+  z-index: 1400;
+  width: 268px;
+  padding: 12px;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-md);
+  background: var(--ds-overlay-bg);
+  box-shadow: var(--ds-shadow-popover);
+  font-family: var(--ds-font-sans);
+  color: var(--ds-text);
+}
+
+.ds-date-picker-popover.is-sheet {
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  top: auto;
+  width: auto;
+  max-width: 360px;
+  margin: 0 auto;
+}
+
+.ds-date-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.ds-date-picker-month {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ds-text);
+}
+
+.ds-date-picker-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.ds-date-picker-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-xs);
+  background: var(--ds-card-bg);
+  color: var(--ds-text-secondary);
+  cursor: pointer;
+}
+
+.ds-date-picker-nav-btn:hover {
+  border-color: var(--ds-primary-border);
+  background: var(--ds-primary-soft);
+  color: var(--ds-primary);
+}
+
+.ds-date-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.ds-date-picker-weekday {
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ds-text-soft);
+}
+
+.ds-date-picker-day {
+  height: 30px;
+  border: 0;
+  border-radius: var(--ds-radius-xs);
+  background: transparent;
+  color: var(--ds-text);
+  font-family: var(--ds-font-sans);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.ds-date-picker-day:hover:not(:disabled) {
+  background: var(--ds-subtle-bg);
+}
+
+.ds-date-picker-day.is-outside {
+  color: var(--ds-text-soft);
+  opacity: 0.55;
+}
+
+.ds-date-picker-day.is-in-range {
+  background: var(--ds-primary-soft);
+  color: var(--ds-sidebar-active-text);
+}
+
+.ds-date-picker-day.is-today {
+  box-shadow: inset 0 0 0 1px var(--ds-primary-border);
+  font-weight: 600;
+}
+
+.ds-date-picker-day.is-selected {
+  background: var(--ds-primary) !important;
+  color: var(--ds-primary-fg) !important;
+  font-weight: 600;
+}
+
+.ds-date-picker-day:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.ds-date-picker-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--ds-border);
+}
+
+.ds-date-picker-foot-btn {
+  border: 0;
+  background: transparent;
+  padding: 2px 6px;
+  border-radius: var(--ds-radius-xs);
+  font-family: var(--ds-font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ds-primary);
+  cursor: pointer;
+}
+
+.ds-date-picker-foot-btn.is-muted {
+  color: var(--ds-text-muted);
+}
+
+.ds-date-picker-foot-btn:hover:not(:disabled) {
+  background: var(--ds-subtle-bg);
+}
+
+.ds-segmented {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-sm);
+  background: var(--ds-subtle-bg);
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.ds-segmented-sm {
+  padding: 2px;
+}
+
+.ds-segmented-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--ds-radius-xs);
+  background: transparent;
+  color: var(--ds-text-muted);
+  font-family: var(--ds-font-sans);
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.14s ease, color 0.14s ease, border-color 0.14s ease;
+}
+
+.ds-segmented-sm .ds-segmented-btn {
+  min-height: 24px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.ds-segmented-btn:hover:not(:disabled):not(.is-active) {
+  color: var(--ds-text);
+}
+
+.ds-segmented-btn.is-active {
+  background: var(--ds-card-bg);
+  border-color: var(--ds-border);
+  box-shadow: var(--ds-shadow-xs);
+  color: var(--ds-text);
+  font-weight: 600;
+}
+
+.ds-segmented-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ds-segmented-icon {
+  display: inline-flex;
+  align-items: center;
+}
+
 
 

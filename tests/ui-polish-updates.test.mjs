@@ -250,7 +250,7 @@ test("Template and starter cards share one geometry and the canonical gradients"
   assert.match(read("src/components/docs/DocsHome.tsx"), /gradient=\{templateGradient\(index\)\}/);
 });
 
-test("Sidebar header is 60px and the topbar is now a floating dynamic island", () => {
+test("Sidebar header is 60px, page toolbar sits flush at top: 0, and Dynamic Island floats smoothly over it", () => {
   const systemCss = read("src/design-system/system.css");
   const refinements = read("src/console-refinements.css");
   const theme = read("src/persora-theme.css");
@@ -266,24 +266,34 @@ test("Sidebar header is 60px and the topbar is now a floating dynamic island", (
   // island floats above the content column without reserving layout space.
   const chrome = read("src/design-system/system.css") + read("src/persora-theme.css") + refinements + read("src/workspace.css");
   assert.doesNotMatch(chrome, /\.workspace-topbar/);
+  assert.doesNotMatch(chrome, /\.workspace-add-document/);
   assert.doesNotMatch(read("src/components/Workspace.tsx"), /workspace-topbar/);
-  const islandCss = read("src/components/dynamic-island/dynamic-island.css");
-  assert.match(islandCss, /\.dynamic-island-anchor \{[^}]*position: absolute[^}]*top: 8px/);
-  assert.match(islandCss, /\.island-shell \{[^}]*border-radius: 999px/);
 
-  // Page tools live in a full-width 50px bar beneath the island, portaled into
-  // the workspace shell instead of sitting inside the scrolling page content.
+  const islandCss = read("src/components/dynamic-island/dynamic-island.css");
+  const islandTsx = read("src/components/dynamic-island/DynamicIsland.tsx");
+  assert.match(islandCss, /\.dynamic-island-anchor \{[^}]*position: absolute[^}]*top: 6px/);
+  assert.match(islandCss, /\.dynamic-island-anchor \{[^}]*pointer-events: none/);
+  assert.doesNotMatch(islandCss, /\.dynamic-island-anchor::before/, "no invisible grab rectangle blocking toolbar clicks");
+  assert.match(islandCss, /\.dynamic-island-track \{[^}]*align-items: center/);
+  assert.match(islandCss, /\.island-shell \{[^}]*border-radius: 999px/);
+  assert.doesNotMatch(islandTsx, /marginLeft:\s*-Math\.round/, "centering uses symmetric flex track without sideways snap");
+
+  // Page tools live in a full-width 50px bar flush at the very top (margin-top: 0)
+  // while the Dynamic Island floats directly over it with zero gap above the toolbar.
   const toolbarCss = read("src/components/page-toolbar/page-toolbar.css");
   assert.match(toolbarCss, /\.page-toolbar-host \{[^}]*height: 50px/);
+  assert.match(toolbarCss, /\.page-toolbar-host \{[^}]*margin-top: 0/);
   assert.match(toolbarCss, /\.page-toolbar-host \{[^}]*border-bottom: 1px solid/);
-  // The bar starts where the floating island ends — no dead band above it.
-  assert.match(systemCss, /\.workspace-main > \.page-toolbar-host \{[^}]*margin-top: 48px/);
+  assert.match(systemCss, /\.workspace-main > \.page-toolbar-host \{[^}]*margin-top: 0/);
+  assert.doesNotMatch(systemCss, /margin-top:\s*48px/);
   const toolbarSrc = read("src/components/page-toolbar/PageToolbar.tsx");
   assert.match(toolbarSrc, /export function PageToolbarHost/);
   assert.match(toolbarSrc, /createPortal/);
   for (const page of ["src/components/habits/HabitsView.tsx", "src/components/loans/LoansView.tsx", "src/components/calendar/CalendarView.tsx"]) {
     assert.match(read(page), /<PageToolbar\b/, `${page} renders its tools in the shared toolbar`);
   }
+  // Navigating away collapses the Dynamic Island cleanly so it never stays open over a destination toolbar.
+  assert.match(read("src/components/Workspace.tsx"), /const updateView[\s\S]*?setIslandOpen\(false\)/);
   // The bar is hosted by the shell, not nested in the padded content column.
   assert.match(read("src/components/Workspace.tsx"), /<PageToolbarHost>/);
   assert.match(theme, /\.workspace-content \{[^}]*padding: 22px/);

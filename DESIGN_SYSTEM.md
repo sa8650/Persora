@@ -91,7 +91,7 @@ The navigation rail ends with **one** action: `<button className="sidebar-logout
 | Element | Contract |
 | --- | --- |
 | `.sidebar-header` | **60px** tall (`flex: 0 0 60px`), `padding: 0 12px 0 18px`, **no** `border-bottom` — the brand header and `#workspace-sidebar-nav` read as one continuous frame. The collapse toggle is 28px so it stays proportional. |
-| `.workspace-topbar` | **60px** tall, `.breadcrumb-title h1` 17px, `.workspace-add-document` 34px, icon buttons (`global-search-trigger`, `theme`, `notifications`) 34px. Below 820px it becomes `height: auto; min-height: 60px` so the wrapped mobile bar never clips. |
+| `DynamicIsland` + `PageToolbarHost` | There is no static `.workspace-topbar`. `PageToolbarHost` sits flush at `top: 0` (`margin-top: 0`, **50px** tall when active, `0px` when empty) and `DynamicIsland` (`.dynamic-island-anchor`, `top: 6px; left: 50%`) floats directly over it with symmetric centre morphing and zero hit-blocking outside the pill. |
 | Admin console | Unchanged — `.admin-brand` / `.admin-topbar` keep their own 74px scale. |
 
 Header height is declared once in `src/design-system/system.css` (imported last) and mirrored in `src/console-refinements.css` / `src/persora-theme.css`; no `70px`/`74px` app-shell header heights remain.

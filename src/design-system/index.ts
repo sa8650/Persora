@@ -13,6 +13,8 @@ export {
   PersoraAsideStat,
   PersoraSearchField,
   PersoraDeleteModal,
+  PersoraDatePicker,
+  PersoraSegmentedControl,
   iconToneClass,
   type PersoraTone,
   type PersoraIconStackProps,
@@ -20,6 +22,9 @@ export {
   type PersoraAsideStatProps,
   type PersoraSearchFieldProps,
   type PersoraDeleteModalProps,
+  type PersoraDatePickerProps,
+  type PersoraSegmentedOption,
+  type PersoraSegmentedControlProps,
 } from "./primitives";
 
 /* Canonical ReUI & shadcn UI Primitives */

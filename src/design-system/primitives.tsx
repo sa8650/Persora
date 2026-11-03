@@ -1,6 +1,6 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { Search, X } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, Search, X } from "lucide-react";
 import { IconStack } from "@/components/reui/icon-stack";
 import { IconTile } from "@/components/reui/icon-tile";
 import { Spinner } from "@/components/ui/spinner";
@@ -368,6 +368,397 @@ export function PersoraDeleteModal({
 
   if (typeof document === "undefined") return content;
   return createPortal(content, document.body);
+}
+
+// ---------------------------------------------------------------------------
+// PersoraDatePicker — Reusable Persora Date Input + Anchored Month Calendar
+// ---------------------------------------------------------------------------
+
+export interface PersoraDatePickerProps {
+  id?: string;
+  value: string;
+  onChange: (next: string) => void;
+  min?: string;
+  minDate?: string;
+  max?: string;
+  maxDate?: string;
+  rangeStart?: string;
+  rangeEnd?: string;
+  disabled?: boolean;
+  required?: boolean;
+  allowClear?: boolean;
+  clearable?: boolean;
+  placeholder?: string;
+  ariaLabel?: string;
+  "aria-label"?: string;
+  ariaInvalid?: boolean;
+  className?: string;
+}
+
+function isoToday(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function parseIsoYmd(ymd: string): { year: number; month: number; day: number } | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null;
+  const [y, m, d] = ymd.split("-").map(Number);
+  if (!y || m < 1 || m > 12 || d < 1 || d > 31) return null;
+  return { year: y, month: m, day: d };
+}
+
+function buildCalendarMonthCells(year: number, month: number): Array<{ date: string; day: number; inMonth: boolean }> {
+  const first = new Date(Date.UTC(year, month - 1, 1));
+  const startDow = first.getUTCDay();
+  const gridStart = new Date(Date.UTC(year, month - 1, 1 - startDow));
+  const cells: Array<{ date: string; day: number; inMonth: boolean }> = [];
+  for (let i = 0; i < 42; i += 1) {
+    const cur = new Date(gridStart);
+    cur.setUTCDate(gridStart.getUTCDate() + i);
+    const iso = cur.toISOString().slice(0, 10);
+    cells.push({
+      date: iso,
+      day: cur.getUTCDate(),
+      inMonth: cur.getUTCMonth() + 1 === month && cur.getUTCFullYear() === year,
+    });
+  }
+  return cells;
+}
+
+const MONTH_LABELS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+const WEEKDAY_HEADS = ["S", "M", "T", "W", "T", "F", "S"];
+
+export function PersoraDatePicker({
+  id,
+  value,
+  onChange,
+  min,
+  minDate,
+  max,
+  maxDate,
+  rangeStart,
+  rangeEnd,
+  disabled = false,
+  required = false,
+  allowClear = false,
+  clearable = false,
+  placeholder = "YYYY-MM-DD",
+  ariaLabel,
+  "aria-label": ariaLabelAttr,
+  ariaInvalid,
+  className,
+}: PersoraDatePickerProps) {
+  const effectiveMin = min ?? minDate;
+  const effectiveMax = max ?? maxDate;
+  const effectiveAllowClear = allowClear || clearable;
+  const effectiveAriaLabel = ariaLabel ?? ariaLabelAttr;
+  const [open, setOpen] = React.useState(false);
+  const shellRef = React.useRef<HTMLDivElement | null>(null);
+  const popoverRef = React.useRef<HTMLDivElement | null>(null);
+  const today = React.useMemo(() => isoToday(), []);
+
+  const seed = parseIsoYmd(value) || parseIsoYmd(effectiveMin || "") || parseIsoYmd(today)!;
+  const [viewYear, setViewYear] = React.useState(seed.year);
+  const [viewMonth, setViewMonth] = React.useState(seed.month);
+  const [coords, setCoords] = React.useState<{ top: number; left: number; isSheet: boolean }>({
+    top: 0,
+    left: 0,
+    isSheet: false,
+  });
+
+  React.useEffect(() => {
+    const parsed = parseIsoYmd(value);
+    if (parsed) {
+      setViewYear(parsed.year);
+      setViewMonth(parsed.month);
+    }
+  }, [value]);
+
+  React.useLayoutEffect(() => {
+    if (!open) return;
+    const updatePosition = () => {
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      if (vw <= 540) {
+        setCoords({ top: 0, left: 0, isSheet: true });
+        return;
+      }
+      const rect = shellRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const popW = 268;
+      const popH = 296;
+      const left = Math.min(Math.max(8, rect.left), Math.max(8, vw - popW - 8));
+      const top = rect.bottom + 6 + popH <= vh - 8 ? rect.bottom + 6 : Math.max(8, rect.top - popH - 6);
+      setCoords({ top, left, isSheet: false });
+    };
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [open]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        setOpen(false);
+      }
+    };
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (
+        popoverRef.current &&
+        !popoverRef.current.contains(target) &&
+        shellRef.current &&
+        !shellRef.current.contains(target)
+      ) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("keydown", onKey, true);
+    document.addEventListener("mousedown", onDown);
+    return () => {
+      document.removeEventListener("keydown", onKey, true);
+      document.removeEventListener("mousedown", onDown);
+    };
+  }, [open]);
+
+  const shiftMonth = (delta: number) => {
+    let nextM = viewMonth + delta;
+    let nextY = viewYear;
+    if (nextM < 1) {
+      nextM = 12;
+      nextY -= 1;
+    } else if (nextM > 12) {
+      nextM = 1;
+      nextY += 1;
+    }
+    setViewYear(nextY);
+    setViewMonth(nextM);
+  };
+
+  const cells = React.useMemo(() => buildCalendarMonthCells(viewYear, viewMonth), [viewYear, viewMonth]);
+
+  return (
+    <div
+      ref={shellRef}
+      className={cn("ds-date-picker-shell", disabled && "is-disabled", ariaInvalid && "is-invalid", className)}
+    >
+      <input
+        id={id}
+        type="text"
+        inputMode="numeric"
+        placeholder={placeholder}
+        value={value}
+        disabled={disabled}
+        required={required}
+        aria-label={effectiveAriaLabel}
+        aria-invalid={ariaInvalid || undefined}
+        onFocus={() => {
+          if (!disabled) setOpen(true);
+        }}
+        onChange={(e) => onChange(e.target.value)}
+        className="ds-date-picker-input"
+      />
+      <button
+        type="button"
+        className="ds-date-picker-trigger"
+        disabled={disabled}
+        aria-label="Open calendar"
+        aria-expanded={open}
+        onClick={() => setOpen((prev) => !prev)}
+      >
+        <CalendarDays size={14} aria-hidden="true" />
+      </button>
+      {open &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <>
+            {coords.isSheet && (
+              <div
+                className="ds-date-picker-scrim"
+                aria-hidden="true"
+                onClick={() => setOpen(false)}
+              />
+            )}
+            <div
+              ref={popoverRef}
+              role="dialog"
+              aria-label="Select date"
+              className={cn("ds-date-picker-popover", coords.isSheet && "is-sheet")}
+              style={coords.isSheet ? undefined : { top: coords.top, left: coords.left }}
+            >
+              <div className="ds-date-picker-head">
+                <span className="ds-date-picker-month">
+                  {MONTH_LABELS[viewMonth - 1]} {viewYear}
+                </span>
+                <div className="ds-date-picker-nav">
+                  <button
+                    type="button"
+                    className="ds-date-picker-nav-btn"
+                    aria-label="Previous month"
+                    onClick={() => shiftMonth(-1)}
+                  >
+                    <ChevronLeft size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    className="ds-date-picker-nav-btn"
+                    aria-label="Next month"
+                    onClick={() => shiftMonth(1)}
+                  >
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
+              </div>
+              <div className="ds-date-picker-grid">
+                {WEEKDAY_HEADS.map((label, idx) => (
+                  <span key={idx} className="ds-date-picker-weekday" aria-hidden="true">
+                    {label}
+                  </span>
+                ))}
+                {cells.map((cell) => {
+                  const isBeforeMin = Boolean(effectiveMin && cell.date < effectiveMin);
+                  const isAfterMax = Boolean(effectiveMax && cell.date > effectiveMax);
+                  const cellDisabled = isBeforeMin || isAfterMax;
+                  const isSelected = value === cell.date;
+                  const isToday = today === cell.date;
+                  const inRange = Boolean(
+                    rangeStart &&
+                      rangeEnd &&
+                      rangeEnd >= rangeStart &&
+                      cell.date >= rangeStart &&
+                      cell.date <= rangeEnd,
+                  );
+                  return (
+                    <button
+                      key={cell.date}
+                      type="button"
+                      disabled={cellDisabled}
+                      aria-pressed={isSelected}
+                      className={cn(
+                        "ds-date-picker-day",
+                        !cell.inMonth && "is-outside",
+                        inRange && "is-in-range",
+                        isToday && "is-today",
+                        isSelected && "is-selected",
+                      )}
+                      onClick={() => {
+                        onChange(cell.date);
+                        setOpen(false);
+                      }}
+                    >
+                      {cell.day}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="ds-date-picker-foot">
+                <button
+                  type="button"
+                  className="ds-date-picker-foot-btn"
+                  disabled={Boolean((effectiveMin && today < effectiveMin) || (effectiveMax && today > effectiveMax))}
+                  onClick={() => {
+                    onChange(today);
+                    setOpen(false);
+                  }}
+                >
+                  Today
+                </button>
+                {(effectiveAllowClear || !required) && value ? (
+                  <button
+                    type="button"
+                    className="ds-date-picker-foot-btn is-muted"
+                    onClick={() => {
+                      onChange("");
+                      setOpen(false);
+                    }}
+                  >
+                    Clear
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </>,
+          document.body,
+        )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// PersoraSegmentedControl — Reusable Flat Segmented Button Group
+// ---------------------------------------------------------------------------
+
+export interface PersoraSegmentedOption<T extends string = string> {
+  value: T;
+  label: React.ReactNode;
+  icon?: React.ReactNode;
+  disabled?: boolean;
+}
+
+export interface PersoraSegmentedControlProps<T extends string = string> {
+  value: T;
+  options: ReadonlyArray<PersoraSegmentedOption<T>>;
+  onChange: (value: T) => void;
+  ariaLabel?: string;
+  size?: "sm" | "md";
+  className?: string;
+}
+
+export function PersoraSegmentedControl<T extends string = string>({
+  value,
+  options,
+  onChange,
+  ariaLabel,
+  size = "md",
+  className,
+}: PersoraSegmentedControlProps<T>) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label={ariaLabel}
+      className={cn("ds-segmented", size === "sm" && "ds-segmented-sm", className)}
+    >
+      {options.map((opt) => {
+        const active = opt.value === value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            disabled={opt.disabled}
+            className={cn("ds-segmented-btn", active && "is-active")}
+            onClick={() => onChange(opt.value)}
+          >
+            {opt.icon ? <span className="ds-segmented-icon">{opt.icon}</span> : null}
+            <span>{opt.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 

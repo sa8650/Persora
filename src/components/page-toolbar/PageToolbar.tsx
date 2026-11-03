@@ -6,10 +6,9 @@ import "./page-toolbar.css";
  * Full-width page toolbar.
  *
  * A page renders `<PageToolbar>` anywhere in its own tree; the bar itself is
- * portaled into the workspace shell's top slot, so it sits flush under the
- * dynamic island, spans the whole workspace width, and never scrolls away with
- * the page. Controls stay in the page's React tree, so context and handlers are
- * unchanged.
+ * portaled into the workspace shell's top slot (`top: 0`, zero top gap), while
+ * the dynamic island floats cleanly over its centre. Controls stay in the
+ * page's React tree, so context and handlers are unchanged.
  */
 
 type ToolbarPalette = "habits" | "loans" | "calendar";

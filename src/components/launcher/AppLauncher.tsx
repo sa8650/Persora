@@ -78,12 +78,18 @@ export default function AppLauncher({ user, activeView, onNavigate, onOpen }: Ap
 
   useEffect(() => () => window.clearTimeout(closeTimer.current), []);
 
-  // Anchor under the button, and follow viewport changes while open.
+  // Anchor under the button, and follow viewport + dynamic-island morph changes while open.
   useLayoutEffect(() => {
     if (!isOpen) return;
     measure();
+    const shell = buttonRef.current?.closest(".island-shell");
+    const observer = shell ? new ResizeObserver(measure) : null;
+    if (shell && observer) observer.observe(shell);
     window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
   }, [isOpen, measure]);
 
   // Focus the first module when the drawer opens.

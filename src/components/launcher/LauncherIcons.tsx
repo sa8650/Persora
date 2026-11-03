@@ -434,6 +434,19 @@ const ICONS: Record<LauncherModuleId, Draw> = {
     <circle cx="24" cy="24" r="3.4" fill="#fff" />
     <path d="M18.6 20.4a6.2 6.2 0 0 1 3.2-3.3" stroke="#fff" strokeOpacity=".55" strokeWidth="1.5" strokeLinecap="round" />
   </>,
+  "travel-space": (id) => <>
+    <defs>
+      <Lg id={id("a")} from="#5ecbff" to="#0284c7" />
+      <Lg id={id("b")} from="#5eead4" to="#0d9488" />
+      <Lg id={id("c")} from="#ffd37a" to="#f59e0b" />
+    </defs>
+    <circle cx="24" cy="24" r="18.5" fill={`url(#${id("a")})`} />
+    <ellipse cx="24" cy="24" rx="9" ry="18" stroke="#fff" strokeOpacity=".42" strokeWidth="1.6" />
+    <path d="M6.5 24h35M10 15.5h28M10 32.5h28" stroke="#fff" strokeOpacity=".35" strokeWidth="1.5" strokeLinecap="round" />
+    <path d="M14 31.5c5.5-8 11-11.5 19.5-13" stroke={`url(#${id("c")})`} strokeWidth="2.8" strokeLinecap="round" strokeDasharray="3 3" />
+    <path d="M35.5 13.5 31 24l-3.6-3.6-4.9-1.9 13-5Z" fill="#fff" style={gap} strokeWidth="1.2" strokeLinejoin="round" />
+    <circle cx="14" cy="31.5" r="3.4" fill={`url(#${id("b")})`} stroke="#fff" strokeWidth="1.6" />
+  </>,
 };
 
 export function LauncherModuleIcon({ id, size = 40 }: { id: LauncherModuleId; size?: number }) {

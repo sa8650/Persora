@@ -27,11 +27,11 @@ import ModalPortal from "../ModalPortal";
 import { ConfirmDialog } from "../VaultDialogs";
 import { AddAudioMenu, AudioDetailsDialog, AudioLinkDialog, AudioUploadDialog } from "./AudioDialogs";
 import { AudioRecordDialog } from "./AudioRecorder";
-import { trackForItem, WaveformBars, type AudioPlayerApi, type PlayerTrack } from "./AudioPlayerBar";
+import AudioPlayerBar, { trackForItem, WaveformBars, type AudioPlayerApi, type PlayerTrack } from "./AudioPlayerBar";
 import "./audio-space.css";
 
 interface Props {
-  /** Workspace-level player: stays alive (and docked) on every page. */
+  /** Workspace-level player state: audio continues across pages while the UI bar renders inside AudioSpace. */
   player: AudioPlayerApi;
   user: AppUser;
   canUpload: boolean;
@@ -559,6 +559,7 @@ export default function AudioSpaceView({ player, user, canUpload, maxUploadMb, t
     {bulkDeleteOpen && <ModalPortal><ConfirmDialog title={`Delete ${selected.size} selected ${selected.size === 1 ? "audio file" : "audio files"}?`} confirmLabel={bulkBusy ? "Deleting…" : "Move to Trash"} onCancel={() => !bulkBusy && setBulkDeleteOpen(false)} onConfirm={() => void runBulk("delete")}>
       <p>The selected audio moves to the Trash and can be restored for 7 days.</p>
     </ConfirmDialog></ModalPortal>}
+    <AudioPlayerBar player={player} />
   </div>;
 }
 

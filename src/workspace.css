@@ -984,9 +984,6 @@
   .contacts-sync-footnote > button { margin-left: 20px; }
 }
 
-/* UI polish: keep compact data views readable, aligned, and intentional. */
-.island-actions { position: relative; z-index: 2; flex: 0 0 auto; justify-content: flex-end; margin-left: auto; white-space: nowrap; }
-
 /* Overview cards: modestly larger labels and supporting copy for readability. */
 .metric-state { font-size: 8.6px; }
 .spend-total > span,.spend-total small { font-size: 10px; }
@@ -1248,10 +1245,6 @@ button.vault-folder-tile { width: 100%; text-align: left; cursor: pointer; }
 }
 
 /* Add Document: a focused right-side flow that adapts to narrow screens. */
-.workspace-add-document { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 38px; flex: 0 0 auto; border: 1px solid #d2e3fc; border-radius: 10px; padding: 0 12px; color: #174ea6; background: #e8f0fe; font-size: 11px; font-weight: 680; cursor: pointer; transition: background .15s ease,border-color .15s ease,box-shadow .15s ease,transform .15s ease; }
-.workspace-add-document:hover { transform: translateY(-1px); border-color: #aecbfa; background: #d2e3fc; box-shadow: 0 2px 7px rgba(26,115,232,.11); }
-.workspace-add-document:focus-visible { outline: 0; box-shadow: 0 0 0 3px rgba(26,115,232,.17); }
-.workspace-add-document svg { flex: 0 0 auto; stroke-width: 2.2; }
 .add-document-drawer-backdrop { z-index: 120; position: fixed; inset: 0; display: flex; justify-content: flex-end; overflow: hidden; background: rgba(15,23,42,.44); backdrop-filter: none; -webkit-backdrop-filter: none; animation: add-document-backdrop-in .2s ease both; }
 .add-document-drawer { position: relative; display: flex; flex-direction: column; width: min(500px,100vw); height: 100vh; height: 100dvh; max-height: 100dvh; min-height: 0; overflow: hidden; border-left: 1px solid #e8eaed; border-radius: 20px 0 0 20px; color: #202124; background: linear-gradient(180deg,#fff 0%,#f8fafd 100%); box-shadow: -18px 0 58px rgba(32,33,36,.2); animation: add-document-drawer-in .28s cubic-bezier(.2,.75,.25,1) both; }
 @keyframes add-document-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
@@ -1332,11 +1325,7 @@ button.vault-folder-tile { width: 100%; text-align: left; cursor: pointer; }
 .add-document-suggestion small { color: #7b759b; font-size: 9px; }
 .add-document-footer-hint { margin-right: auto; color: #8390a0; font-size: 9px; }
 
-@media (max-width: 760px) {
-}
 @media (max-width: 540px) {
-  .workspace-add-document { width: 36px; min-height: 36px; padding: 0; border-radius: 10px; }
-  .workspace-add-document > span { display: none; }
   .add-document-drawer { width: 100vw; border-left: 0; border-radius: 0; }
   .add-document-drawer-header { min-height: 76px; padding: 12px 17px; }
   .add-document-drawer-body { gap: 15px; padding: 18px 18px 22px; }
@@ -1344,5 +1333,4 @@ button.vault-folder-tile { width: 100%; text-align: left; cursor: pointer; }
 }
 @media (prefers-reduced-motion: reduce) {
   .add-document-drawer-backdrop,.add-document-drawer { animation: none; }
-  .workspace-add-document { transition: none; }
 }

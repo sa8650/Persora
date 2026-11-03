@@ -1,9 +1,9 @@
-/* The island floats on its own: a zero-size anchor that sits at the top centre
-   of its column. It reserves no layout space, so the page content and the page
-   toolbar sit directly beneath it. */
+/* The island floats on its own: a zero-size anchor at the top centre of its
+   column. It reserves no layout space and captures no pointer events outside
+   the pill itself, so the page toolbar directly beneath stays 100% clickable. */
 .dynamic-island-anchor {
   position: absolute;
-  top: 8px;
+  top: 6px;
   left: 50%;
   width: 0;
   height: 0;
@@ -12,56 +12,56 @@
   touch-action: none;
 }
 
-/* The grabbable strip: the pill plus a little slack either side, for dragging
-   the island along the top. */
-.dynamic-island-anchor::before {
-  content: "";
-  position: absolute;
-  top: -8px;
-  left: -70px;
-  width: 140px;
-  /* Stops level with the pill, so the page toolbar below stays clickable. */
-  height: 46px;
-  pointer-events: auto;
-  cursor: grab;
-}
-
-.dynamic-island-anchor.is-dragging::before {
-  cursor: grabbing;
-}
-
-.island-shell {
+/* Zero-width flex column centres both the morphing shell and its popovers
+   symmetrically around the anchor + drag offset, eliminating any sideways jump. */
+.dynamic-island-track {
   position: absolute;
   top: 0;
   left: 0;
+  width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.island-shell {
+  position: relative;
+  flex: 0 0 auto;
+  box-sizing: content-box;
   cursor: grab;
   touch-action: manipulation;
   display: block;
-  /* No percentage max-width: the anchor is zero-width, so a percentage cap
-     would collapse the shell. The panel caps its own width instead. */
   max-width: none;
   overflow: hidden;
   border: 1px solid var(--ds-border-strong);
   border-radius: 999px;
   background: var(--ds-overlay-bg);
-  box-shadow: var(--ds-shadow-popover);
-  pointer-events: auto;
-}
-
-/* The collapsed pill never paints a background of its own. */
-.island-shell.is-settled:not(.is-open) {
   box-shadow: var(--ds-shadow-card);
+  pointer-events: auto;
+  will-change: width, height;
+  transition: box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1), border-color 180ms ease;
 }
 
-/* Both faces are centred in the shell and free to be wider than the frame
-   mid-morph; the shell's overflow does the clipping. */
+.island-shell.is-open {
+  box-shadow: var(--ds-shadow-popover);
+}
+
+.dynamic-island-anchor.is-dragging .island-shell,
+.dynamic-island-anchor.is-dragging .island-face {
+  cursor: grabbing;
+}
+
+/* Both faces are centred in the shell and free to keep their natural measure
+   mid-morph; the shell's rounded overflow clips cleanly without reflowing icons. */
 .island-panel,
 .island-face {
   position: absolute;
   top: 50%;
   left: 50%;
   width: max-content;
-  transform: translate(-50%, -50%);
+  will-change: opacity, transform;
 }
 
 /* ---- Collapsed face ------------------------------------------------------ */
@@ -70,14 +70,21 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  height: 38px;
+  height: 36px;
   padding: 0 13px;
   border: 0;
   border-radius: 999px;
   background: transparent;
   color: var(--ds-text);
   cursor: pointer;
-  transition: background-color 140ms ease;
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, -50%) scale(1);
+  transition:
+    opacity 150ms cubic-bezier(0.22, 1, 0.36, 1) 50ms,
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1) 50ms,
+    background-color 140ms ease,
+    visibility 0s linear 0s;
 }
 
 .island-face:hover {
@@ -89,17 +96,28 @@
   box-shadow: 0 0 0 3px var(--ds-focus-ring);
 }
 
+.island-shell.is-open .island-face {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(0.86);
+  transition:
+    opacity 85ms cubic-bezier(0.4, 0, 1, 1),
+    transform 110ms cubic-bezier(0.4, 0, 1, 1),
+    visibility 0s linear 85ms;
+}
+
 .island-mark {
   display: inline-grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: 21px;
+  height: 21px;
   flex: 0 0 auto;
 }
 
 .island-mark svg {
-  width: 22px;
-  height: 22px;
+  width: 21px;
+  height: 21px;
 }
 
 .island-face-dot {
@@ -115,27 +133,28 @@
 .island-panel {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px;
+  gap: 4px;
+  padding: 3px 5px;
   opacity: 0;
   visibility: hidden;
-  transform: translate(-50%, -50%) scale(0.98);
-  transition: opacity 140ms ease, transform 140ms ease, visibility 0s linear 140ms;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(0.92);
+  transition:
+    opacity 90ms cubic-bezier(0.4, 0, 1, 1),
+    transform 120ms cubic-bezier(0.4, 0, 1, 1),
+    visibility 0s linear 90ms;
   white-space: nowrap;
 }
 
 .island-panel[data-open="true"] {
   opacity: 1;
   visibility: visible;
-  transform: translate(-50%, -50%);
-  transition: opacity 160ms ease 60ms, transform 160ms ease 60ms;
-}
-
-.island-shell.is-open .island-face {
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  transition: opacity 100ms ease, visibility 0s linear 100ms;
+  pointer-events: auto;
+  transform: translate(-50%, -50%) scale(1);
+  transition:
+    opacity 165ms cubic-bezier(0.22, 1, 0.36, 1) 45ms,
+    transform 195ms cubic-bezier(0.22, 1, 0.36, 1) 45ms,
+    visibility 0s linear 0s;
 }
 
 /* ---- Controls ------------------------------------------------------------ */
@@ -143,22 +162,262 @@
 .island-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
+}
+
+.island-shell.is-open.has-media {
+  border-radius: 20px;
+}
+
+.island-panel.has-media {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  width: min(334px, calc(100vw - 20px));
+  box-sizing: border-box;
+  padding: 8px 10px 6px;
+}
+
+.island-panel.has-media .island-actions {
+  width: 100%;
+  justify-content: center;
+  border-top: 1px solid var(--ds-divider-subtle);
+  padding-top: 5px;
+}
+
+/* ---- Expanded Now Playing strip ------------------------------------------ */
+
+.island-now-playing {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+
+.island-np-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.island-np-lead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  border-radius: 10px;
+  padding: 2px 4px 2px 2px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 140ms ease;
+}
+
+.island-np-lead:hover {
+  background: var(--ds-subtle-bg);
+}
+
+.island-np-lead:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 2px var(--ds-focus-ring);
+}
+
+.island-np-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.island-np-title {
+  overflow: hidden;
+  color: var(--ds-text);
+  font-size: 12px;
+  font-weight: 620;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.island-np-sub {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  color: var(--ds-text-muted);
+  font-size: 10px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.island-np-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.island-np-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ds-text-secondary);
+  cursor: pointer;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.island-np-btn:hover {
+  background: var(--ds-subtle-bg);
+  color: var(--ds-text);
+}
+
+.island-np-btn.island-np-close:hover {
+  background: var(--ds-danger-soft);
+  color: var(--ds-danger);
+}
+
+.island-np-btn:disabled {
+  opacity: 0.36;
+  cursor: default;
+  background: transparent;
+}
+
+.island-np-play {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ds-primary);
+  color: var(--ds-primary-fg);
+  cursor: pointer;
+  transition: background-color 140ms ease, transform 120ms ease;
+}
+
+.island-np-play:hover {
+  background: var(--ds-primary-hover);
+}
+
+.island-np-play:active {
+  transform: scale(0.95);
+}
+
+.island-np-btn:focus-visible,
+.island-np-play:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 2px var(--ds-focus-ring);
+}
+
+.island-np-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 2px;
+  min-width: 0;
+}
+
+.island-np-time {
+  flex: 0 0 auto;
+  color: var(--ds-text-muted);
+  font-size: 10px;
+  font-weight: 560;
+  font-variant-numeric: tabular-nums;
+}
+
+.island-np-seek-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  height: 14px;
+  min-width: 48px;
+}
+
+.island-np-seek-track {
+  position: relative;
+  width: 100%;
+  height: 3.5px;
+  border-radius: 999px;
+  background: var(--ds-subtle-bg);
+  border: 1px solid var(--ds-border);
+  overflow: hidden;
+}
+
+.island-np-seek-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--ds-primary);
+  transition: width 0.1s linear;
+}
+
+.island-np-seek {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.island-np-seek:disabled {
+  cursor: default;
+}
+
+.island-np-error {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 8px;
+  padding: 4px 7px;
+  background: var(--ds-danger-soft);
+  color: var(--ds-danger);
+  font-size: 10px;
+  white-space: normal;
+}
+
+@media (max-width: 375px) {
+  .island-panel.has-media {
+    width: calc(100vw - 16px);
+    padding: 7px 8px 5px;
+  }
+  .island-np-btn {
+    width: 24px;
+    height: 24px;
+  }
+  .island-np-play {
+    width: 26px;
+    height: 26px;
+  }
 }
 
 .island-divider {
   width: 1px;
-  height: 20px;
-  margin-inline: 3px;
+  height: 18px;
+  margin-inline: 2px;
   background: var(--ds-divider);
 }
 
 .island-control {
   display: inline-grid;
   place-items: center;
-  width: 34px;
-  min-width: 34px;
-  height: 34px;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
   padding: 0;
   border: 0;
   border-radius: 999px;
@@ -193,9 +452,9 @@
 .island-panel .icon-button,
 .island-panel .notification-button,
 .island-panel .ds-theme-toggle {
-  width: 34px;
-  min-width: 34px;
-  height: 34px;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
   border: 0;
   border-radius: 999px;
   background: transparent;
@@ -216,9 +475,7 @@
   color: var(--ds-sidebar-active-text);
 }
 
-/* Unread indicator: a small dot at the bell's corner — not the 17px count pill
-   the page header used, which sat as large as the icon itself. The exact count
-   is announced in the bell's accessible name. */
+/* Unread indicator: a small dot at the bell's corner. */
 .island-panel .notification-dot {
   top: 3px;
   right: 3px;
@@ -237,9 +494,9 @@
 }
 
 .island-panel .app-launcher-button {
-  width: 34px;
-  min-width: 34px;
-  height: 34px;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
 }
 
 /* Sections is a mobile affordance only: it first appears when the
@@ -255,8 +512,8 @@
 }
 
 .island-avatar {
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   flex: 0 0 auto;
   border: 0;
   border-radius: 50%;
@@ -266,6 +523,7 @@
   font-weight: 680;
   cursor: pointer;
   overflow: hidden;
+  transition: box-shadow 140ms ease;
 }
 
 .island-avatar:hover,
@@ -280,16 +538,12 @@
 
 /* ---- Popovers hosted outside the morphing shell -------------------------- */
 
-/* The popover layer tracks the pill itself (same drag offset, same box), so
-   menus always hang beneath the island, even after a drag. */
+/* The popover layer sits directly below `.island-shell` in `.dynamic-island-track`
+   so menus always hang beneath the island, even after a horizontal drag. */
 .island-layer {
-  position: absolute;
-  top: 0;
-  left: 0;
+  position: relative;
   width: 0;
   height: 0;
-  /* A zero-width flex row centres popovers on the island, wherever it has been
-     dragged to. */
   display: flex;
   justify-content: center;
   pointer-events: none;
@@ -297,6 +551,7 @@
 
 .island-layer-anchor {
   position: relative;
+  height: 0;
   flex: 0 0 auto;
   pointer-events: none;
 }
@@ -305,11 +560,9 @@
   pointer-events: auto;
 }
 
-
 .dynamic-island-anchor .notification-popover {
   position: absolute;
-  top: calc(100% + 6px);
-  /* Centred on the island so a dragged pill keeps its popover attached. */
+  top: 6px;
   left: 50%;
   translate: -50% 0;
   z-index: 75;
@@ -319,7 +572,7 @@
 
 .island-menu {
   position: absolute;
-  top: calc(100% + 6px);
+  top: 6px;
   right: 0;
   z-index: 75;
   width: min(248px, calc(100vw - 24px));
@@ -409,6 +662,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .island-shell,
   .island-panel,
   .island-panel[data-open="true"],
   .island-shell.is-open .island-face,
@@ -416,6 +670,16 @@
   .island-control {
     transition-duration: 1ms;
     transition-delay: 0s;
+  }
+}
+
+/* On narrow phone screens (≤ 640px), a populated 50px toolbar fills the entire
+   horizontal strip edge-to-edge; step the floating island just below the 50px
+   bar so the toolbar stays flush at top: 0 and every phone toolbar control
+   remains 100% visible and tappable. */
+@media (max-width: 640px) {
+  .workspace-main:has(> .page-toolbar-host:not(.is-empty)) .dynamic-island-anchor {
+    top: 56px;
   }
 }
 

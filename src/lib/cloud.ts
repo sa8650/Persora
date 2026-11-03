@@ -9,16 +9,24 @@ export const isPagesApiConfigured = pagesFunctionsEnabled;
 
 export class PagesApiError extends Error {
   readonly status: number;
-  constructor(message: string, status: number) { super(message); this.name = "PagesApiError"; this.status = status; }
+  readonly code?: string;
+  constructor(message: string, status: number, code?: string) {
+    super(message);
+    this.name = "PagesApiError";
+    this.status = status;
+    this.code = code;
+  }
 }
 
 async function responseError(response: Response, service: string): Promise<PagesApiError> {
   let message = `${service} returned ${response.status}.`;
+  let code: string | undefined;
   try {
-    const body = await response.json() as { error?: string };
+    const body = await response.json() as { error?: string; code?: string };
     if (body.error) message = body.error;
+    if (body.code) code = body.code;
   } catch { /* Retain the generic status message. */ }
-  return new PagesApiError(message, response.status);
+  return new PagesApiError(message, response.status, code);
 }
 
 export async function pagesApiRequest(path: string, init: RequestInit = {}): Promise<Response> {

@@ -1,71 +1,71 @@
-// AudioSpace — persistent player engine + compact mini-player.
-//
-// One HTMLAudioElement drives playback everywhere in AudioSpace: clicking any
-// card, row or list item plays through this player, and the mini-player stays
-// docked at the bottom of the page while the member browses other AudioSpace
-// sections. Uploaded/recorded audio streams from the private API (cookie
-// session, Range-capable); external links play from their original URL.
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, ChevronLeft, ChevronRight, ListMusic, Pause, Play, SkipBack, SkipForward, Volume1, Volume2, VolumeX, X } from "lucide-react";
-import type { AudioSpaceItem } from "../../types";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import {
+  AlertCircle,
+  AudioLines,
+  Link2,
+  Mic,
+  Minus,
+  Pause,
+  Play,
+  Plus,
+  RotateCcw,
+  RotateCw,
+  SkipBack,
+  SkipForward,
+  SlidersHorizontal,
+  Volume2,
+  VolumeX,
+  X,
+} from "lucide-react";
+import type { AudioSource, AudioSpaceItem } from "../../types";
 import { loadAudioSpaceFile, markAudioSpacePlayed } from "../../lib/cloud";
-import { formatDuration } from "../../lib/audio-space";
+import { formatDuration, sourceLabel } from "../../lib/audio-space";
 import "./audio-space.css";
+
+const PLAYBACK_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
+const WAVEFORM_BARS = 48;
 
 export interface PlayerTrack {
   id: string;
   title: string;
-  source: AudioSpaceItem["source"];
-  /** Original URL for external links; empty for private files (loaded via the authenticated API). */
+  subtitle: string;
+  source: AudioSource;
+  /** External URL for link items; stored files stream via authenticated API blob URLs. */
   src: string;
   durationSeconds: number | null;
   external: boolean;
+  /** Optional cover/thumbnail URL when supplied on item metadata. */
+  artworkUrl?: string | null;
+}
+
+function trackSourceLabel(source: AudioSource): string {
+  return source === "recording" ? "Recording" : source === "link" ? "Audio link" : "Upload";
+}
+
+function extractArtworkUrl(metadata: Record<string, unknown> | null | undefined): string | null {
+  if (!metadata) return null;
+  const candidates = [metadata.artworkUrl, metadata.coverUrl, metadata.thumbnailUrl, metadata.image];
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string") continue;
+    const trimmed = candidate.trim();
+    if (/^(https?:\/\/|\/|data:image\/)/i.test(trimmed)) return trimmed;
+  }
+  return null;
 }
 
 export function trackForItem(item: AudioSpaceItem): PlayerTrack {
+  const external = item.source === "link";
   return {
     id: item.id,
     title: item.title,
+    subtitle: sourceLabel(item),
     source: item.source,
-    // External tracks play straight from their original URL. Private files must
-    // go through the authenticated API (plain <audio src> never sends the
-    // session cookie cross-origin), so the player loads them itself by id.
-    src: item.source === "link" ? item.externalUrl || "" : "",
+    src: external ? item.externalUrl || "" : "",
     durationSeconds: item.durationSeconds,
-    external: item.source === "link",
+    external,
+    artworkUrl: extractArtworkUrl(item.metadata),
   };
-}
-
-const RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
-const PEAK_BARS = 56;
-const PEAK_MAX_BYTES = 12 * 1024 * 1024;
-
-async function computePeaks(item: AudioSpaceItem): Promise<number[] | null> {
-  if (item.source === "link" || !item.fileSize || item.fileSize > PEAK_MAX_BYTES) return null;
-  try {
-    const blob = await loadAudioSpaceFile(item.id);
-    const context = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
-    try {
-      const buffer = await context.decodeAudioData(await blob.arrayBuffer());
-      const channel = buffer.getChannelData(0);
-      const block = Math.max(1, Math.floor(channel.length / PEAK_BARS));
-      const peaks: number[] = [];
-      for (let index = 0; index < PEAK_BARS; index++) {
-        let peak = 0;
-        const start = index * block;
-        for (let sample = 0; sample < block; sample += 8) {
-          const value = Math.abs(channel[start + sample] || 0);
-          if (value > peak) peak = value;
-        }
-        peaks.push(Math.max(0.04, Math.min(1, peak)));
-      }
-      return peaks;
-    } finally {
-      void context.close().catch(() => undefined);
-    }
-  } catch {
-    return null;
-  }
 }
 
 export interface AudioPlayerApi {
@@ -76,345 +76,828 @@ export interface AudioPlayerApi {
   volume: number;
   rate: number;
   peaks: number[] | null;
-  error: string;
+  error: string | null;
   queue: PlayerTrack[];
-  playTrack: (track: PlayerTrack, queue: PlayerTrack[]) => void;
+  playTrack: (track: PlayerTrack, queue?: PlayerTrack[]) => void;
   toggle: () => void;
   seek: (seconds: number) => void;
-  skip: (delta: number) => void;
+  skip: (deltaSeconds: number) => void;
   next: () => void;
   previous: () => void;
   setVolume: (volume: number) => void;
   setRate: (rate: number) => void;
   close: () => void;
+  /** Cached waveform peaks by item id so cards can show a mini waveform once decoded. */
   peaksFor: (id: string) => number[] | null;
-  /** Registers the visible items so waveform peaks can be computed lazily. */
+  /** Keep track titles in sync when items are renamed or deleted. */
   registerItems: (items: AudioSpaceItem[]) => void;
 }
 
-export function useAudioPlayer(onTrackStarted?: (track: PlayerTrack) => void): AudioPlayerApi {
+function syntheticPeaks(seed: string): number[] {
+  let hash = 2166136261;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash ^= seed.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  const bars: number[] = [];
+  for (let i = 0; i < WAVEFORM_BARS; i += 1) {
+    hash ^= hash << 13;
+    hash ^= hash >>> 17;
+    hash ^= hash << 5;
+    const normalized = ((hash >>> 0) % 1000) / 1000;
+    bars.push(0.22 + normalized * 0.72);
+  }
+  return bars;
+}
+
+async function measurePeaks(blob: Blob): Promise<number[] | null> {
+  if (typeof window === "undefined") return null;
+  const AudioCtx: typeof AudioContext | undefined =
+    window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!AudioCtx) return null;
+  // Decoding multi-tens-of-MB files only to draw 48 bars wastes memory; fall back gracefully.
+  if (blob.size > 25 * 1024 * 1024) return null;
+  const ctx = new AudioCtx();
+  try {
+    const arrayBuffer = await blob.arrayBuffer();
+    const audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0));
+    const channel = audioBuffer.getChannelData(0);
+    const block = Math.max(1, Math.floor(channel.length / WAVEFORM_BARS));
+    const raw: number[] = [];
+    let peakMax = 0;
+    for (let i = 0; i < WAVEFORM_BARS; i += 1) {
+      const start = i * block;
+      let sum = 0;
+      let count = 0;
+      const step = Math.max(1, Math.floor(block / 64));
+      for (let j = 0; j < block && start + j < channel.length; j += step) {
+        sum += Math.abs(channel[start + j]);
+        count += 1;
+      }
+      const value = count ? sum / count : 0;
+      raw.push(value);
+      if (value > peakMax) peakMax = value;
+    }
+    if (peakMax <= 0) return raw.map(() => 0.25);
+    return raw.map((value) => Math.max(0.14, Math.min(1, value / peakMax)));
+  } catch {
+    return null;
+  } finally {
+    void ctx.close().catch(() => undefined);
+  }
+}
+
+/**
+ * Persistent workspace-level audio player state. Lives in `Workspace.tsx` so
+ * playback continues smoothly as the user navigates across Persora sections
+ * with a single HTMLAudioElement and zero reloads.
+ */
+export function useAudioPlayer(): AudioPlayerApi {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const blobUrlRef = useRef<string | null>(null);
+  const loadSeqRef = useRef(0);
+  const peaksCacheRef = useRef<Map<string, number[]>>(new Map());
   const [current, setCurrent] = useState<PlayerTrack | null>(null);
+  const [queue, setQueue] = useState<PlayerTrack[]>([]);
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolumeState] = useState(1);
-  const [rate, setRateState] = useState(1);
-  const [error, setError] = useState("");
-  const [queue, setQueue] = useState<PlayerTrack[]>([]);
+  const [rate, setRateState] = useState<number>(1);
   const [peaks, setPeaks] = useState<number[] | null>(null);
-  const peakCache = useRef(new Map<string, number[]>());
-  const startedIds = useRef(new Set<string>());
-  const startedHandler = useRef(onTrackStarted);
-  startedHandler.current = onTrackStarted;
-  // Blob URL for the in-memory copy of the currently loaded private file.
-  const objectUrlRef = useRef<string | null>(null);
-  // Bumped on every load/close so stale async loads can never touch the player.
-  const loadTokenRef = useRef(0);
+  const [error, setError] = useState<string | null>(null);
+  const [, bumpPeaksVersion] = useState(0);
 
-  const releaseObjectUrl = useCallback(() => {
-    if (objectUrlRef.current) {
-      URL.revokeObjectURL(objectUrlRef.current);
-      objectUrlRef.current = null;
+  const revokeBlob = useCallback(() => {
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = null;
     }
   }, []);
 
-  if (!audioRef.current && typeof Audio !== "undefined") {
-    const element = new Audio();
-    element.preload = "metadata";
-    audioRef.current = element;
-  }
-
   useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    const onTime = () => setCurrentTime(audio.currentTime);
-    const onMeta = () => setDuration(Number.isFinite(audio.duration) ? audio.duration : 0);
-    const onPlay = () => {
-      setPlaying(true);
-      setError("");
-      const id = currentRef.current?.id;
-      if (id && !startedIds.current.has(id)) {
-        startedIds.current.add(id);
-        void markAudioSpacePlayed(id).catch(() => undefined);
-        if (startedHandler.current && currentRef.current) startedHandler.current(currentRef.current);
-      }
-    };
+    if (typeof Audio === "undefined") return undefined;
+    const audio = new Audio();
+    audio.preload = "metadata";
+    audioRef.current = audio;
+
+    const onTime = () => setCurrentTime(audio.currentTime || 0);
+    const onDuration = () => setDuration(Number.isFinite(audio.duration) ? audio.duration : 0);
+    const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
-    const onEnded = () => { setPlaying(false); nextRef.current(); };
+    const onEnded = () => {
+      setPlaying(false);
+      setCurrentTime(0);
+    };
     const onError = () => {
       setPlaying(false);
-      const track = currentRef.current;
-      setError(track?.external
-        ? "This external source can't be streamed here. Open the original link or try another source."
-        : "This audio couldn't be played. Please try again.");
+      setError("This audio couldn't be played. Check the file or external link.");
     };
+
     audio.addEventListener("timeupdate", onTime);
-    audio.addEventListener("loadedmetadata", onMeta);
-    audio.addEventListener("durationchange", onMeta);
+    audio.addEventListener("loadedmetadata", onDuration);
+    audio.addEventListener("durationchange", onDuration);
     audio.addEventListener("play", onPlay);
     audio.addEventListener("pause", onPause);
     audio.addEventListener("ended", onEnded);
     audio.addEventListener("error", onError);
+
     return () => {
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
       audio.removeEventListener("timeupdate", onTime);
-      audio.removeEventListener("loadedmetadata", onMeta);
-      audio.removeEventListener("durationchange", onMeta);
+      audio.removeEventListener("loadedmetadata", onDuration);
+      audio.removeEventListener("durationchange", onDuration);
       audio.removeEventListener("play", onPlay);
       audio.removeEventListener("pause", onPause);
       audio.removeEventListener("ended", onEnded);
       audio.removeEventListener("error", onError);
-      loadTokenRef.current += 1;
-      audio.pause();
-      audio.removeAttribute("src");
-      if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
-      objectUrlRef.current = null;
+      revokeBlob();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const currentRef = useRef<PlayerTrack | null>(null);
-  currentRef.current = current;
-
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (audio) audio.volume = volume;
-  }, [volume]);
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (audio) audio.playbackRate = rate;
-  }, [rate]);
+  }, [revokeBlob]);
 
   const startTrack = useCallback((track: PlayerTrack) => {
     const audio = audioRef.current;
     if (!audio) return;
-    const token = ++loadTokenRef.current;
-    setError("");
+    const seq = ++loadSeqRef.current;
+    setError(null);
     setCurrent(track);
     setCurrentTime(0);
     setDuration(track.durationSeconds || 0);
+    const cached = peaksCacheRef.current.get(track.id) || null;
+    setPeaks(cached ?? syntheticPeaks(track.id));
+
     audio.pause();
-    releaseObjectUrl();
-    audio.removeAttribute("src");
-    const beginPlayback = (src: string) => {
-      if (loadTokenRef.current !== token) return;
-      audio.src = src;
-      audio.load();
-      void audio.play().catch(() => {
-        if (loadTokenRef.current !== token) return;
-        setError(track.external
-          ? "This external source can't be streamed here. Open the original link or try another source."
-          : "Playback couldn't start. Please try again.");
+    revokeBlob();
+
+    const playLoaded = (url: string) => {
+      if (loadSeqRef.current !== seq) return;
+      audio.src = url;
+      audio.playbackRate = rate;
+      audio.volume = volume;
+      void audio.play().catch((playErr) => {
+        if (loadSeqRef.current !== seq) return;
+        // AbortError simply means the user picked another track mid-load.
+        if (playErr instanceof DOMException && playErr.name === "AbortError") return;
+        setPlaying(false);
+        setError("Playback couldn't start. Click play to try again.");
       });
+      void markAudioSpacePlayed(track.id).catch(() => undefined);
     };
+
     if (track.external) {
-      setPeaks(null);
-      if (!track.src) { setError("This link has no playable URL."); return; }
-      beginPlayback(track.src);
-      return;
-    }
-    const cached = peakCache.current.get(track.id);
-    setPeaks(cached || null);
-    void (async () => {
-      // Private files are fetched with the account cookie (the API is
-      // cross-origin, so a plain <audio src> would never authenticate) and
-      // played from an in-memory object URL — the pattern Photo Studio uses
-      // for private images.
-      try {
-        const blob = await loadAudioSpaceFile(track.id);
-        const url = URL.createObjectURL(blob);
-        if (loadTokenRef.current !== token) { URL.revokeObjectURL(url); return; }
-        objectUrlRef.current = url;
-        beginPlayback(url);
-      } catch {
-        if (loadTokenRef.current === token) setError("This audio couldn't be loaded. Please try again.");
+      if (!track.src) {
+        setError("This link has no audio URL.");
         return;
       }
-      if (cached) return;
-      const item = itemsRef.current.get(track.id);
-      if (!item) return;
-      const computed = await computePeaks(item);
-      if (!computed) return;
-      peakCache.current.set(track.id, computed);
-      if (currentRef.current?.id === track.id) setPeaks(computed);
-    })();
-  }, [releaseObjectUrl]);
-
-  const itemsRef = useRef(new Map<string, AudioSpaceItem>());
-  const registerItems = useCallback((items: AudioSpaceItem[]) => {
-    const map = itemsRef.current;
-    map.clear();
-    for (const item of items) map.set(item.id, item);
-    // Drop cached peaks for deleted items so the cache can't grow unbounded.
-    for (const id of peakCache.current.keys()) {
-      if (!map.has(id)) peakCache.current.delete(id);
+      playLoaded(track.src);
+      return;
     }
-  }, []);
 
-  const playTrack = useCallback((track: PlayerTrack, nextQueue: PlayerTrack[]) => {
-    setQueue(nextQueue);
-    if (currentRef.current?.id === track.id) {
-      const audio = audioRef.current;
-      if (!audio || !audio.getAttribute("src")) return; // still loading — nothing to toggle yet
-      if (audio.paused) void audio.play().catch(() => undefined);
-      else audio.pause();
+    // Stored files live behind our authenticated API; fetch with the Bearer
+    // token and hand the resulting object URL to <audio>.
+    void loadAudioSpaceFile(track.id)
+      .then(async (blob) => {
+        if (loadSeqRef.current !== seq) return;
+        const url = URL.createObjectURL(blob);
+        blobUrlRef.current = url;
+        playLoaded(url);
+        if (!peaksCacheRef.current.has(track.id)) {
+          const decoded = await measurePeaks(blob);
+          if (decoded) {
+            peaksCacheRef.current.set(track.id, decoded);
+            bumpPeaksVersion((v) => v + 1);
+            if (loadSeqRef.current === seq) setPeaks(decoded);
+          }
+        }
+      })
+      .catch((fetchErr) => {
+        if (loadSeqRef.current !== seq) return;
+        setPlaying(false);
+        setError(fetchErr instanceof Error ? fetchErr.message : "Audio file couldn't be loaded.");
+      });
+  }, [rate, revokeBlob, volume]);
+
+  const playTrack = useCallback((track: PlayerTrack, nextQueue?: PlayerTrack[]) => {
+    if (nextQueue) setQueue(nextQueue);
+    const audio = audioRef.current;
+    if (current?.id === track.id && audio) {
+      if (audio.paused) {
+        void audio.play().catch(() => setError("Playback was blocked or failed."));
+      } else {
+        audio.pause();
+      }
       return;
     }
     startTrack(track);
-  }, [startTrack]);
+  }, [current?.id, startTrack]);
 
   const toggle = useCallback(() => {
     const audio = audioRef.current;
-    if (!audio || !audio.getAttribute("src") || !currentRef.current) return;
-    if (audio.paused) void audio.play().catch(() => undefined);
-    else audio.pause();
-  }, []);
+    if (!audio || !current) return;
+    if (audio.paused) {
+      void audio.play().catch(() => setError("Playback couldn't start."));
+    } else {
+      audio.pause();
+    }
+  }, [current]);
 
   const seek = useCallback((seconds: number) => {
     const audio = audioRef.current;
     if (!audio) return;
-    audio.currentTime = Math.max(0, seconds);
-    setCurrentTime(audio.currentTime);
-  }, []);
+    const maxDuration =
+      Number.isFinite(audio.duration) && audio.duration > 0
+        ? audio.duration
+        : current?.durationSeconds && current.durationSeconds > 0
+          ? current.durationSeconds
+          : seconds;
+    const clamped = Math.max(0, Math.min(seconds, maxDuration));
+    audio.currentTime = clamped;
+    setCurrentTime(clamped);
+  }, [current?.durationSeconds]);
 
-  const skip = useCallback((delta: number) => {
+  const skip = useCallback((deltaSeconds: number) => {
     const audio = audioRef.current;
     if (!audio) return;
-    seek(audio.currentTime + delta);
+    seek((audio.currentTime || 0) + deltaSeconds);
   }, [seek]);
 
-  const next = useCallback(() => {
-    const active = currentRef.current;
-    if (!active || queue.length < 2) return;
-    const index = queue.findIndex((track) => track.id === active.id);
-    if (index < 0) return;
-    const track = queue[(index + 1) % queue.length];
-    if (track) startTrack(track);
-  }, [queue, startTrack]);
+  const stepQueue = useCallback((direction: 1 | -1) => {
+    if (!current || queue.length === 0) return;
+    const idx = queue.findIndex((entry) => entry.id === current.id);
+    const nextIdx = idx < 0 ? 0 : (idx + direction + queue.length) % queue.length;
+    const target = queue[nextIdx];
+    if (target) startTrack(target);
+  }, [current, queue, startTrack]);
 
-  const previous = useCallback(() => {
-    const active = currentRef.current;
-    if (!active) return;
-    const audio = audioRef.current;
-    if (audio && audio.currentTime > 3) { seek(0); return; }
-    if (queue.length < 2) { seek(0); return; }
-    const index = queue.findIndex((track) => track.id === active.id);
-    if (index < 0) return;
-    const track = queue[(index - 1 + queue.length) % queue.length];
-    if (track) startTrack(track);
-  }, [queue, seek, startTrack]);
+  const next = useCallback(() => stepQueue(1), [stepQueue]);
+  const previous = useCallback(() => stepQueue(-1), [stepQueue]);
 
-  const nextRef = useRef(next);
-  nextRef.current = next;
+  const setVolume = useCallback((nextVolume: number) => {
+    const clamped = Math.max(0, Math.min(1, nextVolume));
+    setVolumeState(clamped);
+    if (audioRef.current) audioRef.current.volume = clamped;
+  }, []);
 
-  const setVolume = useCallback((value: number) => setVolumeState(Math.max(0, Math.min(1, value))), []);
-  const setRate = useCallback((value: number) => setRateState(value), []);
+  const setRate = useCallback((nextRate: number) => {
+    setRateState(nextRate);
+    if (audioRef.current) audioRef.current.playbackRate = nextRate;
+  }, []);
 
   const close = useCallback(() => {
-    loadTokenRef.current += 1;
+    loadSeqRef.current += 1;
     const audio = audioRef.current;
     if (audio) {
       audio.pause();
       audio.removeAttribute("src");
       audio.load();
     }
-    releaseObjectUrl();
-    setCurrent(null);
+    revokeBlob();
     setPlaying(false);
+    setCurrent(null);
     setCurrentTime(0);
     setDuration(0);
-    setPeaks(null);
-    setError("");
-    setQueue([]);
-  }, [releaseObjectUrl]);
+    setError(null);
+  }, [revokeBlob]);
 
-  const peaksFor = useCallback((id: string) => peakCache.current.get(id) || null, []);
+  const peaksFor = useCallback((id: string) => peaksCacheRef.current.get(id) || null, []);
+
+  const registerItems = useCallback((items: AudioSpaceItem[]) => {
+    setCurrent((prev) => {
+      if (!prev) return null;
+      const match = items.find((item) => item.id === prev.id);
+      if (!match) return prev;
+      const artworkUrl = extractArtworkUrl(match.metadata);
+      return match.title === prev.title &&
+        match.durationSeconds === prev.durationSeconds &&
+        artworkUrl === prev.artworkUrl
+        ? prev
+        : { ...prev, title: match.title, durationSeconds: match.durationSeconds, artworkUrl };
+    });
+  }, []);
 
   return {
-    current, playing, currentTime, duration, volume, rate, peaks, error, queue,
-    playTrack, toggle, seek, skip, next, previous, setVolume, setRate, close,
-    peaksFor, registerItems,
+    current,
+    playing,
+    currentTime,
+    duration,
+    volume,
+    rate,
+    peaks,
+    error,
+    queue,
+    playTrack,
+    toggle,
+    seek,
+    skip,
+    next,
+    previous,
+    setVolume,
+    setRate,
+    close,
+    peaksFor,
+    registerItems,
   };
 }
 
-export function WaveformBars({ peaks, progress, className = "" }: { peaks: number[] | null; progress: number; className?: string }) {
-  const bars = peaks || [];
-  return <div className={`as-waveform ${className}`.trim()} aria-hidden="true">
-    {bars.length
-      ? bars.map((value, index) => (
-        <span key={index} className={index / bars.length <= progress ? "as-wave-bar is-played" : "as-wave-bar"} style={{ height: `${Math.round(value * 100)}%` }} />
-      ))
-      : Array.from({ length: 28 }, (_, index) => <span key={index} className="as-wave-bar is-idle" style={{ height: `${18 + ((index * 37) % 60)}%` }} />)}
-  </div>;
+export function WaveformBars({
+  peaks,
+  progress = 0,
+  className = "",
+}: {
+  peaks: number[] | null;
+  progress?: number;
+  className?: string;
+}) {
+  const bars = peaks && peaks.length ? peaks : null;
+  return (
+    <div className={`as-waveform ${className}`.trim()} aria-hidden="true">
+      {(bars || Array.from({ length: 32 }, (_, idx) => 0.25 + ((idx * 37) % 10) * 0.06)).map((height, idx, list) => {
+        const ratio = (idx + 0.5) / list.length;
+        const active = progress > 0 && ratio <= progress;
+        return (
+          <span
+            key={idx}
+            className={`as-wave-bar ${active ? "is-played" : ""} ${!bars ? "is-idle" : ""}`.trim()}
+            style={{ height: `${Math.round(height * 100)}%` }}
+          />
+        );
+      })}
+    </div>
+  );
 }
 
-interface BarProps {
+/**
+ * Compact 4-bar equalizer shared between the AudioSpace player and Dynamic Island.
+ * Uses GPU-only scaleY transforms and pauses cleanly when `playing` is false.
+ */
+export function AudioEqualizer({
+  playing,
+  variant = "player",
+  className = "",
+}: {
+  playing: boolean;
+  variant?: "player" | "island-face" | "island-panel";
+  className?: string;
+}) {
+  return (
+    <span
+      className={`as-audio-eq as-audio-eq--${variant} ${playing ? "is-playing" : "is-paused"} ${className}`.trim()}
+      data-playing={playing ? "true" : "false"}
+      aria-hidden="true"
+    >
+      <span className="as-eq-bar" />
+      <span className="as-eq-bar" />
+      <span className="as-eq-bar" />
+      <span className="as-eq-bar" />
+    </span>
+  );
+}
+
+export function TrackArtworkBadge({
+  track,
+  size = "md",
+}: {
+  track: PlayerTrack;
+  size?: "sm" | "md";
+}) {
+  const [imgFailed, setImgFailed] = useState(false);
+
+  useEffect(() => {
+    setImgFailed(false);
+  }, [track.id, track.artworkUrl]);
+
+  const toneClass =
+    track.source === "link"
+      ? "is-link"
+      : track.source === "recording"
+        ? "is-recording"
+        : "is-upload";
+
+  if (track.artworkUrl && !imgFailed) {
+    return (
+      <span className={`as-artwork-badge as-artwork-badge--${size} has-image`} aria-hidden="true">
+        <img
+          src={track.artworkUrl}
+          alt=""
+          loading="lazy"
+          onError={() => setImgFailed(true)}
+        />
+      </span>
+    );
+  }
+
+  return (
+    <span className={`as-artwork-badge as-artwork-badge--${size} ${toneClass}`} aria-hidden="true">
+      {track.source === "link" ? (
+        <Link2 size={size === "sm" ? 13 : 15} />
+      ) : track.source === "recording" ? (
+        <Mic size={size === "sm" ? 13 : 15} />
+      ) : (
+        <AudioLines size={size === "sm" ? 13 : 15} />
+      )}
+    </span>
+  );
+}
+
+/**
+ * Compact Now Playing section rendered inside the expanded Dynamic Island
+ * whenever the user is outside AudioSpace and a track is active.
+ */
+export function IslandNowPlaying({
+  player,
+  onOpenAudioSpace,
+}: {
   player: AudioPlayerApi;
-  onNavigateItem?: (id: string) => void;
-}
-
-export default function AudioPlayerBar({ player, onNavigateItem }: BarProps) {
-  const { current, playing, currentTime, duration, volume, rate, peaks, error, queue } = player;
-  const total = duration || current?.durationSeconds || 0;
-  const progress = total > 0 ? Math.min(1, currentTime / total) : 0;
-  const volumeIcon = volume <= 0 ? <VolumeX size={15}/> : volume < 0.5 ? <Volume1 size={15}/> : <Volume2 size={15}/>;
-  const queueIndex = useMemo(() => queue.findIndex((track) => track.id === current?.id), [queue, current]);
+  onOpenAudioSpace: () => void;
+}) {
+  const current = player.current;
   if (!current) return null;
-  return <div className="as-player" role="region" aria-label="Audio player">
-    {error ? <div className="as-player-error" role="alert"><AlertTriangle size={13}/> {error}</div> : null}
-    <div className="as-player-main">
-      <button type="button" className="as-player-thumb" onClick={() => onNavigateItem?.(current.id)} title={current.title}>
-        <ListMusic size={17}/>
-      </button>
-      <div className="as-player-info">
-        <b title={current.title}>{current.title}</b>
-        <small>{current.source === "recording" ? "Recording" : current.source === "link" ? "Audio link" : "Upload"}{queue.length > 1 && queueIndex >= 0 ? ` · ${queueIndex + 1} of ${queue.length}` : ""}</small>
-      </div>
-      <div className="as-player-controls">
-        <button type="button" className="as-icon-button" onClick={player.previous} disabled={queue.length < 2} aria-label="Previous audio" title="Previous"><SkipBack size={15}/></button>
-        <button type="button" className="as-icon-button" onClick={() => player.skip(-10)} aria-label="Skip backward 10 seconds" title="Back 10s"><ChevronLeft size={15}/></button>
-        <button type="button" className="as-play-button" onClick={player.toggle} aria-label={playing ? "Pause" : "Play"}>
-          {playing ? <Pause size={17} fill="currentColor"/> : <Play size={17} fill="currentColor"/>}
+
+  const totalDuration = player.duration || current.durationSeconds || 0;
+  const clampedTime = totalDuration > 0 ? Math.min(player.currentTime, totalDuration) : player.currentTime;
+  const progressPct = totalDuration > 0 ? Math.min(100, Math.max(0, (clampedTime / totalDuration) * 100)) : 0;
+  const hasQueue = player.queue.length > 1;
+
+  return (
+    <div className="island-now-playing" role="group" aria-label="Now playing">
+      <div className="island-np-top">
+        <button
+          type="button"
+          className="island-np-lead"
+          onClick={onOpenAudioSpace}
+          title="Return to AudioSpace"
+          aria-label={`Open ${current.title} in AudioSpace`}
+        >
+          <TrackArtworkBadge track={current} size="sm" />
+          <span className="island-np-meta">
+            <span className="island-np-title">{current.title}</span>
+            <span className="island-np-sub">
+              <AudioEqualizer playing={player.playing} variant="island-panel" />
+              <span>{player.playing ? "Playing" : "Paused"} · {current.subtitle || trackSourceLabel(current.source)}</span>
+            </span>
+          </span>
         </button>
-        <button type="button" className="as-icon-button" onClick={() => player.skip(10)} aria-label="Skip forward 10 seconds" title="Forward 10s"><ChevronRight size={15}/></button>
-        <button type="button" className="as-icon-button" onClick={player.next} disabled={queue.length < 2} aria-label="Next audio" title="Next"><SkipForward size={15}/></button>
+
+        <div className="island-np-controls">
+          <button
+            type="button"
+            className="island-np-btn"
+            onClick={player.previous}
+            disabled={!hasQueue}
+            aria-label="Previous track"
+            title="Previous track"
+          >
+            <SkipBack size={13} />
+          </button>
+          <button
+            type="button"
+            className="island-np-play"
+            onClick={player.toggle}
+            aria-label={player.playing ? "Pause" : "Play"}
+            title={player.playing ? "Pause" : "Play"}
+          >
+            {player.playing ? <Pause size={13} /> : <Play size={13} />}
+          </button>
+          <button
+            type="button"
+            className="island-np-btn"
+            onClick={player.next}
+            disabled={!hasQueue}
+            aria-label="Next track"
+            title="Next track"
+          >
+            <SkipForward size={13} />
+          </button>
+          <button
+            type="button"
+            className="island-np-btn island-np-close"
+            onClick={player.close}
+            aria-label="Close audio player"
+            title="Stop and close"
+          >
+            <X size={13} />
+          </button>
+        </div>
       </div>
-      <div className="as-player-seek">
-        <span className="as-player-time">{formatDuration(currentTime)}</span>
-        <div className="as-seek-wrap">
-          <WaveformBars peaks={peaks} progress={progress} className="as-player-wave"/>
+
+      <div className="island-np-progress-row">
+        <span className="island-np-time">{formatDuration(clampedTime)}</span>
+        <div className="island-np-seek-wrap">
+          <span className="island-np-seek-track" aria-hidden="true">
+            <span className="island-np-seek-fill" style={{ width: `${progressPct}%` }} />
+          </span>
           <input
             type="range"
-            className="as-seek-range"
+            className="island-np-seek"
             min={0}
-            max={Math.max(1, total)}
+            max={totalDuration || 1}
             step={0.1}
-            value={Math.min(currentTime, Math.max(1, total))}
+            value={Math.min(clampedTime, totalDuration || 1)}
+            disabled={!totalDuration}
             onChange={(event) => player.seek(Number(event.target.value))}
-            aria-label="Seek"
+            aria-label="Seek audio position"
           />
         </div>
-        <span className="as-player-time">{formatDuration(total)}</span>
+        <span className="island-np-time">{formatDuration(totalDuration)}</span>
       </div>
-      <div className="as-player-extra">
-        <select className="as-rate-select" value={rate} onChange={(event) => player.setRate(Number(event.target.value))} aria-label="Playback speed" title="Playback speed">
-          {RATES.map((value) => <option key={value} value={value}>{value}x</option>)}
-        </select>
-        <button type="button" className="as-icon-button" onClick={() => player.setVolume(volume <= 0 ? 1 : 0)} aria-label={volume <= 0 ? "Unmute" : "Mute"} title={volume <= 0 ? "Unmute" : "Mute"}>
-          {volumeIcon}
-        </button>
-        <input
-          type="range"
-          className="as-volume-range"
-          min={0}
-          max={1}
-          step={0.01}
-          value={volume}
-          onChange={(event) => player.setVolume(Number(event.target.value))}
-          aria-label="Volume"
-        />
-        <button type="button" className="as-icon-button" onClick={player.close} aria-label="Close player" title="Close player"><X size={15}/></button>
-      </div>
+
+      {player.error && (
+        <div className="island-np-error" role="status">
+          <AlertCircle size={11} />
+          <span>{player.error}</span>
+        </div>
+      )}
     </div>
-  </div>;
+  );
+}
+
+type PlayerMode = "collapsed" | "compact" | "expanded";
+
+/**
+ * Minimal Vengeance UI-inspired floating glass media player scoped exclusively
+ * to AudioSpace (`AudioSpaceView`). Supports collapsed mini-pill, compact bar,
+ * and expanded detail controls while sharing the workspace-wide audio engine.
+ */
+export default function AudioPlayerBar({ player }: { player: AudioPlayerApi }) {
+  const [mode, setMode] = useState<PlayerMode>("compact");
+  const [portalHost, setPortalHost] = useState<HTMLElement | null>(null);
+  const lastNonZeroVolumeRef = useRef(1);
+
+  useLayoutEffect(() => {
+    if (typeof document === "undefined") return;
+    const host = document.querySelector<HTMLElement>(".workspace-main");
+    setPortalHost(host);
+  }, []);
+
+  useEffect(() => {
+    if (player.volume > 0) {
+      lastNonZeroVolumeRef.current = player.volume;
+    }
+  }, [player.volume]);
+
+  const current = player.current;
+  if (!current) return null;
+
+  const totalDuration = player.duration || current.durationSeconds || 0;
+  const clampedTime = totalDuration > 0 ? Math.min(player.currentTime, totalDuration) : player.currentTime;
+  const progress = totalDuration > 0 ? Math.min(1, Math.max(0, clampedTime / totalDuration)) : 0;
+  const progressPct = progress * 100;
+  const hasQueue = player.queue.length > 1;
+  const isCollapsed = mode === "collapsed";
+  const isExpanded = mode === "expanded";
+
+  const toggleMute = () => {
+    if (player.volume === 0) {
+      player.setVolume(lastNonZeroVolumeRef.current || 1);
+    } else {
+      lastNonZeroVolumeRef.current = player.volume;
+      player.setVolume(0);
+    }
+  };
+
+  const dock = (
+    <div className="as-player-dock">
+      <section
+        className={`as-mini-player is-${mode}`}
+        data-player-mode={mode}
+        aria-label="AudioSpace audio player"
+      >
+        {player.error && !isCollapsed && (
+          <div className="as-mini-error" role="alert">
+            <AlertCircle size={13} />
+            <span>{player.error}</span>
+          </div>
+        )}
+
+        {isCollapsed ? (
+          <div className="as-mini-pill-row">
+            <AudioEqualizer playing={player.playing} variant="player" />
+            <button
+              type="button"
+              className="as-mini-play as-mini-play--sm"
+              onClick={player.toggle}
+              aria-label={player.playing ? "Pause" : "Play"}
+              title={player.playing ? "Pause" : "Play"}
+            >
+              {player.playing ? <Pause size={13} /> : <Play size={13} />}
+            </button>
+            <button
+              type="button"
+              className="as-mini-icon-btn"
+              onClick={player.next}
+              disabled={!hasQueue}
+              aria-label="Next track"
+              title="Next track"
+            >
+              <SkipForward size={13} />
+            </button>
+            <span className="as-mini-pill-time" title={current.title}>
+              {formatDuration(clampedTime)}
+            </span>
+            <button
+              type="button"
+              className="as-mini-toggle-pill"
+              onClick={() => setMode("compact")}
+              aria-label="Expand player"
+              title={`Expand player (${current.title})`}
+            >
+              <Plus size={13} />
+            </button>
+          </div>
+        ) : (
+          <div className="as-mini-compact-row">
+            <TrackArtworkBadge track={current} size="md" />
+
+            <div className="as-mini-meta">
+              <div className="as-mini-title-row">
+                <AudioEqualizer playing={player.playing} variant="player" />
+                <b className="as-mini-title" title={current.title}>
+                  {current.title}
+                </b>
+              </div>
+              <small className="as-mini-sub">
+                <span>{current.subtitle || trackSourceLabel(current.source)}</span>
+                <span aria-hidden="true">·</span>
+                <span className="as-mini-tabular">
+                  {formatDuration(clampedTime)} / {formatDuration(totalDuration)}
+                </span>
+              </small>
+            </div>
+
+            <div className="as-mini-transport">
+              <button
+                type="button"
+                className="as-mini-icon-btn"
+                onClick={player.previous}
+                disabled={!hasQueue}
+                aria-label="Previous track"
+                title="Previous track"
+              >
+                <SkipBack size={14} />
+              </button>
+              <button
+                type="button"
+                className="as-mini-play"
+                onClick={player.toggle}
+                aria-label={player.playing ? "Pause" : "Play"}
+                title={player.playing ? "Pause" : "Play"}
+              >
+                {player.playing ? <Pause size={15} /> : <Play size={15} />}
+              </button>
+              <button
+                type="button"
+                className="as-mini-icon-btn"
+                onClick={player.next}
+                disabled={!hasQueue}
+                aria-label="Next track"
+                title="Next track"
+              >
+                <SkipForward size={14} />
+              </button>
+            </div>
+
+            <div className="as-mini-utilities">
+              <button
+                type="button"
+                className={`as-mini-icon-btn ${isExpanded ? "is-active" : ""}`.trim()}
+                onClick={() => setMode(isExpanded ? "compact" : "expanded")}
+                aria-expanded={isExpanded}
+                aria-label={isExpanded ? "Hide extra audio controls" : "More audio controls"}
+                title={isExpanded ? "Hide extra controls" : "Volume, speed & waveform"}
+              >
+                <SlidersHorizontal size={13} />
+              </button>
+              <button
+                type="button"
+                className="as-mini-icon-btn"
+                onClick={() => setMode("collapsed")}
+                aria-label="Minimize player"
+                title="Collapse to mini pill"
+              >
+                <Minus size={13} />
+              </button>
+              <button
+                type="button"
+                className="as-mini-icon-btn as-mini-close"
+                onClick={player.close}
+                aria-label="Close player"
+                title="Stop and close"
+              >
+                <X size={13} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {isExpanded && (
+          <div className="as-mini-drawer">
+            <div className="as-mini-wave-row">
+              <span className="as-mini-time">{formatDuration(clampedTime)}</span>
+              <div className="as-seek-wrap">
+                <WaveformBars peaks={player.peaks} progress={progress} className="as-player-wave" />
+                <input
+                  type="range"
+                  className="as-seek-range"
+                  min={0}
+                  max={totalDuration || 1}
+                  step={0.1}
+                  value={Math.min(clampedTime, totalDuration || 1)}
+                  disabled={!totalDuration}
+                  onChange={(event) => player.seek(Number(event.target.value))}
+                  aria-label="Seek timeline"
+                />
+              </div>
+              <span className="as-mini-time">{formatDuration(totalDuration)}</span>
+            </div>
+
+            <div className="as-mini-extra-row">
+              <div className="as-mini-skip-group">
+                <button
+                  type="button"
+                  className="as-mini-chip-btn"
+                  onClick={() => player.skip(-10)}
+                  aria-label="Back 10 seconds"
+                  title="Back 10 seconds"
+                >
+                  <RotateCcw size={12} />
+                  <span>10s</span>
+                </button>
+                <button
+                  type="button"
+                  className="as-mini-chip-btn"
+                  onClick={() => player.skip(10)}
+                  aria-label="Forward 10 seconds"
+                  title="Forward 10 seconds"
+                >
+                  <RotateCw size={12} />
+                  <span>10s</span>
+                </button>
+              </div>
+
+              <div className="as-mini-volume-group">
+                <button
+                  type="button"
+                  className="as-mini-icon-btn"
+                  onClick={toggleMute}
+                  aria-label={player.volume === 0 ? "Unmute" : "Mute"}
+                  title={player.volume === 0 ? "Unmute" : "Mute"}
+                >
+                  {player.volume === 0 ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                </button>
+                <input
+                  type="range"
+                  className="as-volume-range"
+                  min={0}
+                  max={1}
+                  step={0.02}
+                  value={player.volume}
+                  onChange={(event) => player.setVolume(Number(event.target.value))}
+                  aria-label="Volume"
+                />
+              </div>
+
+              <label className="as-rate-label">
+                <span className="sr-only">Playback speed</span>
+                <select
+                  className="as-rate-select"
+                  value={player.rate}
+                  onChange={(event) => player.setRate(Number(event.target.value))}
+                  aria-label="Playback speed"
+                >
+                  {PLAYBACK_RATES.map((rateOption) => (
+                    <option key={rateOption} value={rateOption}>
+                      {rateOption}×
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </div>
+        )}
+
+        {!isExpanded && (
+          <div className="as-mini-progress">
+            <span className="as-mini-progress-track" aria-hidden="true">
+              <span className="as-mini-progress-fill" style={{ width: `${progressPct}%` }} />
+            </span>
+            <input
+              type="range"
+              className="as-mini-progress-input"
+              min={0}
+              max={totalDuration || 1}
+              step={0.1}
+              value={Math.min(clampedTime, totalDuration || 1)}
+              disabled={!totalDuration}
+              onChange={(event) => player.seek(Number(event.target.value))}
+              aria-label="Seek position"
+            />
+          </div>
+        )}
+      </section>
+    </div>
+  );
+
+  return portalHost ? createPortal(dock, portalHost) : dock;
 }

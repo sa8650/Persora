@@ -1,8 +1,8 @@
 /* Persora page toolbar — the full-width 50px strip that owns a page's tools.
-   It is portaled into the workspace shell's top slot, so it sits flush under
-   the dynamic island, spans the whole workspace width, and stays put while the
-   page scrolls. Component styles for the tools themselves live with their
-   components; this file only owns the strip. */
+   It is portaled into the workspace shell's top slot at top: 0 (zero top gap),
+   spanning the whole workspace width while the dynamic island floats cleanly
+   over its centre and stays put while the page scrolls. Component styles for
+   the tools themselves live with their components; this file only owns the strip. */
 
 /* No page tools: the strip collapses completely, so its pages start right
    under the floating island. `:empty`-style rules cannot be used here because
@@ -11,21 +11,25 @@
   flex: 0 0 0;
   height: 0;
   min-height: 0;
+  margin-top: 0;
   padding: 0;
   border-bottom: 0;
   overflow: hidden;
 }
 
 .page-toolbar-host {
+  position: relative;
+  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
   box-sizing: border-box;
   flex: 0 0 50px;
   height: 50px;
   min-height: 50px;
-  padding: 0 clamp(20px, 3vw, 40px);
+  margin-top: 0;
+  padding: 0 clamp(16px, 2.2vw, 28px);
   border-bottom: 1px solid var(--ds-divider);
   background: var(--ds-canvas-bg);
   font-family: var(--ds-font-sans);
@@ -41,7 +45,13 @@
   height: 100%;
 }
 
-/* The middle slot takes the space between navigation and the primary action. */
+.page-toolbar-tools:empty,
+.page-toolbar-end:empty {
+  display: none;
+}
+
+/* Leading navigation sits flush left; secondary tools and primary action group
+   on the right so the centre stays clear under the floating dynamic island. */
 .page-toolbar-start {
   flex: 0 0 auto;
 }
@@ -49,11 +59,15 @@
 .page-toolbar-tools {
   flex: 0 1 auto;
   justify-content: flex-end;
+  margin-left: auto;
 }
 
 .page-toolbar-end {
   flex: 0 0 auto;
   justify-content: flex-end;
+}
+
+.page-toolbar-tools:empty + .page-toolbar-end {
   margin-left: auto;
 }
 
@@ -77,9 +91,37 @@
   flex: 0 0 auto;
 }
 
-/* The calendar's search scales with the viewport so its tools fit one line. */
-.page-toolbar-host .cal-search {
-  width: clamp(104px, 9.5vw, 190px);
+/* The calendar's search scales cleanly with the viewport so its tools clear the
+   floating dynamic island at rest, and widens smoothly while typing. */
+.page-toolbar-host label.cal-search {
+  min-height: 32px;
+  height: 32px;
+  width: clamp(92px, 6.8vw, 156px);
+  padding: 0 10px;
+  gap: 6px;
+  transition: width 180ms cubic-bezier(0.22, 1, 0.36, 1), border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.page-toolbar-host label.cal-search:focus-within {
+  width: clamp(148px, 12vw, 220px);
+}
+
+.page-toolbar-host .cal-views button {
+  padding-inline: 10px;
+}
+
+/* Compact loan filter chips inside the top toolbar so they sit cleanly left of
+   the centre-floating dynamic island on laptop and desktop viewports. */
+.page-toolbar-host .ln-chips {
+  flex-wrap: nowrap;
+  gap: 4px;
+}
+
+.page-toolbar-host .ln-chips button {
+  gap: 4px;
+  height: 30px;
+  padding: 0 9px;
+  font-size: 12px;
 }
 
 .page-toolbar-label .cal-range-heading {

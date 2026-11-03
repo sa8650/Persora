@@ -70,6 +70,7 @@ import {
   emptyTrashEntries,
 } from "./lib/backend";
 import { buildTrashEntry, clearLocalTrash, loadLocalTrash, pushLocalTrash, removeLocalTrash } from "./lib/local-trash";
+import { restoreLocalDemoTrip } from "./lib/travel-space-api";
 import { CALENDAR_CHANGED_EVENT, loadCalendarReminders, markCalendarReminderRead } from "./lib/calendar-api";
 import { HABITS_CHANGED_EVENT, HABITS_RESTORED_EVENT, importHabitBackup, loadHabitReminders, markHabitReminderRead } from "./lib/habit-api";
 import type { HabitReminder } from "./lib/habit-api";
@@ -103,6 +104,8 @@ const TRASH_SPACE_ALIASES: Record<string, TrashSpace> = {
   photo_studio: "photo-studio",
   pdf_studio: "pdf-studio",
   audio_space: "audio-space",
+  travel_space: "travel-space",
+  "travel-space": "travel-space",
   "persora-table": "persora-table",
   persora_table: "persora-table",
   "persora-docs": "persora-docs",
@@ -275,6 +278,8 @@ export default function App() {
       const record = stored.payload as MedicalRecord;
       commitMedicalRecords([record, ...medicalRecordsRef.current.filter((existing) => existing.id !== record.id)]);
       if (record.file?.localOnly) demoMedicalFiles.current.delete(record.id);
+    } else if (stored.kind === "travel_trip") {
+      restoreLocalDemoTrip(user.id, stored.payload);
     } else {
       throw new Error("This Trash entry can't be restored here.");
     }
@@ -674,7 +679,15 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       if (document.visibilityState === "hidden") return;
       try {
         const profile = await getCurrentUser();
-        if (active && profile) setUser((current) => current?.id === profile.id ? { ...current, ...profile } : current);
+        if (active && profile) {
+          setUser((current) => {
+            if (!current || current.id !== profile.id) return current;
+            const unchanged = (Object.keys(profile) as Array<keyof AppUser>).every(
+              (k) => current[k] === profile[k],
+            );
+            return unchanged ? current : { ...current, ...profile };
+          });
+        }
       } catch { /* Upload routes remain server-enforced if a refresh is temporarily unavailable. */ }
     };
     const onForeground = () => { void refreshAccount(); };
@@ -1270,6 +1283,26 @@ commitContacts(getLocalContacts(DEMO_USER.id));
   };
 
   const handleSaveTimelineEvent = async (draft: TimelineDraft, onUploadProgress?: (progress: TransferProgress) => void) => {
+    if (user?.demo && draft.url?.includes("view=travel-space")) {
+      const nowIso = new Date().toISOString();
+      const localEv: TimelineEvent = {
+        id: draft.id || `demo-trip-${crypto.randomUUID()}`,
+        eventType: "manual",
+        eventDate: draft.eventDate,
+        title: draft.title,
+        description: draft.description,
+        url: draft.url,
+        linkedRecordIds: draft.linkedRecordIds || [],
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      };
+      setTimelineEvents((current) => [localEv, ...current.filter((ev) => ev.id !== localEv.id)]);
+      return;
+    }
+    if (!user?.demo && isPagesApiConfigured && draft.url?.includes("view=travel-space") && draft.id) {
+      await refreshTimeline();
+      return;
+    }
     if (!user || user.demo || !isPagesApiConfigured) throw new Error("Encrypted timeline posts require a signed-in Persora cloud account.");
     if (draft.attachmentFile && user.uploadsEnabled !== true) throw new Error("New timeline attachments require an active paid plan. You can still post or edit the event.");
     if (typeof navigator !== "undefined" && !navigator.onLine) throw new Error("Connect to the internet to post or edit a timeline event. Offline automatic dates are queued locally.");
@@ -1553,12 +1586,13 @@ commitContacts(getLocalContacts(DEMO_USER.id));
       url.searchParams.delete("project");
       window.history.replaceState(window.history.state, "", url);
     }
-    if (new URLSearchParams(window.location.search).has("view") || (next !== "loans" && new URLSearchParams(window.location.search).has("loan")) || (next !== "tables" && new URLSearchParams(window.location.search).has("table")) || (next !== "docs" && new URLSearchParams(window.location.search).has("doc"))) {
+    if (new URLSearchParams(window.location.search).has("view") || (next !== "loans" && new URLSearchParams(window.location.search).has("loan")) || (next !== "tables" && new URLSearchParams(window.location.search).has("table")) || (next !== "docs" && new URLSearchParams(window.location.search).has("doc")) || (next !== "travel-space" && new URLSearchParams(window.location.search).has("trip"))) {
       const url = new URL(window.location.href);
       url.searchParams.delete("view");
       if (next !== "loans") url.searchParams.delete("loan");
       if (next !== "tables") url.searchParams.delete("table");
       if (next !== "docs") url.searchParams.delete("doc");
+      if (next !== "travel-space") url.searchParams.delete("trip");
       window.history.replaceState(window.history.state, "", url);
     }
     if (next !== "documents") {
@@ -1758,6 +1792,7 @@ function initialWorkspaceView(): ViewId {
   if (params.get("view") === "tables") return "tables";
   if (params.get("view") === "docs") return "docs";
   if (params.get("view") === "forms") return "forms";
+  if (params.get("view") === "travel-space" || params.has("trip")) return "travel-space";
   if (params.get("view") === "connections") return "connections";
   return "dashboard";
 }

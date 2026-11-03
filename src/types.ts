@@ -15,13 +15,13 @@ export type SectionId =
   | "notes"
   | "personal-finance";
 
-export type ViewId = "dashboard" | SectionId | "contacts" | "settings" | "billing" | "shared" | "timeline" | "medical-records" | "password-manager" | "trash" | "projects" | "photo-studio" | "pdf-studio" | "audio-space" | "calendar" | "habits" | "loans" | "tables" | "forms" | "docs" | "connections";
+export type ViewId = "dashboard" | SectionId | "contacts" | "settings" | "billing" | "shared" | "timeline" | "medical-records" | "password-manager" | "trash" | "projects" | "photo-studio" | "pdf-studio" | "audio-space" | "travel-space" | "calendar" | "habits" | "loans" | "tables" | "forms" | "docs" | "connections";
 
 /** Content families that flow through the global Trash. */
-export type TrashKind = "vault_item" | "contact" | "business_card" | "medical_record" | "timeline_event" | "password_entry" | "photo_studio_photo" | "pdf_studio_document" | "persora_table" | "persora_doc" | "audio_space_item";
+export type TrashKind = "vault_item" | "contact" | "business_card" | "medical_record" | "timeline_event" | "password_entry" | "photo_studio_photo" | "pdf_studio_document" | "persora_table" | "persora_doc" | "audio_space_item" | "travel_trip";
 
 /** Space keys used by Trash entries: vault section ids plus whole-app spaces. */
-export type TrashSpace = SectionId | "contacts" | "business-cards" | "medical-records" | "timeline" | "password-manager" | "photo-studio" | "pdf-studio" | "audio-space" | "persora-table" | "persora-docs";
+export type TrashSpace = SectionId | "contacts" | "business-cards" | "medical-records" | "timeline" | "password-manager" | "photo-studio" | "pdf-studio" | "audio-space" | "travel-space" | "persora-table" | "persora-docs";
 
 export interface TrashEntry {
   /** Stable id of the original record (restoration re-uses it). */

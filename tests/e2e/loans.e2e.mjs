@@ -85,10 +85,18 @@ async function signIn(context, email, label) {
   await workspaceReady(page);
   return page;
 }
+const islandTrigger = (page) => page.getByRole('button', { name: /^Open workspace controls/ });
 const launcher = (page) => page.getByRole('button', { name: 'Persora apps', exact: true });
 const drawer = (page) => page.getByRole('dialog', { name: /^(Your favorites|Edit favorites)$/ });
 async function openDrawer(page) {
-  if (!(await drawer(page).count())) await launcher(page).click();
+  if (!(await drawer(page).count())) {
+    if (await islandTrigger(page).isVisible()) {
+      await islandTrigger(page).click();
+      await launcher(page).waitFor({ state: 'visible' });
+      await page.waitForTimeout(220);
+    }
+    await launcher(page).click();
+  }
   await drawer(page).waitFor();
   await page.waitForTimeout(200);
 }

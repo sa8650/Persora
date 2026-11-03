@@ -1,37 +1,55 @@
-import { motion, useMotionValue, useReducedMotion } from "motion/react";
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { animate, motion, useMotionValue, useReducedMotion } from "motion/react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
 import "./dynamic-island.css";
 
 type IslandSize = { width: number; height: number };
 
-const SPRING = { type: "spring" as const, stiffness: 420, damping: 34, mass: 0.9 };
+const MORPH_SPRING = {
+  type: "spring" as const,
+  stiffness: 360,
+  damping: 32,
+  mass: 0.78,
+};
 // Measured sizes replace this on the first layout pass; it only avoids a 0×0 flash.
-const FALLBACK_SIZE: IslandSize = { width: 118, height: 50 };
+const FALLBACK_FACE_SIZE: IslandSize = { width: 52, height: 36 };
+const FALLBACK_PANEL_SIZE: IslandSize = { width: 224, height: 38 };
 // The island can be nudged left or right along the top strip — never down.
 const DRAG_KEY = "persora.island.offset";
-const DRAG_THRESHOLD = 4;
+const DRAG_THRESHOLD = 8;
 
 /**
  * Persora Dynamic Island — the workspace's floating, morphing control surface.
  *
- * Collapsed it is a single compact pill; on interaction it springs open into a
- * floating control panel. The shell owns only geometry and dismissal; every
- * control inside is a real workspace control passed in by the host.
+ * Collapsed it is a single compact pill floating cleanly over the top toolbar;
+ * on interaction it springs open symmetrically from its centre into a floating
+ * control panel without shifting or blocking surrounding toolbar controls.
  */
 export default function DynamicIsland({
   triggerLabel,
   face,
   open,
   onOpenChange,
+  hasMedia = false,
   children,
   layer,
 }: {
   /** Accessible name of the collapsed pill. */
   triggerLabel: string;
-  /** Collapsed face content (mark + status dot). */
+  /** Collapsed face content (mark + status dot / equalizer). */
   face: ReactNode;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** True when the expanded panel includes the compact Now Playing media strip. */
+  hasMedia?: boolean;
   /** Expanded panel controls. */
   children: ReactNode;
   /** Popovers (menus, notification centre) rendered beneath the pill, outside the morphing shell. */
@@ -43,26 +61,37 @@ export default function DynamicIsland({
   const faceRef = useRef<HTMLButtonElement | null>(null);
   const layerRef = useRef<HTMLDivElement | null>(null);
   const restoreFocusRef = useRef(false);
-  const [panelSize, setPanelSize] = useState<IslandSize>(FALLBACK_SIZE);
-  const [faceSize, setFaceSize] = useState<IslandSize>(FALLBACK_SIZE);
-  const [settled, setSettled] = useState(!open);
+  const [panelSize, setPanelSize] = useState<IslandSize>(FALLBACK_PANEL_SIZE);
+  const [faceSize, setFaceSize] = useState<IslandSize>(FALLBACK_FACE_SIZE);
   const [dragging, setDragging] = useState(false);
   // Keeps a popover fully inside the workspace column, wherever the island is.
   const [layerShift, setLayerShift] = useState(0);
   const reduceMotion = useReducedMotion();
   const offsetX = useMotionValue(0);
   const dragRef = useRef<{ pointerId: number; startX: number; startOffset: number; moved: boolean } | null>(null);
-  // Set when a drag ended, so the pill's own click does not open the island too.
+  // Set briefly when a drag ended so the pill's synthetic click does not toggle it.
   const draggedRef = useRef(false);
   const panelId = useId();
 
-  // Both faces stay laid out, so the shell can morph between real sizes.
+  // Both faces stay laid out, so the shell can morph between real content sizes.
   useLayoutEffect(() => {
     const measure = () => {
       const panel = panelRef.current;
       const faceButton = faceRef.current;
-      if (panel) setPanelSize({ width: panel.offsetWidth, height: panel.offsetHeight });
-      if (faceButton) setFaceSize({ width: faceButton.offsetWidth, height: faceButton.offsetHeight });
+      if (panel && panel.offsetWidth > 0 && panel.offsetHeight > 0) {
+        setPanelSize((prev) =>
+          prev.width === panel.offsetWidth && prev.height === panel.offsetHeight
+            ? prev
+            : { width: panel.offsetWidth, height: panel.offsetHeight },
+        );
+      }
+      if (faceButton && faceButton.offsetWidth > 0 && faceButton.offsetHeight > 0) {
+        setFaceSize((prev) =>
+          prev.width === faceButton.offsetWidth && prev.height === faceButton.offsetHeight
+            ? prev
+            : { width: faceButton.offsetWidth, height: faceButton.offsetHeight },
+        );
+      }
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -76,42 +105,64 @@ export default function DynamicIsland({
   }, []);
 
   // Keep the pill inside its own column — never under the sidebar and never off
-  // the right edge. The column is whatever the island is mounted in.
-  const clampOffset = useCallback((value: number) => {
-    const host = rootRef.current?.parentElement;
-    if (!host) return value;
-    const rect = host.getBoundingClientRect();
-    const halfWidth = shellRef.current
-      ? shellRef.current.getBoundingClientRect().width / 2
-      : (open ? panelSize.width : faceSize.width) / 2;
-    // The island is centred in its column, so it may shift either way by the gap
-    // between the pill's edge and the column's edges.
-    const limit = Math.max(0, rect.width / 2 - halfWidth - 12);
-    return Math.min(limit, Math.max(-limit, value));
-  }, [open, panelSize.width, faceSize.width]);
+  // the right edge — using the target width rather than mid-morph DOM bounds.
+  const clampOffset = useCallback(
+    (value: number, targetWidth?: number) => {
+      const host = rootRef.current?.parentElement;
+      if (!host) return value;
+      const rect = host.getBoundingClientRect();
+      if (!rect.width) return value;
+      const width = (targetWidth ?? (open ? panelSize.width : faceSize.width)) + 2;
+      const limit = Math.max(0, rect.width / 2 - width / 2 - 12);
+      return Math.min(limit, Math.max(-limit, value));
+    },
+    [open, panelSize.width, faceSize.width],
+  );
 
   // Restore the saved position for this device.
   useEffect(() => {
     try {
       const saved = Number(window.localStorage.getItem(DRAG_KEY));
-      if (Number.isFinite(saved) && saved !== 0) offsetX.set(clampOffset(saved));
+      if (Number.isFinite(saved) && saved !== 0) {
+        offsetX.set(clampOffset(saved, faceSize.width));
+      }
     } catch {
       /* storage unavailable — the island simply starts centred */
     }
-  }, [offsetX, clampOffset]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Opening widens the island, so the whole pill plus panel is kept in view.
-  useLayoutEffect(() => {
-    offsetX.set(clampOffset(offsetX.get()));
-  }, [offsetX, clampOffset, open, panelSize.width, faceSize.width, settled]);
-
-  // Re-clamp on resize and whenever the shell changes size.
+  // Opening near a column edge smoothly nudges the island inward so the full
+  // expanded panel stays in view without an abrupt snap.
   useEffect(() => {
-    offsetX.set(clampOffset(offsetX.get()));
+    const current = offsetX.get();
+    const clamped = clampOffset(current);
+    if (Math.abs(clamped - current) < 0.5) return;
+    if (reduceMotion) {
+      offsetX.set(clamped);
+      return;
+    }
+    const controls = animate(offsetX, clamped, MORPH_SPRING);
+    return () => controls.stop();
+  }, [offsetX, clampOffset, open, panelSize.width, faceSize.width, reduceMotion]);
+
+  // Re-clamp immediately when the viewport or workspace column resizes.
+  useEffect(() => {
+    const host = rootRef.current?.parentElement;
     const onResize = () => offsetX.set(clampOffset(offsetX.get()));
+    const observer = host ? new ResizeObserver(onResize) : null;
+    if (host && observer) observer.observe(host);
     window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", onResize);
+    };
   }, [offsetX, clampOffset]);
+
+  // Reset shift whenever popovers close so a previous edge nudge never lingers.
+  useLayoutEffect(() => {
+    if (!layer) setLayerShift(0);
+  }, [layer]);
 
   // A popover follows the island but never slides under the sidebar or off the
   // right edge: it is nudged back inside the column when it would overflow.
@@ -121,7 +172,7 @@ export default function DynamicIsland({
     if (!host || !popover) return;
     const hostRect = host.getBoundingClientRect();
     const box = popover.getBoundingClientRect();
-    if (!box.width) return;
+    if (!box.width || !hostRect.width) return;
     const edge = 12;
     let delta = 0;
     if (box.left < hostRect.left + edge) delta = hostRect.left + edge - box.left;
@@ -130,9 +181,8 @@ export default function DynamicIsland({
     setLayerShift((shift) => shift + Math.round(delta));
   }, []);
 
-  // Popovers change size (notification centre vs. account menu) — re-measure,
-  // and settle again after a nudge so the shift converges in one or two passes.
   useLayoutEffect(() => {
+    if (!layer) return;
     placeLayer();
     const popover = layerRef.current?.firstElementChild;
     if (!popover) return;
@@ -142,8 +192,8 @@ export default function DynamicIsland({
   }, [placeLayer, open, layer]);
 
   useLayoutEffect(() => {
-    placeLayer();
-  }, [placeLayer, layerShift]);
+    if (layer) placeLayer();
+  }, [placeLayer, layer, layerShift]);
 
   useEffect(() => {
     const unsubscribe = offsetX.on("change", placeLayer);
@@ -154,10 +204,13 @@ export default function DynamicIsland({
     };
   }, [offsetX, placeLayer]);
 
-  const close = useCallback((refocus = false) => {
-    restoreFocusRef.current = refocus;
-    onOpenChange(false);
-  }, [onOpenChange]);
+  const close = useCallback(
+    (refocus = false) => {
+      restoreFocusRef.current = refocus;
+      onOpenChange(false);
+    },
+    [onOpenChange],
+  );
 
   // Outside click collapses the island (capture phase so nothing swallows it).
   useEffect(() => {
@@ -165,26 +218,32 @@ export default function DynamicIsland({
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target as Node | null;
       if (!target || !rootRef.current) return;
-      // A popover opened from a control never collapses the island, and neither
-      // does anything inside the shell: the island stays open until the user
-      // picks something or dismisses it explicitly.
       if (rootRef.current.contains(target)) return;
-      // The app launcher's drawer is portaled to <body>; interacting with it
-      // must not collapse the island behind it.
-      if (target instanceof Element && target.closest(".app-launcher-panel")) return;
+      if (
+        target instanceof Element &&
+        target.closest(".app-launcher-panel, .add-document-drawer-backdrop, [data-slot='dialog-content'], .modal-backdrop")
+      ) {
+        return;
+      }
       close();
     };
     document.addEventListener("pointerdown", onPointerDown, true);
     return () => document.removeEventListener("pointerdown", onPointerDown, true);
   }, [open, close]);
 
-  // Escape collapses the island, but an open popover inside it closes first.
+  // Escape collapses the island only after any open popover or modal has closed.
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      const popovers = rootRef.current?.querySelectorAll('[role="dialog"]');
-      if (popovers && popovers.length > 0) return;
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (rootRef.current?.querySelector('[role="dialog"]')) return;
+      if (
+        document.querySelector(
+          ".app-launcher-panel, .add-document-drawer-backdrop, [data-slot='dialog-content'], .modal-backdrop",
+        )
+      ) {
+        return;
+      }
       close(true);
     };
     document.addEventListener("keydown", onKeyDown);
@@ -198,12 +257,18 @@ export default function DynamicIsland({
     faceRef.current?.focus();
   }, [open]);
 
-  // Arrow keys move between the island's controls.
+  // Arrow keys move between the island's controls (except native range sliders).
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    if (
+      event.target instanceof HTMLInputElement ||
+      (event.target instanceof Element && event.target.getAttribute("role") === "slider")
+    ) {
+      return;
+    }
     const controls = Array.from(
       rootRef.current?.querySelectorAll<HTMLElement>(
-        "[data-island-control]:not([disabled]), .island-panel .app-launcher-button:not([disabled]), .island-panel .ds-theme-toggle:not([disabled])",
+        "[data-island-control]:not([disabled]), .island-panel .app-launcher-button:not([disabled]), .island-panel .ds-theme-toggle:not([disabled]), .island-panel .island-avatar:not([disabled])",
       ) ?? [],
     ).filter((element) => element.offsetParent !== null);
     if (controls.length < 2) return;
@@ -214,26 +279,27 @@ export default function DynamicIsland({
     controls[(index + step + controls.length) % controls.length].focus();
   };
 
-  // The shell morphs between the two faces.
   const size = open ? panelSize : faceSize;
-  // Popovers hang beneath whatever the island currently is: aligned to the
-  // collapsed pill's edge, and to the open panel's edge while expanded.
-  const anchorSize = size;
-  const morph = reduceMotion
-    ? { duration: 0 }
-    : SPRING;
+  const morph = reduceMotion ? { duration: 0 } : MORPH_SPRING;
 
   const startDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
-    // Mouse/pen only: a touch drag must stay a tap on phones.
-    if (event.pointerType === "touch" || event.button !== 0) return;
-    // Anything inside the island's own popover keeps its behaviour.
-    if (event.target instanceof Element && event.target.closest(".island-layer")) return;
-    // The pill itself is grabbable; every other control keeps its own clicks.
-    if (event.target instanceof Element && !event.target.closest(".island-face") && event.target.closest("button, input, a, [role='dialog']")) return;
     draggedRef.current = false;
-    // Capture is taken only once the drag really starts: capturing on
-    // pointer-down would retarget the click and the pill would stop opening.
-    dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startOffset: offsetX.get(), moved: false };
+    // Mouse/pen only: a touch tap on phones never initiates a horizontal drag.
+    if (event.pointerType === "touch" || event.button !== 0) return;
+    // Expanded controls keep 100% crisp click behaviour without drag capture.
+    if (
+      event.target instanceof Element &&
+      !event.target.closest(".island-face") &&
+      event.target.closest("button, input, a, [role='button'], [role='slider'], [role='dialog']")
+    ) {
+      return;
+    }
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startOffset: offsetX.get(),
+      moved: false,
+    };
   };
 
   const moveDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -252,71 +318,83 @@ export default function DynamicIsland({
   const endDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
-    const captured = drag.moved;
+    const moved = drag.moved;
     dragRef.current = null;
     setDragging(false);
-    if (captured) event.currentTarget.releasePointerCapture?.(event.pointerId);
-    if (!drag.moved) return;
-    // A drag must not also register as a click on the pill.
+    if (moved) event.currentTarget.releasePointerCapture?.(event.pointerId);
+    if (!moved) return;
+    // Block only the synthetic click from this drag gesture, then reset cleanly
+    // so the very next tap/click on the pill always opens the island.
     draggedRef.current = true;
-    try { window.localStorage.setItem(DRAG_KEY, String(Math.round(offsetX.get()))); } catch { /* ignore */ }
+    window.requestAnimationFrame(() => {
+      draggedRef.current = false;
+    });
+    try {
+      window.localStorage.setItem(DRAG_KEY, String(Math.round(offsetX.get())));
+    } catch {
+      /* ignore */
+    }
   };
 
   return (
-    <>
-      <div
-        className={`dynamic-island-anchor ${dragging ? "is-dragging" : ""}`.trim()}
-        ref={rootRef}
-        onKeyDown={onKeyDown}
-        onPointerDown={startDrag}
-        onPointerMove={moveDrag}
-        onPointerUp={endDrag}
-        onPointerCancel={endDrag}
-      >
+    <div
+      className={`dynamic-island-anchor ${dragging ? "is-dragging" : ""}`.trim()}
+      ref={rootRef}
+      onKeyDown={onKeyDown}
+    >
+      <motion.div className="dynamic-island-track" style={{ x: offsetX }}>
         <motion.div
           ref={shellRef}
-          className={`island-shell ${open ? "is-open" : ""} ${settled ? "is-settled" : ""}`.trim()}
+          className={`island-shell ${open ? "is-open" : ""} ${hasMedia ? "has-media" : ""}`.trim()}
           initial={false}
           animate={{ width: size.width, height: size.height }}
           transition={morph}
-          onAnimationComplete={() => setSettled(true)}
-          /* The anchor has no width, so the shell is centred with its own
-             measured width — Motion keeps the transform for the drag. */
-          style={{ x: offsetX, marginLeft: -Math.round(size.width / 2) }}
+          onPointerDown={startDrag}
+          onPointerMove={moveDrag}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
         >
-        <button
-          ref={faceRef}
-          type="button"
-          className="island-face"
-          onClick={() => {
-            if (draggedRef.current) { draggedRef.current = false; return; }
-            onOpenChange(true);
-          }}
-          aria-label={triggerLabel}
-          aria-expanded={open}
-          aria-controls={panelId}
-          aria-hidden={open}
-          tabIndex={open ? -1 : 0}
-        >
-          {face}
-        </button>
-        {/* The panel follows the trigger so Tab order runs trigger → controls. */}
-        <div className="island-panel" ref={panelRef} id={panelId} aria-hidden={!open} data-open={open ? "true" : "false"}>
-          {children}
-        </div>
-      </motion.div>
-        <motion.div className="island-layer" style={{ x: offsetX }}>
-          {/* Anchored to the pill's own box, so menus open beneath it even after a drag. */}
+          <button
+            ref={faceRef}
+            type="button"
+            className="island-face"
+            onClick={() => {
+              if (draggedRef.current) {
+                draggedRef.current = false;
+                return;
+              }
+              onOpenChange(true);
+            }}
+            aria-label={triggerLabel}
+            aria-expanded={open}
+            aria-controls={panelId}
+            aria-hidden={open}
+            tabIndex={open ? -1 : 0}
+          >
+            {face}
+          </button>
+          {/* The panel follows the trigger so Tab order runs trigger → controls. */}
+          <div
+            className={`island-panel ${hasMedia ? "has-media" : ""}`.trim()}
+            ref={panelRef}
+            id={panelId}
+            aria-hidden={!open}
+            data-open={open ? "true" : "false"}
+          >
+            {children}
+          </div>
+        </motion.div>
+        <div className="island-layer">
           <div
             className="island-layer-anchor"
             ref={layerRef}
-            style={{ width: anchorSize.width, height: anchorSize.height, marginLeft: layerShift }}
+            style={{ width: size.width + 2, marginLeft: layerShift }}
           >
             {layer}
           </div>
-        </motion.div>
-      </div>
-    </>
+        </div>
+      </motion.div>
+    </div>
   );
 }
 

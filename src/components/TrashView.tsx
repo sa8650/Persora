@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ArchiveRestore, AudioLines, BriefcaseBusiness, Camera, CalendarClock, Clock3, Eye, FileStack, FileText, FolderOpen, HeartPulse, KeyRound, Paperclip, RefreshCw, Sheet, ShieldCheck, Trash2, UsersRound } from "lucide-react";
+import { ArchiveRestore, AudioLines, BriefcaseBusiness, Camera, CalendarClock, Clock3, Compass, Eye, FileStack, FileText, FolderOpen, HeartPulse, KeyRound, Paperclip, RefreshCw, Sheet, ShieldCheck, Trash2, UsersRound } from "lucide-react";
 import "./trash.css";
 import ModalPortal from "./ModalPortal";
 import ItemModalShell from "./ItemModalShell";
@@ -24,6 +24,7 @@ const KIND_ICONS: Record<TrashKind, typeof FileText> = {
   persora_table: Sheet,
   persora_doc: FileText,
   audio_space_item: AudioLines,
+  travel_trip: Compass,
 };
 
 const KIND_LABELS: Record<TrashKind, string> = {
@@ -38,6 +39,7 @@ const KIND_LABELS: Record<TrashKind, string> = {
   persora_table: "Table",
   persora_doc: "Document",
   audio_space_item: "Audio",
+  travel_trip: "Trip",
 };
 
 const SPACE_LABELS: Record<string, string> = {
@@ -49,6 +51,7 @@ const SPACE_LABELS: Record<string, string> = {
   "photo-studio": "Photo Studio",
   "pdf-studio": "PDF Studio",
   "audio-space": "AudioSpace",
+  "travel-space": "TravelSpace",
   "persora-table": "Persora Table",
   "persora-docs": "Persora Docs",
 };

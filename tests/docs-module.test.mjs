@@ -6,16 +6,22 @@ import { readFileSync } from "node:fs";
 import { createVaultDatabase } from "./password-vault-db.mjs";
 import { handleDocs, handlePublicDocs, exportDocsData } from "../cloudflare/docs.js";
 import {
+  DOC_FONT_FAMILIES,
+  DOC_SHAPE_TYPES,
   DOC_TEMPLATES,
   DocRuleError,
   blankDocContent,
   buildDocTemplate,
   cleanDocTitle,
   extractDocSummaryMeta,
+  formatDocPageNumber,
+  getDocPageSetup,
+  getPageDimensions,
   renderDocBodySafeHtml,
   renderDocPrintableHtml,
   sanitizeDocContent,
   sanitizeDocHref,
+  sanitizeDocImageSrc,
 } from "../cloudflare/docs-rules.js";
 
 const ORIGIN = "https://persora.example";
@@ -565,3 +571,500 @@ test("member sharing & public link sharing: enforces view/edit permissions, toke
   );
   assert.equal((await callPublicDocs("GET", `/public/docs/${token2}`)).status, 404);
 });
+
+// Tiny valid 1x1 red PNG data URL for image sanitization & PDF embedding tests
+const SAMPLE_PNG_DATA_URL =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+test("pageSetup, independent per-page colors, 11 shapes, non-destructive comments, tables, images & API round-trip", async () => {
+  // 1. Dimensions swap accurately between Portrait and Landscape
+  const portraitLetter = getPageDimensions({ paperSize: "letter", orientation: "portrait" });
+  const landscapeLetter = getPageDimensions({ paperSize: "letter", orientation: "landscape" });
+  assert.equal(portraitLetter.widthPx, 816);
+  assert.equal(portraitLetter.heightPx, 1056);
+  assert.equal(landscapeLetter.widthPx, 1056);
+  assert.equal(landscapeLetter.heightPx, 816);
+  assert.equal(
+    formatDocPageNumber({ showPageNumbers: true, pageNumberFormat: "page-x-of-n" }, 1, 4),
+    "Page 2 of 4",
+  );
+  assert.equal(
+    formatDocPageNumber({ showPageNumbers: true, pageNumberFormat: "number" }, 2, 4),
+    "3",
+  );
+
+  // 2. Image src validation accepts PNG/JPEG/WebP data URLs and HTTPS, blocks SVG/HTML/JS XSS
+  assert.equal(sanitizeDocImageSrc(SAMPLE_PNG_DATA_URL), SAMPLE_PNG_DATA_URL);
+  assert.equal(sanitizeDocImageSrc("https://images.persora.example/chart.png"), "https://images.persora.example/chart.png");
+  assert.equal(sanitizeDocImageSrc("javascript:alert(1)"), null);
+  assert.equal(sanitizeDocImageSrc("data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg=="), null);
+  assert.equal(sanitizeDocImageSrc("data:image/svg+xml;base64,PHN2Zy8+"), null);
+
+  // 3. Build rich multi-page document exercising all 11 shape types, independent per-page colors,
+  //    custom margins, header/footer, page numbers, table, docImage, pageBreak, 8 fonts, and comments
+  assert.equal(DOC_FONT_FAMILIES.length, 8);
+  assert.equal(DOC_SHAPE_TYPES.length, 11);
+
+  const allShapes = DOC_SHAPE_TYPES.map((shapeType, idx) => ({
+    id: `shp_${shapeType}_${idx}`,
+    shapeType,
+    pageIndex: idx % 2,
+    x: 48 + idx * 14,
+    y: 72 + idx * 12,
+    width: 140,
+    height: shapeType === "line" || shapeType === "arrow" ? 28 : 90,
+    rotation: idx === 3 ? 15 : 0,
+    fillColor: shapeType === "line" || shapeType === "arrow" ? "transparent" : "#dbeafe",
+    strokeColor: "#1d4ed8",
+    strokeWidth: 2,
+    opacity: 0.95,
+    text: `Label ${shapeType}`,
+    textColor: "#0f172a",
+  }));
+
+  const richPayload = {
+    type: "doc",
+    attrs: {
+      pageSetup: {
+        paperSize: "a4",
+        orientation: "landscape",
+        margins: { top: 54, bottom: 54, left: 64, right: 64 },
+        pageColor: "#ffffff",
+        pageColors: {
+          "0": "#fefce8", // Page 1 warm cream — independent from Page 2!
+          "1": "#ecfeff", // Page 2 soft cyan — independent from Page 1 & Page 3!
+        },
+        headerEnabled: true,
+        footerEnabled: true,
+        headerText: "Persora Confidential — Q4 Board Deck",
+        footerText: "Prepared in Persora Docs",
+        showPageNumbers: true,
+        pageNumberPosition: "footer-right",
+        pageNumberFormat: "page-x-of-n",
+        showRuler: true,
+        commentsEnabled: true,
+      },
+    },
+    shapes: allShapes,
+    comments: [
+      {
+        id: "cmt_revenue",
+        quote: "Revenue grew 42%",
+        authorName: "Alice",
+        text: "Double-check EMEA breakdown before publishing.",
+        createdAt: "2026-11-03T10:00:00.000Z",
+        resolved: false,
+        replies: [
+          {
+            id: "rpl_1",
+            authorName: "Bob",
+            text: "Verified against finance ledger.",
+            createdAt: "2026-11-03T10:05:00.000Z",
+          },
+        ],
+      },
+    ],
+    content: [
+      {
+        type: "paragraph",
+        attrs: { variant: "title", textAlign: "left", lineHeight: "1.15", spaceAfter: 8 },
+        content: [
+          {
+            type: "text",
+            text: "Q4 Board Review",
+            marks: [{ type: "textStyle", attrs: { fontFamily: "georgia", fontSize: "28pt", color: "#1e293b" } }],
+          },
+        ],
+      },
+      {
+        type: "paragraph",
+        attrs: { lineHeight: "1.5", spaceAfter: 12 },
+        content: [
+          {
+            type: "text",
+            text: "Revenue grew 42%",
+            marks: [
+              { type: "bold" },
+              { type: "comment", attrs: { commentId: "cmt_revenue" } },
+            ],
+          },
+          { type: "text", text: " year over year across enterprise tiers." },
+        ],
+      },
+      {
+        type: "table",
+        content: [
+          {
+            type: "tableRow",
+            content: [
+              {
+                type: "tableHeader",
+                attrs: { colspan: 1, rowspan: 1, colwidth: [220], backgroundColor: "#f1f5f9" },
+                content: [{ type: "paragraph", content: [{ type: "text", text: "Region", marks: [{ type: "bold" }] }] }],
+              },
+              {
+                type: "tableHeader",
+                attrs: { colspan: 1, rowspan: 1, colwidth: [180], backgroundColor: "#f1f5f9" },
+                content: [{ type: "paragraph", content: [{ type: "text", text: "ARR", marks: [{ type: "bold" }] }] }],
+              },
+            ],
+          },
+          {
+            type: "tableRow",
+            content: [
+              {
+                type: "tableCell",
+                content: [{ type: "paragraph", content: [{ type: "text", text: "North America" }] }],
+              },
+              {
+                type: "tableCell",
+                content: [{ type: "paragraph", content: [{ type: "text", text: "$4.8M" }] }],
+              },
+            ],
+          },
+        ],
+      },
+      {
+        type: "docImage",
+        attrs: {
+          src: SAMPLE_PNG_DATA_URL,
+          alt: "Growth chart",
+          width: 320,
+          height: 180,
+          align: "right",
+          wrap: "wrap-left",
+        },
+      },
+      { type: "pageBreak" },
+      {
+        type: "paragraph",
+        content: [{ type: "text", text: "Page 2 Appendix & Milestones" }],
+      },
+    ],
+  };
+
+  // 4. Persist through POST /docs & PUT /docs/:id/content and verify full round-trip
+  const created = await callDocs(
+    "POST",
+    "/docs",
+    { id: crypto.randomUUID(), title: "Q4 Board Review", content: richPayload },
+    alice,
+  );
+  assert.equal(created.status, 201);
+  const richDocId = created.body.doc.id;
+
+  const loaded = await callDocs("GET", `/docs/${richDocId}`, undefined, alice);
+  assert.equal(loaded.status, 200);
+  const savedDoc = loaded.body.doc.content;
+  const ps = getDocPageSetup(savedDoc);
+  assert.equal(ps.paperSize, "a4");
+  assert.equal(ps.orientation, "landscape");
+  assert.deepEqual(ps.margins, { top: 54, bottom: 54, left: 64, right: 64 });
+  assert.equal(ps.pageColors["0"], "#fefce8", "Page 1 color stays #fefce8");
+  assert.equal(ps.pageColors["1"], "#ecfeff", "Page 2 color stays #ecfeff independently");
+  assert.equal(ps.pageColors["2"], undefined, "Page 3 falls back to default white #ffffff");
+  assert.equal(ps.headerText, "Persora Confidential — Q4 Board Deck");
+  assert.equal(ps.footerText, "Prepared in Persora Docs");
+  assert.equal(ps.showPageNumbers, true);
+  assert.equal(savedDoc.shapes.length, 11);
+  assert.equal(savedDoc.comments.length, 1);
+  assert.equal(savedDoc.comments[0].replies.length, 1);
+
+  // 5. Non-destructive comments toggle: turning commentsEnabled OFF preserves threads & inline marks!
+  const toggledOffPayload = {
+    ...savedDoc,
+    attrs: {
+      pageSetup: {
+        ...ps,
+        commentsEnabled: false,
+      },
+    },
+  };
+  const offRes = await callDocs(
+    "PUT",
+    `/docs/${richDocId}/content`,
+    { expectedRevision: 1, content: toggledOffPayload },
+    alice,
+  );
+  assert.equal(offRes.status, 200);
+  const reloadedAfterOff = await callDocs("GET", `/docs/${richDocId}`, undefined, alice);
+  assert.equal(reloadedAfterOff.status, 200);
+  assert.equal(getDocPageSetup(reloadedAfterOff.body.doc.content).commentsEnabled, false);
+  assert.equal(
+    reloadedAfterOff.body.doc.content.comments.length,
+    1,
+    "Turning comments OFF must never delete saved comment threads",
+  );
+  const inlineMarksAfterOff = reloadedAfterOff.body.doc.content.content[1].content[0].marks;
+  assert.equal(
+    inlineMarksAfterOff.some((m) => m.type === "comment" && m.attrs.commentId === "cmt_revenue"),
+    true,
+    "Turning comments OFF must preserve inline comment anchors so re-enabling restores them",
+  );
+
+  // 6. Printable HTML respects multi-page split, per-page colors, headers/footers, and backgroundGraphics flag
+  const printWithBg = renderDocPrintableHtml("Q4 Board Review", savedDoc, {
+    backgroundGraphics: true,
+    includeHeadersFooters: true,
+  });
+  assert.match(printWithBg, /#fefce8/i);
+  assert.match(printWithBg, /#ecfeff/i);
+  assert.match(printWithBg, /Persora Confidential — Q4 Board Deck/);
+  assert.match(printWithBg, /Page 1 of 2/);
+  assert.match(printWithBg, /Page 2 of 2/);
+  assert.match(printWithBg, /<table/);
+
+  const printNoBg = renderDocPrintableHtml("Q4 Board Review", savedDoc, {
+    backgroundGraphics: false,
+    includeHeadersFooters: false,
+  });
+  assert.ok(!printNoBg.includes("#fefce8"), "backgroundGraphics: false must omit tinted page fills");
+  assert.ok(!printNoBg.includes("Persora Confidential — Q4 Board Deck"), "includeHeadersFooters: false must omit headers");
+});
+
+test("exporters (PDF, DOCX, HTML, Markdown, TXT), print page ranges, text case transform & CSS cleanup invariants", async () => {
+  const { mkdtempSync } = await import("node:fs");
+  const path = await import("node:path");
+  const esbuild = await import("esbuild");
+  const { PDFDocument } = await import("pdf-lib");
+  const { Editor } = await import("@tiptap/core");
+
+  const outDir = mkdtempSync(path.join(process.cwd(), "node_modules", ".docs-unit-"));
+  const bundleModule = async (entryRel, outName) => {
+    const outfile = path.join(outDir, outName);
+    await esbuild.build({
+      entryPoints: [path.join(process.cwd(), entryRel)],
+      outfile,
+      bundle: true,
+      format: "esm",
+      platform: "node",
+      packages: "external",
+      logLevel: "silent",
+    });
+    return import(outfile);
+  };
+
+  const pdfMod = await bundleModule("src/lib/docs-pdf.ts", "docs-pdf.mjs");
+  const exportMod = await bundleModule("src/lib/docs-export.ts", "docs-export.mjs");
+  const extMod = await bundleModule("src/components/docs/docs-extensions.ts", "docs-extensions.mjs");
+  const printMod = await bundleModule("src/components/docs/DocPrintModal.tsx", "doc-print-modal.mjs");
+
+  const sampleDoc = sanitizeDocContent({
+    type: "doc",
+    attrs: {
+      pageSetup: {
+        paperSize: "letter",
+        orientation: "landscape",
+        margins: { top: 60, bottom: 60, left: 72, right: 72 },
+        pageColor: "#ffffff",
+        pageColors: { "0": "#fefce8", "1": "#f0fdf4" },
+        headerEnabled: true,
+        footerEnabled: true,
+        headerText: "Engineering Architecture Spec",
+        footerText: "Internal Use Only",
+        showPageNumbers: true,
+        pageNumberPosition: "footer-right",
+        pageNumberFormat: "page-x-of-n",
+      },
+    },
+    shapes: [
+      {
+        id: "shp_arch_1",
+        shapeType: "roundedRect",
+        pageIndex: 0,
+        x: 90,
+        y: 120,
+        width: 180,
+        height: 80,
+        fillColor: "#dbeafe",
+        strokeColor: "#2563eb",
+        strokeWidth: 2,
+        text: "API Gateway",
+      },
+      {
+        id: "shp_arch_2",
+        shapeType: "arrow",
+        pageIndex: 0,
+        x: 280,
+        y: 150,
+        width: 110,
+        height: 24,
+        fillColor: "transparent",
+        strokeColor: "#1e293b",
+        strokeWidth: 2,
+      },
+    ],
+    content: [
+      {
+        type: "paragraph",
+        attrs: { variant: "title" },
+        content: [{ type: "text", text: "System Overview" }],
+      },
+      {
+        type: "heading",
+        attrs: { level: 1 },
+        content: [{ type: "text", text: "1. Core Services" }],
+      },
+      {
+        type: "paragraph",
+        content: [
+          { type: "text", text: "All traffic flows through ", marks: [] },
+          { type: "text", text: "Cloudflare Workers", marks: [{ type: "bold" }, { type: "underline" }] },
+          { type: "text", text: " with strict ", marks: [] },
+          { type: "text", text: "PostgreSQL RLS", marks: [{ type: "italic" }] },
+          { type: "text", text: "." },
+        ],
+      },
+      {
+        type: "table",
+        content: [
+          {
+            type: "tableRow",
+            content: [
+              {
+                type: "tableHeader",
+                content: [{ type: "paragraph", content: [{ type: "text", text: "Service" }] }],
+              },
+              {
+                type: "tableHeader",
+                content: [{ type: "paragraph", content: [{ type: "text", text: "Latency SLA" }] }],
+              },
+            ],
+          },
+          {
+            type: "tableRow",
+            content: [
+              {
+                type: "tableCell",
+                content: [{ type: "paragraph", content: [{ type: "text", text: "Docs API" }] }],
+              },
+              {
+                type: "tableCell",
+                content: [{ type: "paragraph", content: [{ type: "text", text: "< 50ms" }] }],
+              },
+            ],
+          },
+        ],
+      },
+      {
+        type: "docImage",
+        attrs: { src: SAMPLE_PNG_DATA_URL, alt: "Diagram", width: 200, height: 120, align: "center", wrap: "inline" },
+      },
+      { type: "pageBreak" },
+      {
+        type: "paragraph",
+        content: [{ type: "text", text: "Page 2 Disaster Recovery Runbook" }],
+      },
+    ],
+  });
+
+  // 1. Multi-page vector PDF export (`buildDocPdfBytes`)
+  const pdfBytes = await pdfMod.buildDocPdfBytes("Architecture Spec", sampleDoc);
+  assert.ok(pdfBytes instanceof Uint8Array && pdfBytes.byteLength > 1000);
+  const parsedPdf = await PDFDocument.load(pdfBytes);
+  assert.equal(parsedPdf.getPageCount(), 2, "Explicit pageBreak must produce a 2-page PDF");
+  const page0Size = parsedPdf.getPage(0).getSize();
+  assert.equal(Math.round(page0Size.width), 792, "Landscape Letter PDF width must be 792pt");
+  assert.equal(Math.round(page0Size.height), 612, "Landscape Letter PDF height must be 612pt");
+
+  // 2. Editable Word `.docx` OOXML export (`buildDocxBytes`)
+  const docxBytes = exportMod.buildDocxBytes("Architecture Spec", sampleDoc);
+  assert.ok(docxBytes instanceof Uint8Array && docxBytes.byteLength > 1200);
+  // ZIP local file header signature PK\x03\x04
+  assert.equal(docxBytes[0], 0x50);
+  assert.equal(docxBytes[1], 0x4b);
+  assert.equal(docxBytes[2], 0x03);
+  assert.equal(docxBytes[3], 0x04);
+  const rawZipText = new TextDecoder("latin1").decode(docxBytes);
+  assert.ok(rawZipText.includes("[Content_Types].xml"));
+  assert.ok(rawZipText.includes("word/document.xml"));
+  assert.ok(rawZipText.includes("<w:tbl>"), ".docx must contain native Word table XML");
+  assert.ok(rawZipText.includes('w:orient="landscape"'), ".docx must preserve landscape orientation");
+  assert.ok(rawZipText.includes("System Overview"));
+  assert.ok(rawZipText.includes("Page 2 Disaster Recovery Runbook"));
+
+  // 3. Editable HTML, Markdown, and Plain Text exports + Print Page Range parser
+  const htmlExport = exportMod.buildEditableHtmlDocument("Architecture Spec", sampleDoc);
+  assert.match(htmlExport, /<!DOCTYPE html>/i);
+  assert.match(htmlExport, /Engineering Architecture Spec/);
+  assert.match(htmlExport, /<table\b/);
+
+  const rangeValid = printMod.parsePrintPageRange("1-2, 4", 5);
+  assert.equal(rangeValid.error, null);
+  assert.deepEqual(rangeValid.indices, [0, 1, 3]);
+  const rangeInvalid = printMod.parsePrintPageRange("8-10", 5);
+  assert.ok(typeof rangeInvalid.error === "string" && rangeInvalid.error.length > 0);
+
+  const mdExport = exportMod.buildTextOrMarkdownDocument("Architecture Spec", sampleDoc, "md");
+  assert.match(mdExport, /# 1\. Core Services/);
+  assert.match(mdExport, /\*\*Cloudflare Workers\*\*/);
+  assert.match(mdExport, /\| Service \| Latency SLA \|/);
+
+  const txtExport = exportMod.buildTextOrMarkdownDocument("Architecture Spec", sampleDoc, "txt");
+  assert.match(txtExport, /System Overview/);
+  assert.match(txtExport, /Docs API\t< 50ms/);
+
+  // 4. `Aa` Text Case transformations (`UPPERCASE`, `lowercase`, `Capitalize Each Word`, `Sentence case`)
+  const { GlobalWindow } = await import("happy-dom");
+  if (!globalThis.document) {
+    const win = new GlobalWindow({ url: "http://localhost:5173/" });
+    for (const key of Object.getOwnPropertyNames(win)) {
+      if (!(key in globalThis)) {
+        try {
+          globalThis[key] = win[key];
+        } catch {
+          /* ignore read-only globals */
+        }
+      }
+    }
+    globalThis.window = win;
+    globalThis.document = win.document;
+    globalThis.navigator = win.navigator;
+  }
+  const headlessEditor = new Editor({
+    extensions: extMod.createPersoraDocExtensions(),
+    content: {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "hello persora world. second sentence here!",
+              marks: [{ type: "bold" }],
+            },
+          ],
+        },
+      ],
+    },
+  });
+  headlessEditor.commands.selectAll();
+  extMod.transformEditorTextCase(headlessEditor, "uppercase");
+  assert.equal(headlessEditor.getText().trim(), "HELLO PERSORA WORLD. SECOND SENTENCE HERE!");
+  headlessEditor.commands.selectAll();
+  extMod.transformEditorTextCase(headlessEditor, "capitalize");
+  assert.equal(headlessEditor.getText().trim(), "Hello Persora World. Second Sentence Here!");
+  headlessEditor.commands.selectAll();
+  extMod.transformEditorTextCase(headlessEditor, "sentence");
+  assert.equal(headlessEditor.getText().trim(), "Hello persora world. Second sentence here!");
+  headlessEditor.commands.selectAll();
+  extMod.transformEditorTextCase(headlessEditor, "lowercase");
+  assert.equal(headlessEditor.getText().trim(), "hello persora world. second sentence here!");
+  // Inline bold mark must remain intact across all 4 case transforms
+  const transformedJson = headlessEditor.getJSON();
+  assert.equal(transformedJson.content[0].content[0].marks[0].type, "bold");
+  headlessEditor.destroy();
+
+  // 5. CSS & UI cleanup invariants: no obsolete `.pd-page-sheet` linear-gradient hack;
+  //    borderless auto-width title input is present
+  const docsCss = readFileSync(new URL("../src/components/docs/docs.css", import.meta.url), "utf8");
+  assert.ok(
+    !docsCss.includes(".pd-page-sheet"),
+    "Obsolete single-sheet .pd-page-sheet rule must be removed in favor of real .pd-page-card sheets",
+  );
+  assert.ok(docsCss.includes(".pd-page-card"), "Multi-page .pd-page-card styling must exist");
+  assert.ok(docsCss.includes(".pd-title-autowrap"), "Auto-width borderless title styling must exist");
+  assert.ok(docsCss.includes(".pd-title-sizer"), "Hidden sizer span for auto-width title must exist");
+});
+

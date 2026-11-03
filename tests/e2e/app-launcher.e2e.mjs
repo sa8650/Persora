@@ -39,9 +39,9 @@ async function eventually(read, expected, message, timeout = 8000) {
 
 // Module labels exactly as the sidebar shows them.
 const LABELS = {
-  dashboard: 'Overview', calendar: 'Calendar', habits: 'Habit Tracker', loans: 'Loan Tracker', tables: 'Persora Table', forms: 'Persora Forms', timeline: 'Life Timeline', 'medical-records': 'Medical Records', contacts: 'Contacts',
+  dashboard: 'Overview', calendar: 'Calendar', habits: 'Habit Tracker', loans: 'Loan Tracker', tables: 'Persora Table', forms: 'Persora Forms', docs: 'Persora Docs', timeline: 'Life Timeline', 'medical-records': 'Medical Records', contacts: 'Contacts',
   shared: 'Shared documents', 'personal-finance': 'Personal Finance', documents: 'Documents', academics: 'Academics', family: 'Family',
-  'photo-studio': 'Photo Studio', subscriptions: 'Subscriptions', purchases: 'Purchases & warranty', accounts: 'Accounts',
+  'photo-studio': 'Photo Studio', 'audio-space': 'AudioSpace', 'travel-space': 'TravelSpace', subscriptions: 'Subscriptions', purchases: 'Purchases & warranty', accounts: 'Accounts',
   memberships: 'Membership wallet', 'wallet-cards': 'Wallet Cards', 'password-manager': 'Password Manager', projects: 'Projects',
   'pdf-studio': 'PDF Studio', study: 'Study materials', notes: 'Tasks & Notes', 'business-card': 'Digital business card', urls: 'URL manager', connections: 'Connections',
 };
@@ -84,10 +84,22 @@ async function signIn(context, email, label) {
   return page;
 }
 
+const islandTrigger = (page) => page.getByRole('button', { name: /^Open workspace controls/ });
 const launcher = (page) => page.getByRole('button', { name: 'Persora apps', exact: true });
 const drawer = (page) => page.getByRole('dialog', { name: /^(Your favorites|Edit favorites)$/ });
+async function ensureIslandOpen(page) {
+  const pill = islandTrigger(page);
+  if (await pill.isVisible()) {
+    await pill.click();
+    await launcher(page).waitFor({ state: 'visible' });
+    await page.waitForTimeout(220);
+  }
+}
 async function openDrawer(page) {
-  if (!(await drawer(page).count())) await launcher(page).click();
+  if (!(await drawer(page).count())) {
+    await ensureIslandOpen(page);
+    await launcher(page).click();
+  }
   await drawer(page).waitFor();
   await page.waitForTimeout(200); // open animation
 }
@@ -106,6 +118,7 @@ try {
 
   step('Placement, lazy loading and default favorites');
   {
+    await ensureIslandOpen(page);
     const button = launcher(page);
     await button.waitFor();
     const placement = await button.evaluate((element) => ({
@@ -113,8 +126,8 @@ try {
       prev: element.previousElementSibling?.className || '',
       parent: element.parentElement?.className || '',
     }));
-    assert.match(placement.next, /island-avatar/, 'launcher sits immediately before the avatar');
-    assert.match(placement.prev, /notification-wrap/, 'after the notifications button');
+    assert.match(placement.next, /island-divider|island-avatar/, 'launcher sits immediately before the avatar divider');
+    assert.match(placement.prev, /island-control|notification-wrap/, 'after the quick controls');
     assert.match(placement.parent, /island-actions/);
     const [b, a] = [await button.boundingBox(), await page.locator('.island-avatar').boundingBox()];
     assert.ok(Math.abs((b.y + b.height / 2) - (a.y + a.height / 2)) <= 2, 'vertically aligned with the avatar');
@@ -217,7 +230,7 @@ try {
     await openDrawer(page);
     const current = drawer(page).locator('[aria-current="page"]');
     assert.equal(await current.count(), 1);
-    assert.equal(await current.locator('.app-launcher-label').innerText(), LABELS.urls, 'the open module is marked current');
+    assert.equal(await current.locator('.app-launcher-label').innerText(), LABELS[LAUNCHER_MODULE_IDS.at(-1)], 'the open module is marked current');
     await page.keyboard.press('Escape');
     await closedDrawer(page);
     ok('current module is highlighted');
@@ -225,6 +238,7 @@ try {
 
   step('Keyboard navigation');
   {
+    await ensureIslandOpen(page);
     await launcher(page).focus();
     await page.keyboard.press('Enter');
     await drawer(page).waitFor();

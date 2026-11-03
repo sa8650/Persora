@@ -24,7 +24,20 @@ test('allAiDisabled only true when every switch is off', () => {
 
 test('sanitizeProjectInput validates name/kind and trims', () => {
   const ok = sanitizeProjectInput({ name: '  Website relaunch ', description: 'Ship it', kind: 'shared' });
-  assert.deepEqual(ok, { name: 'Website relaunch', description: 'Ship it', kind: 'shared' });
+  assert.deepEqual(ok, {
+    name: 'Website relaunch',
+    description: 'Ship it',
+    kind: 'shared',
+    options: {
+      category: '',
+      tags: [],
+      start_date: null,
+      due_date: null,
+      priority: 'normal',
+      paused: false,
+      archived: false,
+    },
+  });
   assert.equal(sanitizeProjectInput({ name: 'Solo' }).kind, 'personal');
   assert.equal(sanitizeProjectInput({ name: 'Solo', kind: 'weird' }).kind, 'personal');
   assert.throws(() => sanitizeProjectInput({ name: ' ' }), ProjectError);

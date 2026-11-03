@@ -14,7 +14,10 @@
     "test:e2e:calendar-smart": "node tests/e2e/calendar-smart.e2e.mjs",
     "test:e2e:app-launcher": "node tests/e2e/app-launcher.e2e.mjs",
     "test:e2e:habits": "node tests/e2e/habits.e2e.mjs",
-    "test:e2e:loans": "node tests/e2e/loans.e2e.mjs"
+    "test:e2e:loans": "node tests/e2e/loans.e2e.mjs",
+    "test:e2e:travel-space": "node tests/e2e/travel-space.e2e.mjs",
+    "test:e2e:docs": "node tests/e2e/docs.e2e.mjs",
+    "test:e2e:audio-space": "node tests/e2e/audio-space-player.e2e.mjs"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",
@@ -31,6 +34,7 @@
     "@tiptap/starter-kit": "^2.27.3",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.4.0",
+    "leaflet": "^1.9.4",
     "lucide-react": "^0.468.0",
     "motion": "^13.5.1",
     "next-themes": "^0.4.6",
@@ -49,6 +53,7 @@
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.11",
     "@tailwindcss/vite": "^4.3.3",
+    "@types/leaflet": "^1.9.22",
     "@types/node": "^26.6.4",
     "@types/papaparse": "^5.5.2",
     "@types/qrcode": "^1.5.6",
