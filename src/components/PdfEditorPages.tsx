@@ -2,6 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState, type CSSProperties, type Ke
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Spinner } from "@/components/ui/spinner";
+import { SkeletonBox } from "skullet/react";
 import {
   TEXT_ASCENT, TEXT_LINE_HEIGHT, WATERMARK_FONTS, arrowHead, makeId, markupSegments, viewSize, watermarkOnPage,
   type BoxOverlay, type ImageOverlay, type LineOverlay, type MarkupOverlay, type Overlay, type TextOverlay, type TextRun, type Watermark, type WorkingPage,
@@ -502,7 +503,7 @@ export const PdfThumbnail = memo(function PdfThumbnail({ page, index, source, cu
   >
     <button type="button" className="pdfs-thumb-button" onClick={(event) => { if (event.shiftKey || event.metaKey || event.ctrlKey) onToggle(page.id, event.shiftKey); else onOpen(page.id); }} aria-label={`Go to page ${index + 1}`} aria-current={current ? "page" : undefined}>
       <span className="pdfs-thumb-frame" style={{ aspectRatio: `${view.width} / ${view.height}` }}>
-        {url ? <img src={url} alt="" draggable={false}/> : <span className="pdfs-thumb-loading"/>}
+        {url ? <img src={url} alt="" draggable={false} width={120} height={160} /> : <SkeletonBox className="pdfs-thumb-loading" width={120} height={160} />}
         {(page.overlays.length > 0 || thumbWatermark) && <svg className="pdfs-thumb-overlays" viewBox={`0 0 ${view.width} ${view.height}`} preserveAspectRatio="none" aria-hidden="true">
           {thumbWatermark && <WatermarkShapes spec={thumbWatermark} width={view.width} height={view.height} imageUrl={imageUrl}/>}
           <OverlayShapes overlays={page.overlays} imageUrl={imageUrl}/>

@@ -121,7 +121,9 @@
   gap: 4px;
   height: 30px;
   padding: 0 9px;
-  font-size: 12px;
+  font-size: var(--ds-type-body-2-size);
+  letter-spacing: normal;
+  line-height: var(--ds-type-body-2-line-height);
 }
 
 .page-toolbar-label .cal-range-heading {

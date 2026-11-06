@@ -1,11 +1,11 @@
 // Persora Table — space root: the tables home page or one open table.
-import { Suspense, lazy, useCallback, useEffect, useState } from "react";
+import { lazy, useCallback, useEffect, useState } from "react";
 import "./table.css";
 import type { AppUser } from "../../types";
 import { isPagesApiConfigured } from "../../lib/cloud";
 import TableHome from "./TableHome";
-import { Spinner } from "@/components/ui/spinner";
 import { PersoraEmptyState } from "@/design-system";
+import { SkeletonSuspense } from "skullet/react";
 
 const TableEditor = lazy(() => import("./TableEditor"));
 
@@ -58,10 +58,10 @@ export default function TableView({ user, notify, canUpload, maxUploadMb, onUpgr
   }
   return <div className="tb-view">
     {openId
-      ? <Suspense fallback={<div className="tb-loading" role="status"><Spinner className="size-4"/> Opening table…</div>}>
+      ? <SkeletonSuspense id="tables-editor" label="Opening table">
         <TableEditor key={openId} tableId={openId} user={user} notify={notify} canUpload={canUpload} maxUploadMb={maxUploadMb} onUpgrade={onUpgrade}
           onClose={() => open(null)} onOpen={open} onTrashChanged={onTrashChanged}/>
-      </Suspense>
+      </SkeletonSuspense>
       : <TableHome user={user} notify={notify} onOpen={open} onTrashChanged={onTrashChanged}/>}
   </div>;
 }

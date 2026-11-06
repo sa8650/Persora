@@ -1,7 +1,7 @@
 // Persora Table — one open table: loading, saving (server-confirmed), local
 // backups, conflict handling, undo/redo, member/link sharing, comments, and
 // permission-aware editing ('owner' | 'edit' | 'comment' | 'view').
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Check, CloudOff, Copy, Eye, MessageSquare, MoreHorizontal, Pencil, Redo2, RefreshCw, Share2, Star, Trash2, TriangleAlert, Undo2, Users } from "lucide-react";
 import type { AppUser } from "../../types";
 import { ConfirmDialog } from "../VaultDialogs";
@@ -21,6 +21,7 @@ import TableCommentsPanel, { extractSheetCellComments } from "./TableCommentsPan
 import { Badge } from "@/components/reui/badge";
 import { IconTile } from "@/components/reui/icon-tile";
 import { Spinner } from "@/components/ui/spinner";
+import { Skeleton, SkeletonSuspense } from "skullet/react";
 
 const SpreadsheetEditor = lazy(() => import("./SpreadsheetEditor"));
 const SmartTableEditor = lazy(() => import("./SmartTableEditor"));
@@ -355,7 +356,32 @@ export default function TableEditor({ tableId, user, notify, canUpload, maxUploa
   if (loadError) return <div className="tb-editor"><div className="tb-banner is-error" role="alert"><span>{loadError}</span>
     <button type="button" className="tb-link-button" onClick={() => setReloadKey((key) => key + 1)}><RefreshCw size={13}/> Try again</button>
     <button type="button" className="tb-link-button" onClick={onClose}>Back to tables</button></div></div>;
-  if (!summary || !doc) return <div className="tb-loading" role="status"><Spinner className="size-4"/> Opening table…</div>;
+  if (!summary || !doc) {
+    return (
+      <Skeleton loading id={`table-editor-${tableId}`} label="Opening table" className="tb-editor">
+        <section className="tb-editor is-spreadsheet" aria-label="Opening table">
+          <header className="tb-editor-head">
+            <span className="tb-icon-button" skullet-block="" />
+            <div className="tb-title-static"><h2>Monthly budget</h2></div>
+            <span className="tb-head-spacer" />
+            <span className="tb-primary-button">Share</span>
+          </header>
+          <div className="tb-editor-workspace-row">
+            <div className="tb-editor-main-pane">
+              <div className="tb-sheet" aria-hidden="true">
+                {["Item", "Owner", "Due", "Status", "Notes"].map((header) => (
+                  <span key={header} className="tb-sheet-head">{header}</span>
+                ))}
+                {["Kitchen tiles", "Domain renew", "Visa photos", "Budget draft", "Garden soil", "Lab follow-up", "Packing list", "Invoice May"].map((row) => (
+                  <span key={row} className="tb-sheet-cell">{row}</span>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+      </Skeleton>
+    );
+  }
 
   return <section className={`tb-editor is-${summary.kind}`} aria-label={summary.name}>
     <header className="tb-editor-head">
@@ -457,7 +483,7 @@ export default function TableEditor({ tableId, user, notify, canUpload, maxUploa
 
     <div className="tb-editor-workspace-row">
       <div className="tb-editor-main-pane">
-        <Suspense fallback={<div className="tb-loading" role="status"><Spinner className="size-4"/> Loading editor…</div>}>
+        <SkeletonSuspense id="table-editor-canvas" label="Loading table editor">
           {doc.kind === "spreadsheet"
             ? <SpreadsheetEditor
                 doc={doc}
@@ -480,7 +506,7 @@ export default function TableEditor({ tableId, user, notify, canUpload, maxUploa
             : <SmartTableEditor doc={doc} tableId={tableId} tableName={summary.name} commit={commit} readOnly={locked} notify={notify}
               attachments={attachments} onAttachmentAdded={(info) => setAttachments((list) => [...list, info])}
               canUpload={canUpload && canEdit} maxUploadMb={maxUploadMb} onUpgrade={onUpgrade}/>}
-        </Suspense>
+        </SkeletonSuspense>
       </div>
 
       {commentsOpen && (

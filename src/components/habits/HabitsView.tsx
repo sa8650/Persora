@@ -21,9 +21,40 @@ import { Badge } from "@/components/reui/badge";
 import { PersoraEmptyState } from "@/design-system";
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
+import { Skeleton } from "skullet/react";
 import { CATEGORY_LABELS, HabitGlyph, WEEKDAY_SHORT, formatDay, formatNumber, scheduleLabel, streakLabel, targetLabel } from "./habit-visuals";
 
 type Mode = "today" | "week" | "month";
+
+const SAMPLE_HABITS: Habit[] = [
+  ["sample-habit-1", "Morning stretch", "health", "check"],
+  ["sample-habit-2", "Read twenty pages", "study", "book"],
+  ["sample-habit-3", "Drink a litre of water", "health", "droplet"],
+  ["sample-habit-4", "Call the landlord", "personal", "check"],
+].map(([id, name, category, icon], position) => ({
+  id,
+  name,
+  description: "",
+  icon: icon as Habit["icon"],
+  color: "teal",
+  category: category as Habit["category"],
+  frequency: "daily",
+  weekdays: [],
+  weeklyTarget: null,
+  tracking: "check",
+  targetValue: null,
+  unit: "",
+  startDate: "2026-01-01",
+  scheduleHistory: [{ from: "2026-01-01", frequency: "daily", weekdays: [], weeklyTarget: null }],
+  reminderTime: null,
+  reminderEmail: false,
+  position,
+  archivedAt: null,
+  revision: 1,
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+  completedDates: [],
+}));
 type CheckinBody = { completed: boolean } | { value: number };
 /** The last check-in change, kept briefly so it can be undone (restores the previous value). */
 interface UndoEntry { id: number; habit: Habit; date: string; previous: CheckinBody; message: string }
@@ -320,7 +351,16 @@ export default function HabitsView({ user, notify, focusRequest }: {
       <button type="button" className="hb-undo-close" onClick={() => setUndo(null)} aria-label="Dismiss"><X size={14}/></button>
     </div>}
 
-    {initialLoading ? <HabitSkeleton/> : payload && <>
+    <Skeleton loading={initialLoading} id={`habits-${mode}`} label="Loading habits">
+    {initialLoading ? (
+      <section className="hb-panel" aria-labelledby="hb-day-title">
+        <DayPanel
+          id="hb-day-title" title="Today's habits"
+          date={date} active={SAMPLE_HABITS} archived={[]} filter="all" onFilter={setFilter} category="" onCategory={setCategory}
+          categories={[]} showFilters onCreate={openNew} onMove={move} {...rowProps}
+        />
+      </section>
+    ) : payload && <>
       {active.length > 0 && <StatsStrip stats={stats}/>}
       {mode === "today" && <section className="hb-panel" aria-labelledby="hb-day-title">
         <DayPanel
@@ -350,6 +390,7 @@ export default function HabitsView({ user, notify, focusRequest }: {
         </section>
       </div>}
     </>}
+    </Skeleton>
 
     {editor && payload && <HabitEditor
       key={editor.habit?.id || "new"} habit={editor.habit} today={today} email={payload.email} busy={editorBusy} error={editorError}
@@ -786,8 +827,4 @@ function MonthHeatmap({ id, date, today, habits, active, doneById, untilById, ch
   </>;
 }
 
-function HabitSkeleton() {
-  return <div className="hb-panel hb-skeleton" aria-busy="true" aria-label="Loading habits">
-    {[0, 1, 2].map((index) => <div key={index} className="hb-skeleton-row"><span/><span/><span/></div>)}
-  </div>;
-}
+

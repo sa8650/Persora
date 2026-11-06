@@ -66,7 +66,7 @@ export function Pattern() {
             <AttachmentDescription>Up to 5 files, 10 MB each</AttachmentDescription>
           </AttachmentContent>
         </Attachment>
-        {errors[0] && <p className="text-xs text-destructive">{errors[0]}</p>}
+        {errors[0] && <p className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-destructive">{errors[0]}</p>}
         {files.map((item) => (
           <Attachment key={item.id} size="sm">
             <AttachmentMedia variant={item.preview && item.file.type.startsWith("image/") ? "image" : "default"}>
@@ -266,7 +266,7 @@ export function ReuiFileAttachmentField({
         <input {...mergedInputProps} className="sr-only" tabIndex={-1} />
       )}
       {errors[0] && (
-        <p className="text-xs text-destructive" role="alert">
+        <p className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-destructive" role="alert">
           {errors[0]}
         </p>
       )}

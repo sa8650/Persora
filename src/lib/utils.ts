@@ -207,4 +207,4 @@ export function makeVCard(item: VaultItem): string {
   return lines.join("\r\n");
 }
 
-export { cn } from "cn";
+export { cn } from "./cn";

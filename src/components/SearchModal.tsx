@@ -261,14 +261,14 @@ export function SearchModal({
           onChange={(e) => handleQuery(e.target.value)}
           placeholder={placeholder}
           aria-label="Search"
-          className="min-w-0 flex-1 bg-transparent px-3 text-sm text-current outline-none placeholder:text-muted-foreground"
+          className="min-w-0 flex-1 bg-transparent px-3 text-[length:var(--ds-type-body-size)] leading-[var(--ds-type-body-line-height)] text-current outline-none placeholder:text-muted-foreground"
         />
         <div className="flex shrink-0 items-center gap-2.5">
           <button type="button" aria-label="Filters" className="text-muted-foreground transition-colors hover:text-foreground">
             <SlidersHorizontal className="h-[18px] w-[18px]" />
           </button>
-          <kbd className="flex items-center gap-0.5 rounded-md border border-border bg-muted/60 px-1.5 py-0.5 font-sans text-[11px] font-medium text-muted-foreground">
-            <span className="text-[13px] leading-none">⌘</span>
+          <kbd className="flex items-center gap-0.5 rounded-md border border-border bg-muted/60 px-1.5 py-0.5 font-mono text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] font-medium text-muted-foreground">
+            <span className="text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] leading-none">⌘</span>
             {modal && hotkey ? hotkey.toUpperCase() : "F"}
           </kbd>
         </div>
@@ -277,7 +277,7 @@ export function SearchModal({
       {/* Tags */}
       {activeTags.length > 0 ? (
         <div className="border-b border-border px-4 py-3.5">
-          <span className="text-[13px] text-muted-foreground">I&apos;m looking for...</span>
+          <span className="text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] text-muted-foreground">I&apos;m looking for...</span>
           <div className="mt-3 flex flex-wrap gap-2">
             {activeTags.map((tag, i) => (
               <Badge
@@ -285,7 +285,7 @@ export function SearchModal({
                 variant="secondary"
                 size="default"
                 radius="full"
-                className="gap-1.5 py-1 pl-2.5 pr-1.5 text-[13px] font-medium"
+                className="gap-1.5 py-1 pl-2.5 pr-1.5 text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-medium"
               >
                 {tag.icon}
                 <span>{tag.label}</span>
@@ -306,7 +306,7 @@ export function SearchModal({
       {/* Results */}
       {results.length > 0 ? (
         <div className="border-b border-border">
-          <p className="px-4 pt-3.5 pb-2 text-[13px] text-muted-foreground">
+          <p className="px-4 pt-3.5 pb-2 text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] text-muted-foreground">
             Last search&nbsp;&nbsp;<span className="text-foreground">{filteredResults.length}</span>
           </p>
           <ul className="px-1.5 pb-1.5">
@@ -335,7 +335,7 @@ export function SearchModal({
                       <FileArrowDown className="size-3.5" />
                     </IconTile>
                   )}
-                  <span className="ml-2.5 truncate text-sm">
+                  <span className="ml-2.5 truncate text-[length:var(--ds-type-body-size)] leading-[var(--ds-type-body-line-height)]">
                     {result.name}
                     {result.meta ? <span className="pl-1.5 text-muted-foreground">{result.meta}</span> : null}
                   </span>
@@ -363,14 +363,14 @@ export function SearchModal({
               </li>
             ))}
           </ul>
-          {!filteredResults.length && <p className="px-4 pb-3 text-sm text-muted-foreground">No matching results. Try another search.</p>}
+          {!filteredResults.length && <p className="px-4 pb-3 text-[length:var(--ds-type-body-size)] leading-[var(--ds-type-body-line-height)] text-muted-foreground">No matching results. Try another search.</p>}
         </div>
       ) : null}
 
       {/* Quick actions */}
       {quickActions.length > 0 ? (
         <div className="border-b border-border px-1.5 py-1.5">
-          <p className="px-2.5 pt-2 pb-1 text-[13px] text-muted-foreground">Quick actions</p>
+          <p className="px-2.5 pt-2 pb-1 text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] text-muted-foreground">Quick actions</p>
           {quickActions.map((action, i) => (
             <button
               key={`${action.label}-${i}`}
@@ -381,9 +381,9 @@ export function SearchModal({
               <IconTile variant="soft" size="xs" className="text-muted-foreground">
                 {action.icon ?? <Plus className="h-[15px] w-[15px]" />}
               </IconTile>
-              <span className="pl-3 text-sm">{action.label}</span>
+              <span className="pl-3 text-[length:var(--ds-type-body-size)] leading-[var(--ds-type-body-line-height)]">{action.label}</span>
               {action.shortcut ? (
-                <kbd className="ml-auto flex h-[26px] w-[26px] items-center justify-center rounded-md border border-border bg-muted/60 font-sans text-[13px] text-muted-foreground">
+                <kbd className="ml-auto flex h-[26px] w-[26px] items-center justify-center rounded-md border border-border bg-muted/60 font-sans text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] text-muted-foreground">
                   {action.shortcut}
                 </kbd>
               ) : null}
@@ -395,7 +395,7 @@ export function SearchModal({
       {/* Files */}
       {filteredFiles.length > 0 ? (
         <div className="px-1.5 py-1.5">
-          <p className="px-2.5 pt-2 pb-1 text-[13px] text-muted-foreground">
+          <p className="px-2.5 pt-2 pb-1 text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] text-muted-foreground">
             Files&nbsp;&nbsp;<span className="text-foreground">{filteredFiles.length}</span>
           </p>
           {filteredFiles.map((file, i) => (
@@ -412,7 +412,7 @@ export function SearchModal({
                 <IconTile variant="soft" size="xs" className="text-muted-foreground">
                   {file.icon ?? <FileArrowDown className="h-[15px] w-[15px]" />}
                 </IconTile>
-                <span className="flex min-w-0 items-center gap-1.5 truncate pl-3 text-sm">
+                <span className="flex min-w-0 items-center gap-1.5 truncate pl-3 text-[length:var(--ds-type-body-size)] leading-[var(--ds-type-body-line-height)]">
                   <span className="truncate">
                     {file.name}
                     {file.ext ? <span className="text-muted-foreground">{file.ext}</span> : null}
@@ -423,7 +423,7 @@ export function SearchModal({
               {file.onShare && <button
                 type="button"
                 onClick={() => { file.onShare?.(); if (modal) setOpen(false); }}
-                className="ml-3 flex shrink-0 items-center gap-1.5 text-sm text-muted-foreground opacity-80 transition-all hover:text-foreground group-hover:opacity-100"
+                className="ml-3 flex shrink-0 items-center gap-1.5 text-[length:var(--ds-type-body-size)] leading-[var(--ds-type-body-line-height)] text-muted-foreground opacity-80 transition-all hover:text-foreground group-hover:opacity-100"
               >
                 <ShareFat className="h-4 w-4" />
                 <span>Share</span>

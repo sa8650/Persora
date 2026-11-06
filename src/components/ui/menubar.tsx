@@ -59,7 +59,7 @@ function MenubarTrigger({
     <MenubarPrimitive.Trigger
       data-slot="menubar-trigger"
       className={cn(
-        "ds-reui-menubar-trigger flex cursor-pointer items-center rounded-[var(--ds-radius-xs)] px-2.5 py-1 text-[12.5px] font-medium text-[var(--ds-text-secondary)] outline-none select-none transition-colors hover:bg-[var(--ds-subtle-bg)] hover:text-[var(--ds-text)] focus-visible:bg-[var(--ds-subtle-bg)] focus-visible:text-[var(--ds-text)] data-[state=open]:bg-[var(--ds-primary-soft)] data-[state=open]:text-[var(--ds-sidebar-active-text)]",
+        "ds-reui-menubar-trigger flex cursor-pointer items-center rounded-[var(--ds-radius-xs)] px-2.5 py-1 text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-medium text-[var(--ds-text-secondary)] outline-none select-none transition-colors hover:bg-[var(--ds-subtle-bg)] hover:text-[var(--ds-text)] focus-visible:bg-[var(--ds-subtle-bg)] focus-visible:text-[var(--ds-text)] data-[state=open]:bg-[var(--ds-primary-soft)] data-[state=open]:text-[var(--ds-sidebar-active-text)]",
         className
       )}
       {...props}
@@ -106,7 +106,7 @@ function MenubarItem({
       data-inset={inset}
       data-variant={variant}
       className={cn(
-        "ds-reui-menu-item relative flex cursor-default items-center gap-2 rounded-[var(--ds-radius-xs)] px-2.5 py-1.5 text-[13px] font-medium text-[var(--ds-text)] outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-45 data-[highlighted]:bg-[var(--ds-subtle-bg)] data-[highlighted]:text-[var(--ds-text)] data-[inset=true]:pl-8 data-[variant=destructive]:text-[var(--ds-danger)] data-[variant=destructive]:data-[highlighted]:bg-[var(--ds-danger-soft)] data-[variant=destructive]:data-[highlighted]:text-[var(--ds-danger)] data-[variant=destructive]:*:[svg]:!text-[var(--ds-danger)] [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5 [&_svg:not([class*='text-'])]:text-[var(--ds-text-muted)]",
+        "ds-reui-menu-item relative flex cursor-default items-center gap-2 rounded-[var(--ds-radius-xs)] px-2.5 py-1.5 text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-medium text-[var(--ds-text)] outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-45 data-[highlighted]:bg-[var(--ds-subtle-bg)] data-[highlighted]:text-[var(--ds-text)] data-[inset=true]:pl-8 data-[variant=destructive]:text-[var(--ds-danger)] data-[variant=destructive]:data-[highlighted]:bg-[var(--ds-danger-soft)] data-[variant=destructive]:data-[highlighted]:text-[var(--ds-danger)] data-[variant=destructive]:*:[svg]:!text-[var(--ds-danger)] [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5 [&_svg:not([class*='text-'])]:text-[var(--ds-text-muted)]",
         className
       )}
       {...props}
@@ -124,7 +124,7 @@ function MenubarCheckboxItem({
     <MenubarPrimitive.CheckboxItem
       data-slot="menubar-checkbox-item"
       className={cn(
-        "ds-reui-menu-item relative flex cursor-default items-center gap-2 rounded-[var(--ds-radius-xs)] py-1.5 pr-2.5 pl-8 text-[13px] font-medium text-[var(--ds-text)] outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-45 data-[highlighted]:bg-[var(--ds-subtle-bg)] data-[highlighted]:text-[var(--ds-text)] [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
+        "ds-reui-menu-item relative flex cursor-default items-center gap-2 rounded-[var(--ds-radius-xs)] py-1.5 pr-2.5 pl-8 text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-medium text-[var(--ds-text)] outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-45 data-[highlighted]:bg-[var(--ds-subtle-bg)] data-[highlighted]:text-[var(--ds-text)] [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
         className
       )}
       checked={checked}
@@ -149,7 +149,7 @@ function MenubarRadioItem({
     <MenubarPrimitive.RadioItem
       data-slot="menubar-radio-item"
       className={cn(
-        "ds-reui-menu-item relative flex cursor-default items-center gap-2 rounded-[var(--ds-radius-xs)] py-1.5 pr-2.5 pl-8 text-[13px] font-medium text-[var(--ds-text)] outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-45 data-[highlighted]:bg-[var(--ds-subtle-bg)] data-[highlighted]:text-[var(--ds-text)] [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
+        "ds-reui-menu-item relative flex cursor-default items-center gap-2 rounded-[var(--ds-radius-xs)] py-1.5 pr-2.5 pl-8 text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-medium text-[var(--ds-text)] outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-45 data-[highlighted]:bg-[var(--ds-subtle-bg)] data-[highlighted]:text-[var(--ds-text)] [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
         className
       )}
       {...props}
@@ -176,7 +176,7 @@ function MenubarLabel({
       data-slot="menubar-label"
       data-inset={inset}
       className={cn(
-        "px-2.5 py-1 text-[11px] font-semibold tracking-wide text-[var(--ds-text-muted)] uppercase data-[inset=true]:pl-8",
+        "px-2.5 py-1 text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] font-semibold text-[var(--ds-text-muted)] uppercase data-[inset=true]:pl-8",
         className
       )}
       {...props}
@@ -205,7 +205,7 @@ function MenubarShortcut({
     <span
       data-slot="menubar-shortcut"
       className={cn(
-        "ml-auto pl-4 text-[11px] font-medium tracking-tight text-[var(--ds-text-soft)]",
+        "ml-auto pl-4 text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] font-medium text-[var(--ds-text-soft)]",
         className
       )}
       {...props}
@@ -232,7 +232,7 @@ function MenubarSubTrigger({
       data-slot="menubar-sub-trigger"
       data-inset={inset}
       className={cn(
-        "ds-reui-menu-item flex cursor-default items-center gap-2 rounded-[var(--ds-radius-xs)] px-2.5 py-1.5 text-[13px] font-medium text-[var(--ds-text)] outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-45 data-[highlighted]:bg-[var(--ds-subtle-bg)] data-[highlighted]:text-[var(--ds-text)] data-[inset=true]:pl-8 data-[state=open]:bg-[var(--ds-subtle-bg)] [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5 [&_svg:not([class*='text-'])]:text-[var(--ds-text-muted)]",
+        "ds-reui-menu-item flex cursor-default items-center gap-2 rounded-[var(--ds-radius-xs)] px-2.5 py-1.5 text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-medium text-[var(--ds-text)] outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-45 data-[highlighted]:bg-[var(--ds-subtle-bg)] data-[highlighted]:text-[var(--ds-text)] data-[inset=true]:pl-8 data-[state=open]:bg-[var(--ds-subtle-bg)] [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5 [&_svg:not([class*='text-'])]:text-[var(--ds-text-muted)]",
         className
       )}
       {...props}

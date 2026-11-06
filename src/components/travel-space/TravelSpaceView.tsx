@@ -19,8 +19,8 @@ import {
   PersoraDeleteModal,
   PersoraEmptyState,
   PersoraSearchField,
-  Spinner,
 } from "@/design-system";
+import { Skeleton } from "skullet/react";
 import {
   EXPLORE_KINDS,
   EXPLORE_STATUSES,
@@ -361,9 +361,49 @@ export default function TravelSpaceView({
 
       <div className="ts-root">
         {loading ? (
-          <div className="medical-loading">
-            <Spinner className="size-4 text-primary" /> Loading TravelSpace…
-          </div>
+          <Skeleton loading id="travel-space-home" label="Loading TravelSpace">
+            <div className="ts-dashboard">
+              <header className="ts-dashboard-header">
+                <div className="ts-title-group">
+                  <h1 className="ts-title">TravelSpace</h1>
+                  <p className="ts-subtitle">
+                    Plan journeys, coordinate shared budgets, and organize itineraries, bookings, and memories in one calm workspace.
+                  </p>
+                </div>
+              </header>
+              <section className="ts-summary-strip" aria-label="Trip overview summary">
+                <div className="ts-summary-metric">
+                  <span className="ts-summary-label">Total trips</span>
+                  <strong className="ts-summary-value ts-num">4</strong>
+                </div>
+                <div className="ts-summary-divider" aria-hidden="true" />
+                <div className="ts-summary-metric">
+                  <span className="ts-summary-label">Upcoming</span>
+                  <strong className="ts-summary-value ts-num">2</strong>
+                </div>
+                <div className="ts-summary-divider" aria-hidden="true" />
+                <div className="ts-summary-metric">
+                  <span className="ts-summary-label">Ongoing</span>
+                  <strong className="ts-summary-value ts-num">1</strong>
+                </div>
+                <div className="ts-summary-divider" aria-hidden="true" />
+                <div className="ts-summary-metric">
+                  <span className="ts-summary-label">Completed</span>
+                  <strong className="ts-summary-value ts-num">1</strong>
+                </div>
+              </section>
+              <section className="ts-my-trips-section" aria-label="My Trips">
+                <div className="ts-trips-grid">
+                  {["Cox’s Bazar weekend", "Sylhet tea gardens", "Sundarbans boat trip", "Dhaka staycation"].map((title) => (
+                    <article key={title} className="ts-trip-card">
+                      <h3>{title}</h3>
+                      <p>12 May – 16 May · 4 travellers</p>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            </div>
+          </Skeleton>
         ) : activeWorkspace ? (
           <TripWorkspace
             user={user}
@@ -732,11 +772,11 @@ export default function TravelSpaceView({
                   <div key={place.id} className="ts-panel" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                       <div>
-                        <small style={{ color: "var(--ds-text-muted)", fontWeight: 600 }}>
+                        <small style={{ color: "var(--ds-text-muted)", fontWeight: "var(--ds-font-weight-semibold)" }}>
                           {place.kind.toUpperCase()}
                           {place.country ? ` · ${place.country.toUpperCase()}` : ""}
                         </small>
-                        <h4 style={{ margin: "2px 0 0", fontSize: 14.5 }}>{place.name}</h4>
+                        <h4 style={{ margin: "2px 0 0", fontSize: "var(--ds-type-headline-size)", lineHeight: "var(--ds-type-headline-line-height)" }}>{place.name}</h4>
                       </div>
                       <button
                         type="button"
@@ -769,7 +809,7 @@ export default function TravelSpaceView({
                     </div>
 
                     {place.notes && (
-                      <div style={{ fontSize: 12.5, color: "var(--ds-text-secondary)" }}>{place.notes}</div>
+                      <div style={{ fontSize: "var(--ds-type-body-2-size)", lineHeight: "var(--ds-type-body-2-line-height)", color: "var(--ds-text-secondary)" }}>{place.notes}</div>
                     )}
 
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4, alignItems: "center" }}>
@@ -790,7 +830,7 @@ export default function TravelSpaceView({
                           <select
                             aria-label={`Add ${place.name} to trip destinations`}
                             className="ts-select"
-                            style={{ height: 28, fontSize: 11.5, width: "auto", padding: "2px 6px" }}
+                            style={{ height: 28, fontSize: "var(--ds-type-body-2-size)", lineHeight: "var(--ds-type-body-2-line-height)", width: "auto", padding: "2px 6px" }}
                             value=""
                             onChange={async (e) => {
                               const tid = e.target.value;
@@ -815,7 +855,7 @@ export default function TravelSpaceView({
                           <select
                             aria-label={`Add ${place.name} to trip itinerary`}
                             className="ts-select"
-                            style={{ height: 28, fontSize: 11.5, width: "auto", padding: "2px 6px" }}
+                            style={{ height: 28, fontSize: "var(--ds-type-body-2-size)", lineHeight: "var(--ds-type-body-2-line-height)", width: "auto", padding: "2px 6px" }}
                             value=""
                             onChange={async (e) => {
                               const tid = e.target.value;

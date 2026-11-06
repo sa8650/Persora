@@ -119,7 +119,7 @@ export function TripMemoriesTab({ user, workspace, onWorkspaceChange, notify }: 
           <div className="ts-stat-grid">
             <div className="ts-stat-card">
               <span>Route Stops</span>
-              <strong style={{ fontSize: 14 }}>
+              <strong style={{ fontSize: "var(--ds-type-body-size)", lineHeight: "var(--ds-type-body-line-height)" }}>
                 {workspace.destinations.length > 0
                   ? workspace.destinations
                       .slice(0, 3)
@@ -152,7 +152,7 @@ export function TripMemoriesTab({ user, workspace, onWorkspaceChange, notify }: 
             </div>
           </div>
           {workspace.trip.completionNotes && (
-            <p style={{ margin: "12px 0 0", fontSize: 13, color: "var(--ds-text-secondary)", lineHeight: 1.5 }}>
+            <p style={{ margin: "12px 0 0", fontSize: "var(--ds-type-body-2-size)", color: "var(--ds-text-secondary)", lineHeight: "var(--ds-type-body-2-line-height)" }}>
               {workspace.trip.completionNotes}
             </p>
           )}
@@ -160,7 +160,7 @@ export function TripMemoriesTab({ user, workspace, onWorkspaceChange, notify }: 
       )}
 
       {visibleMemories.length === 0 ? (
-        <div className="ts-panel" style={{ fontSize: 13, color: "var(--ds-text-muted)" }}>
+        <div className="ts-panel" style={{ fontSize: "var(--ds-type-body-2-size)", lineHeight: "var(--ds-type-body-2-line-height)", color: "var(--ds-text-muted)" }}>
           Preserve photos, link Photo Studio or AudioSpace recordings, or write daily travel journal reflections.
         </div>
       ) : (
@@ -169,7 +169,7 @@ export function TripMemoriesTab({ user, workspace, onWorkspaceChange, notify }: 
             <div key={mem.id} className="ts-panel" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
                 <div>
-                  <small style={{ color: "var(--ds-text-muted)", fontWeight: 600 }}>
+                  <small style={{ color: "var(--ds-text-muted)", fontWeight: "var(--ds-font-weight-semibold)" }}>
                     {mem.memoryType === "photo" ? (
                       <>
                         <Camera size={11} style={{ verticalAlign: "middle" }} /> PHOTO
@@ -185,7 +185,7 @@ export function TripMemoriesTab({ user, workspace, onWorkspaceChange, notify }: 
                     )}
                     {mem.dayNumber ? ` · DAY ${mem.dayNumber}` : ""}
                   </small>
-                  <h4 style={{ margin: "3px 0 0", fontSize: 14.5 }}>{mem.title}</h4>
+                  <h4 style={{ margin: "3px 0 0", fontSize: "var(--ds-type-headline-size)", lineHeight: "var(--ds-type-headline-line-height)" }}>{mem.title}</h4>
                 </div>
 
                 {canEdit && (
@@ -215,14 +215,14 @@ export function TripMemoriesTab({ user, workspace, onWorkspaceChange, notify }: 
                 </div>
               )}
 
-              {mem.caption && <div style={{ fontSize: 12.5, color: "var(--ds-text-secondary)" }}>{mem.caption}</div>}
+              {mem.caption && <div style={{ fontSize: "var(--ds-type-body-2-size)", lineHeight: "var(--ds-type-body-2-line-height)", color: "var(--ds-text-secondary)" }}>{mem.caption}</div>}
               {mem.journalBody && (
                 <div
                   style={{
-                    fontSize: 13,
+                    fontSize: "var(--ds-type-body-2-size)",
                     color: "var(--ds-text)",
                     whiteSpace: "pre-wrap",
-                    lineHeight: 1.5,
+                    lineHeight: "var(--ds-type-body-2-line-height)",
                   }}
                 >
                   {mem.journalBody}
@@ -697,7 +697,7 @@ export function CompleteTripModal({
               <div className="ts-form-section">
                 <h4 className="ts-form-section-title">Step 3: Booking Review</h4>
                 {bookingReviews.length === 0 ? (
-                  <p style={{ margin: 0, fontSize: 13, color: "var(--ds-text-secondary)" }}>
+                  <p style={{ margin: 0, fontSize: "var(--ds-type-body-2-size)", lineHeight: "var(--ds-type-body-2-line-height)", color: "var(--ds-text-secondary)" }}>
                     No bookings recorded for this trip. Proceed to Trip Summary.
                   </p>
                 ) : (
@@ -797,7 +797,7 @@ export function CompleteTripModal({
                   </span>
                 </div>
                 {completionNotes && (
-                  <p style={{ margin: "6px 0 0", fontSize: 13, color: "var(--ds-text-secondary)" }}>
+                  <p style={{ margin: "6px 0 0", fontSize: "var(--ds-type-body-2-size)", lineHeight: "var(--ds-type-body-2-line-height)", color: "var(--ds-text-secondary)" }}>
                     {completionNotes}
                   </p>
                 )}
@@ -807,11 +807,11 @@ export function CompleteTripModal({
             {step === 5 && (
               <div className="ts-form-section">
                 <h4 className="ts-form-section-title">Step 5: Finish Trip &amp; Preserve Milestone</h4>
-                <p style={{ margin: 0, fontSize: 13, color: "var(--ds-text-secondary)" }}>
+                <p style={{ margin: 0, fontSize: "var(--ds-type-body-2-size)", lineHeight: "var(--ds-type-body-2-line-height)", color: "var(--ds-text-secondary)" }}>
                   Completing this trip transitions its status to <b>Completed</b>, preserves all expenses, bookings,
                   itinerary items, and documents, and unlocks your PDF Travel Journal summary.
                 </p>
-                <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, marginTop: 6, cursor: "pointer" }}>
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: "var(--ds-type-body-2-size)", lineHeight: "var(--ds-type-body-2-line-height)", marginTop: 6, cursor: "pointer" }}>
                   <Checkbox
                     checked={createTimelineEvent}
                     onCheckedChange={(v) => setCreateTimelineEvent(v === true)}

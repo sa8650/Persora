@@ -18,6 +18,7 @@ import { initials } from "../../lib/utils";
 import { Badge } from "@/components/reui/badge";
 import { IconTile } from "@/components/reui/icon-tile";
 import { Spinner } from "@/components/ui/spinner";
+import { Skeleton } from "skullet/react";
 
 export interface ShareResourceAdapter {
   getSharing: (id: string, signal?: AbortSignal) => Promise<{ shares: TableMemberShare[]; link: TableShareLinkState }>;
@@ -245,9 +246,20 @@ export default function ShareTableDialog({
         </div>
 
         {loading ? (
-          <p className="record-share-muted" role="status">
-            <Spinner className="size-3.5" /> Loading sharing settings…
-          </p>
+          <Skeleton loading id="share-table-settings" label="Loading sharing settings">
+            <form className="record-share-form">
+              <div className="record-share-input-row">
+                <label className="field-label" style={{ flex: 1 }}>
+                  <span>Persora ID or member email address</span>
+                  <input type="text" value="member@example.com" readOnly />
+                </label>
+              </div>
+              <label className="field-label">
+                <span>Permission</span>
+                <input type="text" value="Can view" readOnly />
+              </label>
+            </form>
+          </Skeleton>
         ) : loadError ? (
           <div className="record-share-error" role="alert">
             <CircleAlert size={14} />

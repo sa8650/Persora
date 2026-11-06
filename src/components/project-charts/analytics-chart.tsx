@@ -217,11 +217,11 @@ export function AnalyticsTooltip({
         <div
           data-slot="analytics-tooltip-date"
           style={{
-            fontSize: 11,
-            fontWeight: 500,
+            fontSize: "var(--ds-type-caption-1-size)",
+            fontWeight: "var(--ds-font-weight-medium)",
             color: "var(--muted-foreground)",
-            letterSpacing: "0.005em",
-            lineHeight: 1,
+            letterSpacing: "var(--ds-type-caption-1-letter-spacing)",
+            lineHeight: "var(--ds-type-caption-1-line-height)",
             fontVariantNumeric: "tabular-nums",
           }}
         >
@@ -238,24 +238,24 @@ export function AnalyticsTooltip({
         >
           <span
             style={{
-              fontSize: 12.5,
-              fontWeight: 600,
+              fontSize: "var(--ds-type-body-2-size)",
+              fontWeight: "var(--ds-font-weight-semibold)",
               color: "var(--foreground)",
               background: `color-mix(in srgb, ${color} 14%, transparent)`,
               padding: "1.5px 6px",
               borderRadius: 4,
-              lineHeight: "19px",
+              lineHeight: "var(--ds-type-body-2-line-height)",
             }}
           >
             {point.label}
           </span>
           <span
             style={{
-              fontSize: 13,
-              fontWeight: 500,
+              fontSize: "var(--ds-type-body-2-size)",
+              fontWeight: "var(--ds-font-weight-medium)",
               color: "var(--muted-foreground)",
               fontVariantNumeric: "tabular-nums",
-              lineHeight: "19px",
+              lineHeight: "var(--ds-type-body-2-line-height)",
             }}
           >
             {valueText ?? `${fmtNum(point.value)} ${valueLabel}`}
@@ -586,7 +586,7 @@ export function AnalyticsLineChart({
                   data-slot="analytics-line-chart-tick"
                   dominantBaseline="middle"
                   fill="var(--muted-foreground)"
-                  fontSize="11"
+                  fontSize="var(--ds-type-caption-1-size)"
                   style={{ fontVariantNumeric: "tabular-nums" }}
                   textAnchor="end"
                   x={pad.l - 10}
@@ -607,7 +607,7 @@ export function AnalyticsLineChart({
             <text
               data-slot="analytics-line-chart-x-label"
               fill="var(--muted-foreground)"
-              fontSize="11"
+              fontSize="var(--ds-type-caption-1-size)"
               key={`x-${i}`}
               textAnchor={anchor}
               x={anchor === "start" ? p.x - 4 : anchor === "end" ? p.x + 4 : p.x}

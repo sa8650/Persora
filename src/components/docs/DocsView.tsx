@@ -1,10 +1,10 @@
 // Persora Docs — workspace root: the Persora Docs dashboard or one open document editor.
-import { Suspense, lazy, useCallback, useEffect, useState } from "react";
+import { lazy, useCallback, useEffect, useState } from "react";
 import "./docs.css";
 import type { AppUser } from "../../types";
 import { isPagesApiConfigured } from "../../lib/cloud";
 import DocsHome from "./DocsHome";
-import { Spinner } from "@/components/ui/spinner";
+import { SkeletonSuspense } from "skullet/react";
 import { PersoraEmptyState } from "@/design-system";
 
 const DocEditor = lazy(() => import("./DocEditor"));
@@ -72,13 +72,9 @@ export default function DocsView({
   return (
     <div className="pd-view">
       {openId ? (
-        <Suspense
-          fallback={
-            <div className="pd-loading" role="status">
-              <Spinner className="size-4 text-primary" />
-              <span>Opening document…</span>
-            </div>
-          }
+        <SkeletonSuspense
+          id="docs-editor"
+          label="Opening document"
         >
           <DocEditor
             key={openId}
@@ -88,7 +84,7 @@ export default function DocsView({
             onClose={() => open(null)}
             onOpen={open}
           />
-        </Suspense>
+        </SkeletonSuspense>
       ) : (
         <DocsHome notify={notify} onOpen={open} onTrashChanged={onTrashChanged} />
       )}

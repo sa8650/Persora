@@ -80,6 +80,7 @@ import type { CalendarReminder } from "./lib/calendar-api";
 import { localDateOf, safeTimeZone } from "../cloudflare/calendar-rules.js";
 import { loadAdminBootstrapStatus, loadDocumentTypes, loadProjectNotifications, loadPublicPlans, loadPublicSiteContent, markProjectNotificationRead, markProjectNotificationsRead, sendEmailVerificationCode, verifyEmailVerificationCode } from "./lib/cloud";
 import { signIn, signOut, signUp, getCurrentUser } from "./lib/auth";
+import { forgetShapes } from "skullet";
 import { getLocalAvatar, getLocalBusinessCards, getLocalContacts, getLocalItems, getLocalProfile, putLocalAvatar, putLocalBusinessCards, putLocalContacts, putLocalItems, putLocalProfile } from "./lib/local-store";
 
 interface ToastState { message: string; kind: "success" | "error"; id: number }
@@ -711,6 +712,7 @@ commitContacts(getLocalContacts(DEMO_USER.id));
   const handleSignOut = async () => {
     try { if (!user?.demo && isPagesApiConfigured) await signOut(); }
     catch (error) { notify(error instanceof Error ? error.message : "Couldn't sign out cleanly.", "error"); }
+    forgetShapes();
     putLocalProfile(null);
     setUser(null);
     setItems(getLocalItems());

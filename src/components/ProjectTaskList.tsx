@@ -32,6 +32,7 @@ import MoreOptionsMenu from "./MoreOptionsMenu";
 import { TransferProgressIndicator } from "./ProgressIndicator";
 import { Attachment, AttachmentAction, AttachmentActions, AttachmentContent, AttachmentDescription, AttachmentMedia, AttachmentTitle } from "./ui/attachment";
 import { Spinner } from "./ui/spinner";
+import { Skeleton } from "skullet/react";
 import { Badge } from "./reui/badge";
 import { FileType, getFileType } from "./reui/file-type";
 import { IconTile } from "./reui/icon-tile";
@@ -611,7 +612,29 @@ export default function ProjectTaskList({
         </div>
       )}
 
-      {loading ? <div className="pj-task-empty"><Spinner className="size-4 text-primary" /> Loading {mode === "mine" ? "your tasks" : "tasks"}…</div> : (
+      {loading ? (
+        <Skeleton loading id={`project-tasks-${projectId}-${mode}`} label={`Loading ${mode === "mine" ? "your tasks" : "tasks"}`}>
+          <div className="pj-task-board-scroll">
+            <div className="pj-task-board" aria-label="Project task board">
+              {["To do", "In progress", "In review", "Complete"].map((column) => (
+                <section key={column} className="pj-task-column">
+                  <header className="pj-task-column-head">
+                    <h3>{column}</h3>
+                  </header>
+                  <article className="pj-task-card">
+                    <h4>Kitchen tiles</h4>
+                    <p>Need samples from the local yard</p>
+                  </article>
+                  <article className="pj-task-card">
+                    <h4>Domain renew</h4>
+                    <p>Registrar email this week</p>
+                  </article>
+                </section>
+              ))}
+            </div>
+          </div>
+        </Skeleton>
+      ) : (
         <div className="pj-task-board-scroll" ref={boardScrollRef} onDragOver={onBoardDragOver}>
           <div className="pj-task-board" style={boardStyle} aria-label="Project task board">
             <LayoutGroup id={`project-${projectId}-tasks`}>

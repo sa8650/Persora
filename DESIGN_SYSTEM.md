@@ -8,12 +8,15 @@ The **Persora UI/UX Design System** is the canonical visual, theming, primitive,
 
 | Path | Responsibility |
 | --- | --- |
-| `src/design-system/fonts.css` | Self-hosted Geist Sans webfont loading (`@fontsource-variable/geist`). Declares `@font-face` sources only — never `font-family` — so family assignment stays token-driven. Imported first in `src/index.css`. |
+| `src/design-system/fonts.css` | Self-hosted Geist Sans + Geist Mono webfont loading (`@fontsource-variable/geist` / `@fontsource-variable/geist-mono`). Declares font sources only; family assignment stays token-driven. Imported first in `src/index.css`. |
 | `src/design-system/tokens.css` | Single source of truth for `--ds-*` design tokens across `:root` (Light) and `.dark, [data-theme="dark"]` (Dark), plus shadcn (`--background`, `--card`, `--popover`, `--sidebar`, `--border`, `--ring`) and workspace (`--p-*`) semantic bridges. Imported first in `src/index.css`. |
-| `src/design-system/system.css` | Canonical layout shell, surface hierarchy, structural dividers, card themes, drawer/modal surfaces, icon-safe inputs, segmented tabs, and dark-mode contrast rules. Imported last in `src/main.tsx` so design-system surfaces govern legacy module stylesheets cleanly. |
+| `src/design-system/system.css` | Canonical layout shell, surface hierarchy, structural dividers, card themes, drawer/modal surfaces, icon-safe inputs, segmented tabs, and dark-mode contrast rules. |
+| `src/design-system/typography.css` | Semantic element defaults and all 52 `text-{family}-{weight}` composite classes. Imported after `system.css` in `src/main.tsx`; never assigns text color. |
+| `src/lib/cn.ts` | Shared `cn` configuration registering every typography composite in the font-size group. Import `cn` from `@/lib/cn` or `@/lib/utils`, never directly from the `cn` package. |
 | `src/design-system/theme.tsx` | `PersoraThemeProvider`, `usePersoraTheme()`, topbar `ThemeToggleButton`, and Settings `AppearanceSettingsCard` (`Light` / `Dark` / `System`, persisted in `localStorage["persora.theme"]` and synchronized to `<html class="dark" data-theme="...">`). |
 | `src/components/notes/NoteEditorPage.tsx` + `note-editor-page.css` | Full-page Tasks & Notes editor (Evernote-style): breadcrumb bar with autosave state, quiet meta line, borderless title, shared `RichNoteEditor` body (toolbar carries the attachment trigger and the page-background picker) and tags. Autosaves like Persora Table/Docs and has **no** page footer. Replaces the old right-hand note drawer. |
-| `src/components/shared/template-card.tsx` + `template-card.css` | Shared starter/template card primitive (`TemplateCardThumb`, `templateGradient`, `TEMPLATE_GRADIENTS`) used by the Persora Table, Persora Docs and Persora Forms shelves. Owns the single card geometry and paints the canonical gradient band behind the white document preview. |
+| `src/components/shared/start-shelf.tsx` | Shared Start Shelf primitive (`StartShelf`, `WorkspaceSidebarProvider`, `useWorkspaceSidebarCollapsed`, `getStartShelfVisibleLimit`) powering Persora Table, Persora Forms, and Persora Docs. Enforces sidebar-responsive single-row card limits (max 5 with expanded sidebar, max 6 with collapsed sidebar) and manual Template Gallery expansion/collapse. |
+| `src/components/shared/template-card.tsx` + `template-card.css` | Shared starter/template card primitive (`TemplateCardThumb`, `templateGradient`, `TEMPLATE_GRADIENTS`, `TEMPLATE_GRADIENT_PALETTE`) used by the Persora Table, Persora Docs and Persora Forms shelves. Owns the single card geometry and paints the canonical 10-gradient band behind the white document preview. |
 | `src/design-system/primitives.tsx` | Shared layout & composition primitives: `PersoraEmptyState` (ReUI `IconStack` 3D layered card stack or `IconTile` badge), `PersoraAsideStat` (hero stat pill with `IconTile`), `PersoraSearchField` (flex-isolated icon search input), and `PersoraDeleteModal` (portaled `document.body` destructive confirmation `alertdialog`). |
 | `src/design-system/index.ts` | Unified barrel exporting theme hooks/controls, Persora layout primitives (`PersoraEmptyState`, `PersoraAsideStat`, `PersoraSearchField`, `PersoraDeleteModal`), and all in-repo ReUI & shadcn UI primitives (`Badge`, `IconTile`, `IconStack`, `Frame`, `FileType`, `Attachment`, `ReuiFileAttachmentField`, `Checkbox`, `Progress`, `Spinner`, `Button`, `ContextMenu*`, `Menubar*`, `StageProgressIndicator`, `ImportProgressIndicator`, `TransferProgressIndicator`). |
 | `src/components/reui/{badge,file-type,frame,icon-stack,icon-tile,c-attachment-6}.tsx` | In-repo ReUI (`radix-vega`) primitives saved directly inside the repository (no runtime CDN dependencies). |
@@ -42,35 +45,64 @@ All modal backdrops and slide-over drawers use crisp outside-fade scrims (`backg
 
 ---
 
-## 3. Typography — Geist Sans Everywhere
+## 3. Typography — Persora Typography System v1
 
-**Geist Sans is the single UI typeface of Persora.** It is self-hosted through `@fontsource-variable/geist` (variable weight `100–900`, `font-display: swap`, no CDN and no external font request), loaded once from `src/design-system/fonts.css`, and assigned once from the `--ds-font-*` token family. There are no per-module font overrides: a typography change is a token edit.
+**Geist Sans is the only general-purpose UI typeface; Geist Mono is reserved for code and technical data.** Both are self-hosted through Fontsource (`font-display: swap`, no CDN or external font request), loaded once from `src/design-system/fonts.css`, and assigned through `--ds-font-*`. UI modules must not introduce another general-purpose family.
 
-| Token | Value | Responsibility |
-| --- | --- | --- |
-| `--ds-font-sans` | `"Geist Variable", "Geist Sans", Geist, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif` | Every UI string: workspaces, cards, dialogs, forms, navigation, tables, calendars |
-| `--ds-font-mono` | `"Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace` | Code, keycaps, formula bars, wallet/card numbers |
-| `--ds-font-ui` / `--ds-font-body` / `--ds-font-heading` | `var(--ds-font-sans)` | Semantic aliases for new components |
-| `--font-sans` / `--font-mono` (Tailwind `@theme`) | `var(--ds-font-sans)` / `var(--ds-font-mono)` | Tailwind `font-sans` / `font-mono` utilities resolve to the same stack |
+| Token | Responsibility |
+| --- | --- |
+| `--ds-font-sans` | Workspace, public, admin, card, dialog, form, navigation, table, and calendar UI |
+| `--ds-font-mono` | Code, keycaps, formula bars, identifiers, wallet/card numbers, and other technical data |
+| `--ds-font-ui` / `--ds-font-body` / `--ds-font-heading` | Geist Sans semantic aliases |
+| `--font-sans` / `--font-mono` (Tailwind `@theme`) | Tailwind bridges to the same stacks |
 
-**Loading:** `src/design-system/fonts.css` is imported first in `src/index.css`, before Tailwind, so `@font-face` rules win the cascade and text never renders in a fallback face after hydration. `@fontsource-variable/inter` was removed; it was never imported.
+Weights are limited to `--ds-font-weight-regular: 400`, `medium: 500`, `semibold: 600`, and `bold: 700`. `font-synthesis-weight: none` prevents synthetic bold.
+
+### Scale and semantic roles
+
+Every family has `--ds-type-{family}-size` and `--ds-type-{family}-line-height`; the two caption families also have `-letter-spacing`. Use the matching tokens together rather than a numeric size alone.
+
+| Family | Size / line height | Tracking | Default role |
+| --- | --- | --- | --- |
+| Large Title | 64 / 80px | normal | Marketing/display hero |
+| Display 1 | 56 / 72px | normal | Largest responsive display |
+| Display 2 | 48 / 64px | normal | Landing-page display |
+| Display 3 | 40 / 54px | normal | Page-level display |
+| Display 4 | 32 / 44px | normal | Compact display/page hero |
+| Title 1 | 24 / 34px | normal | Page title |
+| Title 2 | 20 / 26px | normal | Section title |
+| Title 3 | 18 / 26px | normal | Subsection/card-group title |
+| Headline | 16 / 22px | normal | Card title/emphasized heading |
+| Body | 14 / 20px | normal | Controls, labels, body copy |
+| Body 2 | 13 / 18px | normal | Dense controls, grids, secondary copy |
+| Caption 1 | 12 / 16px | 0.15px | Metadata, timestamps, help text |
+| Caption 2 | 11 / 15px | 0.20px | Minor badges, tags, group eyebrows; never essential instructions or errors |
+
+Essential interface text is at least Caption 1. Legacy 7–10px admin/module text was remediated; scaled document miniatures are not interface reading text and retain their intentional geometry.
+
+### Composite classes and authoring
+
+`src/design-system/typography.css` defines all **52** combinations using `text-{family}-{weight}`, for example `text-body-regular`, `text-body-medium`, `text-title-2-semibold`, and `text-display-4-bold`. A composite class owns family, size, line height, weight, and caption tracking where applicable; it never owns color. Do not combine one with competing Tailwind font-size, line-height, tracking, or weight utilities. The shared `cn` configuration treats composites as type families: the last family/size wins, while independent text-color classes are preserved. Tokenized Tailwind arbitrary values remain available where a primitive's variant definition must retain separate weight utilities.
+
+Semantic defaults cover body text, headings, controls, tables, and technical elements. Display headings step down with existing responsive `clamp()` behavior. Browser zoom and text scaling remain intact; essential text must not be clipped by a new fixed-height container.
 
 **Assignment rules (Light + Dark, all appearance modes):**
-1. `src/design-system/system.css` § 0 Typography sets `font-family` on `html`, `body`, and the form controls (`button`, `input`, `optgroup`, `select`, `textarea`) that browsers do not let inherit.
-2. `code`, `kbd`, `samp`, `pre`, `.ds-font-mono` resolve to `--ds-font-mono`; intentional monospace stacks (wallet numbers, formula bar, table ids) stay monospace.
-3. Headings inherit `--ds-font-heading`; weight and scale remain component-owned, so spacing and layout are unchanged.
-4. `font-synthesis-weight: none` keeps variable weights crisp instead of synthetic-bold.
-5. Retired: no `Noto Sans` declaration remains in app UI CSS. Localised scripts and emoji fall through the generic `sans-serif` keyword (per-glyph system fallback) rather than a bespoke webfont family. PDF rasterisation keeps its own `Helvetica/Arial/"Noto Sans"/"Noto Sans Bengali"` system stack inside `src/lib/pdf-canvas.ts` because that string is embedded into exported PDFs, not the app UI.
+1. `system.css` assigns Geist Sans to the shell and browser controls; `typography.css` supplies semantic scale defaults.
+2. `code`, `kbd`, `samp`, `pre`, `.ds-font-mono` resolve to Geist Mono. Mono never replaces Geist Sans for ordinary prose.
+3. User-authored rich text, document font pickers, PDF/canvas output, chart geometry, file-type glyph fitting, emoji, and scaled template miniatures are deliberate exceptions to interface normalization; their functionality and content formatting are preserved.
+4. Localised scripts and emoji use generic system fallbacks per glyph. PDF rasterisation keeps its export-specific `Helvetica/Arial/"Noto Sans"/"Noto Sans Bengali"` stack in `src/lib/pdf-canvas.ts`, outside app UI.
+
+**Loading:** `fonts.css` is imported first in `src/index.css`, before Tailwind. No duplicate Inter/general-purpose font package or CDN font is used.
 
 ### Sidebar typography
 
 | Token | Light | Dark | Usage |
 | --- | --- | --- | --- |
 | `--ds-sidebar-font` | `var(--ds-font-sans)` | `var(--ds-font-sans)` | `.workspace-sidebar`, `.sidebar-link`, `.nav-group-label`, sidebar profile/footer cards |
-| `--ds-sidebar-font-size` | `13px` | `13px` | Sidebar navigation labels and the account row |
-| `--ds-sidebar-font-weight` | `500` | `500` | Resting nav item weight (`active` stays `640`) |
+| `--ds-sidebar-font-size` | Body 2: `13px` | Body 2: `13px` | Sidebar navigation labels and the account row |
+| `--ds-sidebar-font-weight` | Medium: `500` | Medium: `500` | Resting nav item weight (`active` uses Semibold `600`) |
 | `--ds-sidebar-text` | `#676879` | `#CBD5E1` | Resting sidebar ink; hover uses `--ds-text`, active uses `--ds-sidebar-active-text` |
-| `--ds-sidebar-label-size` / `--ds-sidebar-label-color` | `10.5px` / `#8B8D9C` | `10.5px` / `#94A3B8` | Uppercase group eyebrows above each nav group |
+| `--ds-sidebar-label-size` / `--ds-sidebar-label-color` | Caption 2: `11px` / `#8B8D9C` | Caption 2: `11px` / `#94A3B8` | Uppercase group eyebrows above each nav group |
 
 Sidebar ink, background and type scale are all token-driven, so Dark mode and the persisted `Light` / `Dark` / `System` preference (`localStorage["persora.theme"]`) keep working without any hardcoded sidebar colors.
 
@@ -114,8 +146,12 @@ Import design system primitives from `@/design-system` (or their component modul
   - *Exception*: `src/components/launcher/LauncherIcons.tsx` intentionally preserves bespoke multi-tone 48×48 module launcher SVGs required by `tests/app-launcher.test.mjs`, and `src/components/SocialBrandIcon.tsx` holds third-party social brand marks.
 - **Attachments (`@reui/c-attachment-6`)**:
   - Use `<ReuiFileAttachmentField>` for every file picker/dropzone and `<Attachment>` / `<AttachmentGroup>` for saved attachment chips.
-- **Progress & Loading (`Progress` + `Spinner`)**:
-  - Use `<TransferProgressIndicator>`, `<ImportProgressIndicator>`, `<StageProgressIndicator>`, or `<Progress value={percent} />` (`0–100`) for uploads/imports, and `<Spinner />` for indeterminate loading states.
+- **Progress & Loading (`Progress` + Skullet `Skeleton` + `Spinner`)**:
+  - Use `<TransferProgressIndicator>`, `<ImportProgressIndicator>`, `<StageProgressIndicator>`, or `<Progress value={percent} />` (`0–100`) for uploads/imports.
+  - Use Skullet (`skullet/react`) as the unified loading placeholder. Wrap the real UI with `<Skeleton data={value} sample={SAMPLE} id="stable-key" label="Loading …">` so Skullet measures the destination layout. One `<PersoraSkulletProvider>` lives at the app root (`src/main.tsx`); do not add extra providers per page.
+  - Lazy modules use `<SkeletonSuspense skeleton={<Sample />}>`. Charts, canvas, and PDF page previews that cannot be measured use `<SkeletonBox>` with explicit width/height (or aspect-ratio).
+  - `reveal="smart"` holds skeletons back ~150ms so fast loads never flash, then crossfades or sequences content. Fades and shimmer honor `prefers-reduced-motion`. Call `forgetShapes()` on sign-out.
+  - Keep `<Spinner>` for operations and processing waits whose result has no known shape (save, delete, upload processing, authentication, and similar actions), not as the default page-loading placeholder.
 - **Selection & Status (`Checkbox` + `Badge`)**:
   - Use `<Checkbox checked={boolean | "indeterminate"} />` for row selection and bulk select-all headers (such as Contacts multi-select).
   - Use `<Badge variant="primary-light" | "success-light" | "warning-light" | "destructive-light" | "secondary" | "outline">` for counts, metadata pills, and statuses.
@@ -153,15 +189,15 @@ Every template card and every empty "add" card across the three document product
 
 | Aspect | Contract |
 | --- | --- |
-| Component | `<TemplateCardThumb gradient?={templateGradient(index)}>` from `src/components/shared/template-card.tsx` — the preview area of a starter card. Page stylesheets add only grid layout and interaction states. |
+| Component | `<StartShelf>` from `src/components/shared/start-shelf.tsx` + `<TemplateCardThumb gradient?={templateGradient(index)}>` from `src/components/shared/template-card.tsx`. Page stylesheets add only grid layout and interaction states. |
 | Geometry | **224 × 157px** preview (`--ds-template-card-width: 224px`, `--ds-template-card-height: 157px`), `--ds-template-card-gap: 6px` under the caption rows. `.ds-template-thumb` is the only rule that declares a size, so a Table, Docs or Forms card can never be a different width or height — nothing else may set a card height. |
-| Shelf rhythm | `--ds-template-shelf-columns: 5` — five cards per row with the sidebar rail open, **six** with the collapsed icon rail (`.workspace-shell:has(.workspace-sidebar.is-collapsed)` raises the variable to 6 for `.tb-/pd-/pf-start-shelf`). Grids use `repeat(var(--ds-template-shelf-columns), minmax(0, var(--ds-template-card-width)))` with `justify-content: start`, so the column count changes while the card width stays exactly 224px. |
+| Shelf rhythm & visibility | `--ds-template-shelf-columns: 5` — maximum **5** visible cards in a single row with the sidebar rail open, maximum **6** visible cards in a single row with the collapsed icon rail (`.workspace-shell:has(.workspace-sidebar.is-collapsed)` raises the variable to 6 for `.tb-/pd-/pf-start-shelf`). Remaining cards stay hidden and never wrap into another row until the user clicks **Template gallery** (`Collapse gallery` when open), which manually expands/collapses all available templates and preserves manual expansion across sidebar toggles. |
 | Shelf surface | All three shelves use `--ds-shelf-bg` = **`#F6F7FB` (rgb(246, 247, 251))** with a `--ds-border` hairline and `--ds-radius-md`. |
 | Surface | `.ds-template-thumb` owns border (`--ds-border-strong`), radius (`--ds-radius-xs`), overflow clipping, base `--ds-card-bg` and the optional gradient. Per-product classes (`.tb-starter-thumb`, `.pd-starter-thumb`, `.pf-starter-thumb`) no longer declare sizes, borders or backgrounds. |
-| Gradients | `--ds-template-gradient-1…5` in `tokens.css`, applied left-to-right on the **header band only**: `rgb(87,154,252)→rgb(87,99,252)`, `rgb(255,90,194)→rgb(253,91,115)`, `rgb(253,172,62)→rgb(250,212,63)`, `rgb(1,187,177)→rgb(1,198,129)`, `rgb(255,119,90)→rgb(255,163,90)`. No overlays, no banding — one raster, `background-size: 100% 100%`. |
-| Preview | The white document preview stays white: inside a gradient band the miniature surface is made transparent and `.tb-mini-sheet-paper` / `.pd-mini-paper` keep `#ffffff`, floating on the band with a soft shadow. Captions, borders, radii and spacing are unchanged. |
-| Band framing | The gradient frames the preview on **three sides only** — left, right and top spacing (`padding: 10px 12px 0` on `.tb-mini`, `justify-content: flex-start`) — so the Persora Table card runs off the bottom edge exactly like the Persora Docs card. There is no bottom gap and no gradient strip under the paper. |
-| Scope | Persora Table and Persora Docs template cards carry the gradient ramp (blank cards stay neutral white); Persora Forms keeps neutral cards but inherits the shared height. |
+| Gradients | `--ds-template-gradient-1…10` in `tokens.css` (`TEMPLATE_GRADIENT_PALETTE`), all at `90deg`: (1) Blue–Indigo `rgb(87,154,252)→rgb(87,99,252)`, (2) Pink–Coral `rgb(255,90,194)→rgb(253,91,115)`, (3) Orange–Yellow `rgb(253,172,62)→rgb(250,212,63)`, (4) Teal–Green `rgb(1,187,177)→rgb(1,198,129)`, (5) Coral–Orange `rgb(255,119,90)→rgb(255,163,90)`, (6) Purple–Lavender `#7C3AED→#C084FC`, (7) Deep Navy–Sky Blue `#172554→#38BDF8`, (8) Lime–Soft Green `#65A30D→#D9F99D`, (9) Burgundy–Magenta `#881337→#E879F9`, (10) Graphite–Silver `#334155→#94A3B8`. No overlays, no banding — one raster, `background-size: 100% 100%`. |
+| Preview | The white document preview stays white: inside a gradient band the miniature surface is made transparent and `.tb-mini-sheet-paper`, `.pd-mini-paper`, and `.pf-mini` cards keep `#ffffff` with legible ink in Light & Dark modes, floating on the band with a soft shadow. Captions, borders, radii and spacing are unchanged. |
+| Band framing | The gradient frames the preview on **three sides only** — left, right and top spacing (`padding: 10px 12px 0` on `.tb-mini`, `justify-content: flex-start`) — so the Persora Table, Forms, and Docs cards run off the bottom edge cleanly. |
+| Scope | Persora Table, Persora Forms, and Persora Docs template cards all share `templateGradient(index)` from the 10-gradient palette while blank starter cards remain neutral (`is-blank`). |
 
 ---
 
@@ -174,7 +210,7 @@ Tasks & Notes no longer opens a drawer. Plain notes (`section.id === "notes"`, i
 | Route | `App.tsx` keeps `editor.section === "notes"` and passes `<NoteEditorPage>` to `Workspace` via the `notePage` prop; `ItemEditorDialog` is only mounted for `editor.section !== "notes"`. Tasks, reminders and alarms still use the `TodoEditorDialog` drawer. |
 | Chrome | `.workspace-content.workspace-content-note-page` drops padding/max-width and the workspace **topbar** steps aside (`.workspace-main:has(.note-page) > .workspace-topbar`), so the page owns the content area like Persora Docs. The workspace footer keeps its place underneath the page, in normal flow (`position: static`) — it is **not** sticky and there is no page-level footer. |
 | Layout | `.note-page-bar` (back button + `Tasks & Notes › title` breadcrumb + autosave state + `Create note` / `Done`) → `.note-page-scroll` → `.note-page-sheet` (760px measure) → tags. No `footer.note-page-footer`, no cancel/save action bar. |
-| Typography | Borderless `.note-page-title` (30–40px, `--ds-font-heading`) that reads as page text, not a field — the workspace blanket input rules explicitly exclude `.note-page-title` / `.note-page-tag-input`. |
+| Typography | Borderless `.note-page-title` (responsive Display 4–3, `--ds-font-heading`) that reads as page text, not a field — the workspace blanket input rules explicitly exclude `.note-page-title` / `.note-page-tag-input`. |
 | Body | The shared `RichNoteEditor` (toolbar: bold, italic, underline, strike, bulleted list, numbered list, checklist, clear formatting, then the attachment and page-background tools) with `showHint={false}`; content is sanitized with `sanitizeNoteHtml` before saving. |
 | No focus edge | `div.rich-note-editor` is fully borderless and ringless on the note page: the legacy `:focus-within` light-blue border and 3px blue wash from `persora-theme.css` are explicitly cleared for `.rich-note-editor`, its `:focus`/`:focus-visible` states and `.rich-note-content`, so focusing the body paints **no** soft blue edge. |
 | Lists | The three list tools never rely on `execCommand`: `applyList("ul" \| "ol" \| "check")` rebuilds the selected top-level blocks into one `<ul>` / `<ol>` (checklists prefix each `<li>` with a real `<input type="checkbox">`) and unwraps them back into paragraphs when the same tool is used again. The caret is placed at the end of the result, and the DOM is never restructured while typing. |

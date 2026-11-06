@@ -356,7 +356,7 @@ export default function TripItineraryAndTasks({
                 </div>
 
                 {colItems.length === 0 ? (
-                  <div style={{ fontSize: 12, color: "var(--ds-text-muted)", padding: "18px 6px", textAlign: "center" }}>
+                  <div style={{ fontSize: "var(--ds-type-caption-1-size)", lineHeight: "var(--ds-type-caption-1-line-height)", color: "var(--ds-text-muted)", padding: "18px 6px", textAlign: "center" }}>
                     Drop or add {COLUMN_LABELS[col].toLowerCase()} tasks
                   </div>
                 ) : (
@@ -375,19 +375,19 @@ export default function TripItineraryAndTasks({
                         }}
                       >
                         <div style={{ display: "flex", justifyContent: "space-between", gap: 6, alignItems: "flex-start" }}>
-                          <strong style={{ fontSize: 13, lineHeight: 1.35 }}>{item.title}</strong>
-                          <span className="ts-status-pill" style={{ height: 20, fontSize: 10.5 }}>
+                          <strong style={{ fontSize: "var(--ds-type-body-2-size)", lineHeight: "var(--ds-type-body-2-line-height)" }}>{item.title}</strong>
+                          <span className="ts-status-pill" style={{ height: 20, fontSize: "var(--ds-type-caption-2-size)", lineHeight: "var(--ds-type-caption-2-line-height)" }}>
                             {item.priority}
                           </span>
                         </div>
 
                         {item.description && (
-                          <div style={{ fontSize: 12, color: "var(--ds-text-secondary)" }}>{item.description}</div>
+                          <div style={{ fontSize: "var(--ds-type-caption-1-size)", lineHeight: "var(--ds-type-caption-1-line-height)", color: "var(--ds-text-secondary)" }}>{item.description}</div>
                         )}
 
                         <div className="ts-meta-row">
                           {item.scheduledDate ? (
-                            <span style={{ color: "var(--ds-accent)", fontWeight: 500 }}>
+                            <span style={{ color: "var(--ds-accent)", fontWeight: "var(--ds-font-weight-medium)" }}>
                               <CalendarCheck size={12} />
                               {dayNum ? `Day ${dayNum} · ` : ""}
                               {item.scheduledDate}
@@ -407,7 +407,7 @@ export default function TripItineraryAndTasks({
                             <select
                               aria-label={`Status for ${item.title}`}
                               className="ts-select"
-                              style={{ height: 26, fontSize: 11.5, padding: "2px 6px", width: "auto" }}
+                              style={{ height: 26, fontSize: "var(--ds-type-body-2-size)", lineHeight: "var(--ds-type-body-2-line-height)", padding: "2px 6px", width: "auto" }}
                               value={item.status}
                               onChange={(e) => void handleStatusChange(item, e.target.value as TaskStatus)}
                             >
@@ -420,7 +420,7 @@ export default function TripItineraryAndTasks({
                             <select
                               aria-label={`Schedule day for ${item.title}`}
                               className="ts-select"
-                              style={{ height: 26, fontSize: 11.5, padding: "2px 6px", width: "auto", flex: "1 1 110px" }}
+                              style={{ height: 26, fontSize: "var(--ds-type-body-2-size)", lineHeight: "var(--ds-type-body-2-line-height)", padding: "2px 6px", width: "auto", flex: "1 1 110px" }}
                               value={item.scheduledDate || ""}
                               onChange={(e) => void handleScheduleChange(item, e.target.value || null)}
                             >
@@ -577,7 +577,7 @@ export default function TripItineraryAndTasks({
               </p>
             </div>
             {workspace.destinations.length > 0 ? (
-              <span style={{ fontSize: 12, color: "var(--ds-text-muted)" }}>
+              <span style={{ fontSize: "var(--ds-type-caption-1-size)", lineHeight: "var(--ds-type-caption-1-line-height)", color: "var(--ds-text-muted)" }}>
                 {workspace.destinations
                   .slice(0, 3)
                   .map((d, idx) => getDestinationStopLabel(d, idx))
@@ -641,8 +641,8 @@ export default function TripItineraryAndTasks({
                 >
                   <div className="ts-day-head">
                     <div>
-                      <strong style={{ fontSize: 14 }}>Day {day.dayNumber}</strong>
-                      <span style={{ marginLeft: 8, fontSize: 12.5, color: "var(--ds-text-secondary)" }}>
+                      <strong style={{ fontSize: "var(--ds-type-body-size)", lineHeight: "var(--ds-type-body-line-height)" }}>Day {day.dayNumber}</strong>
+                      <span style={{ marginLeft: 8, fontSize: "var(--ds-type-body-2-size)", lineHeight: "var(--ds-type-body-2-line-height)", color: "var(--ds-text-secondary)" }}>
                         {day.date}
                       </span>
                     </div>
@@ -654,7 +654,7 @@ export default function TripItineraryAndTasks({
                   </div>
 
                   {dayItems.length === 0 ? (
-                    <div style={{ fontSize: 12.5, color: "var(--ds-text-muted)", padding: "8px 0" }}>
+                    <div style={{ fontSize: "var(--ds-type-body-2-size)", lineHeight: "var(--ds-type-body-2-line-height)", color: "var(--ds-text-muted)", padding: "8px 0" }}>
                       No activities scheduled yet. Drag an unscheduled task here or click &ldquo;Add to Day {day.dayNumber}&rdquo;.
                     </div>
                   ) : (
@@ -681,7 +681,7 @@ export default function TripItineraryAndTasks({
                             )}
                             <strong
                               style={{
-                                fontSize: 13.5,
+                                fontSize: "var(--ds-type-body-size)", lineHeight: "var(--ds-type-body-line-height)",
                                 textDecoration: act.status === "skipped" ? "line-through" : "none",
                               }}
                             >
@@ -710,7 +710,7 @@ export default function TripItineraryAndTasks({
                         )}
 
                         {act.notes && (
-                          <div style={{ fontSize: 12, color: "var(--ds-text-secondary)" }}>{act.notes}</div>
+                          <div style={{ fontSize: "var(--ds-type-caption-1-size)", lineHeight: "var(--ds-type-caption-1-line-height)", color: "var(--ds-text-secondary)" }}>{act.notes}</div>
                         )}
 
                         {canEdit && (
@@ -796,11 +796,11 @@ export default function TripItineraryAndTasks({
                 </button>
               )}
             </div>
-            <p style={{ margin: "0 0 10px", fontSize: 12, color: "var(--ds-text-muted)" }}>
+            <p style={{ margin: "0 0 10px", fontSize: "var(--ds-type-caption-1-size)", lineHeight: "var(--ds-type-caption-1-line-height)", color: "var(--ds-text-muted)" }}>
               Drag any task onto a trip day — or pick a day below — to schedule it without duplicating records.
             </p>
             {unscheduledItems.length === 0 ? (
-              <div style={{ fontSize: 12.5, color: "var(--ds-text-muted)" }}>
+              <div style={{ fontSize: "var(--ds-type-body-2-size)", lineHeight: "var(--ds-type-body-2-line-height)", color: "var(--ds-text-muted)" }}>
                 All trip tasks are scheduled on the itinerary.
               </div>
             ) : (
@@ -817,8 +817,8 @@ export default function TripItineraryAndTasks({
                     }}
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 6 }}>
-                      <strong style={{ fontSize: 13 }}>{task.title}</strong>
-                      <span className="ts-status-pill" style={{ height: 20, fontSize: 10.5 }}>
+                      <strong style={{ fontSize: "var(--ds-type-body-2-size)", lineHeight: "var(--ds-type-body-2-line-height)" }}>{task.title}</strong>
+                      <span className="ts-status-pill" style={{ height: 20, fontSize: "var(--ds-type-caption-2-size)", lineHeight: "var(--ds-type-caption-2-line-height)" }}>
                         {task.status.replace("_", " ")}
                       </span>
                     </div>
@@ -826,7 +826,7 @@ export default function TripItineraryAndTasks({
                       <select
                         aria-label={`Schedule ${task.title} to day`}
                         className="ts-select"
-                        style={{ height: 28, fontSize: 12 }}
+                        style={{ height: 28, fontSize: "var(--ds-type-body-2-size)", lineHeight: "var(--ds-type-body-2-line-height)" }}
                         value=""
                         onChange={(e) => {
                           if (e.target.value) void handleScheduleChange(task, e.target.value);

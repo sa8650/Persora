@@ -288,7 +288,7 @@ test("ReUI ContextMenu, ReUI Menubar, PersoraDeleteModal, ShareTableDialog, and 
 
 
 
-test("Geist Sans is the single UI typeface and sidebar typography uses 13px / #676879", () => {
+test("Geist Sans is the UI typeface and sidebar typography uses the Body 2 token / #676879", () => {
   const tokensCss = read("src/design-system/tokens.css");
   const systemCss = read("src/design-system/system.css");
   const indexCss = read("src/index.css");
@@ -313,7 +313,8 @@ test("Geist Sans is the single UI typeface and sidebar typography uses 13px / #6
   assert.match(systemCss, /:where\(code, kbd, samp, pre,[^)]*\)\s*\{[^}]*var\(--ds-font-mono\)/);
 
   // Sidebar typography tokens (Light #676879, Dark keeps a token-based ink).
-  assert.match(tokensCss, /--ds-sidebar-font-size:\s*13px/);
+  assert.match(tokensCss, /--ds-sidebar-font-size:\s*var\(--ds-type-body-2-size\)/);
+  assert.match(tokensCss, /--ds-type-body-2-size:\s*13px/);
   assert.match(tokensCss, /--ds-sidebar-text:\s*#676879/);
   assert.match(tokensCss, /--ds-sidebar-font:\s*var\(--ds-font-sans\)/);
   assert.match(systemCss, /\.sidebar-link\s*\{[^}]*font-size:\s*var\(--ds-sidebar-font-size\)/);

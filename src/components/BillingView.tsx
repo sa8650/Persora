@@ -7,7 +7,8 @@ import type { BillingSnapshot, PaymentMethod, PaymentRecord, SubscriptionPlan } 
 import { formatDate, humanSize } from "../lib/utils";
 import { loadBilling, submitPaymentRequest } from "../lib/cloud";
 import ModalPortal from "./ModalPortal";
-import { Badge, Button, IconTile, PersoraEmptyState, Progress, Spinner } from "@/design-system";
+import { Badge, Button, IconTile, PersoraEmptyState, Progress } from "@/design-system";
+import { Skeleton } from "skullet/react";
 
 type BillingPeriod = "monthly" | "yearly";
 
@@ -169,10 +170,43 @@ export default function BillingView({
   if (loading && !snapshot) {
     return (
       <div className="billing-view ds-page">
-        <div className="billing-loading" role="status">
-          <Spinner className="size-5 text-primary" />
-          <span>Loading your plan and usage limits…</span>
-        </div>
+        <Skeleton loading id="billing-page" label="Loading your plan and usage limits">
+          <header className="billing-page-header">
+            <div className="billing-page-copy">
+              <span className="section-eyebrow">Plans &amp; Billing</span>
+              <h2>Space and clarity for what matters.</h2>
+              <p>Review your current plan, combined storage usage, billing cycle options, manual payment channels, and verification history.</p>
+            </div>
+          </header>
+          <div className="billing-overview-grid">
+            <section className="billing-surface-card billing-current-card">
+              <div className="billing-card-head">
+                <div className="billing-card-title-row">
+                  <div>
+                    <span className="section-eyebrow">Current Plan</span>
+                    <h3>Persora Plus</h3>
+                  </div>
+                </div>
+              </div>
+              <div className="billing-current-facts">
+                <div className="billing-fact-item"><span>Allocated storage</span><b>50 GB</b></div>
+                <div className="billing-fact-item"><span>Current term</span><b>Valid until 12 May 2026</b></div>
+                <div className="billing-fact-item"><span>Plan rate</span><b>BDT 499 / month</b></div>
+              </div>
+            </section>
+            <section className="billing-surface-card billing-usage-card" aria-label="Usage limits">
+              <div className="billing-card-head">
+                <div className="billing-card-title-row">
+                  <div>
+                    <span className="section-eyebrow">Storage</span>
+                    <h3>12.4 GB used</h3>
+                  </div>
+                </div>
+              </div>
+              <p>of 50 GB on your plan</p>
+            </section>
+          </div>
+        </Skeleton>
       </div>
     );
   }

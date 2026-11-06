@@ -12,7 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { PersoraEmptyState } from "../../design-system";
-import { DASHBOARD_PRESET_BY_ID, type DashboardWidgetInstance } from "../../lib/dashboard-api";
+import { DASHBOARD_PRESET_BY_ID, createDefaultDashboardLayout, type DashboardWidgetInstance } from "../../lib/dashboard-api";
 import type {
   AppUser,
   DigitalBusinessCard,
@@ -26,6 +26,7 @@ import type {
 } from "../../types";
 import { Badge } from "../reui/badge";
 import { Spinner } from "../ui/spinner";
+import { Skeleton } from "skullet/react";
 import { DashboardGrid } from "./DashboardGrid";
 import { DashboardWidgetCard, type DashboardActionHandlers } from "./DashboardWidgetContent";
 import { PresetConfirmModal } from "./PresetConfirmModal";
@@ -96,7 +97,7 @@ function SaveStatusPill({
           <AlertTriangle size={12} />
           <span>Save Failed</span>
         </Badge>
-        <button type="button" className="quiet-button !h-7 !px-2.5 !text-xs" onClick={onRetry}>
+        <button type="button" className="quiet-button !h-7 !px-2.5 !text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]" onClick={onRetry}>
           <RefreshCw size={12} /> Retry
         </button>
       </span>
@@ -281,7 +282,7 @@ export default function CustomizableDashboardView(props: CustomizableDashboardPr
             <Badge variant="primary-light" size="sm" radius="full">
               Editing layout
             </Badge>
-            <span className="text-xs text-muted-foreground">
+            <span className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">
               Drag handles or press arrow keys to reorder · Choose width (1/3, 1/2, 2/3, Full) · Configure or remove any widget.
             </span>
           </div>
@@ -289,35 +290,35 @@ export default function CustomizableDashboardView(props: CustomizableDashboardPr
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              className="quiet-button !h-8 !px-3 !text-xs"
+              className="quiet-button !h-8 !px-3 !text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]"
               onClick={() => setLibraryOpen(true)}
             >
               <Plus size={14} /> Add Widget
             </button>
             <button
               type="button"
-              className="quiet-button !h-8 !px-3 !text-xs"
+              className="quiet-button !h-8 !px-3 !text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]"
               onClick={() => setPresetModalMode("presets")}
             >
               <LayoutTemplate size={14} /> Presets
             </button>
             <button
               type="button"
-              className="quiet-button !h-8 !px-3 !text-xs"
+              className="quiet-button !h-8 !px-3 !text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]"
               onClick={() => setPresetModalMode("reset")}
             >
               <RotateCcw size={14} /> Reset Dashboard
             </button>
             <button
               type="button"
-              className="quiet-button !h-8 !px-3 !text-xs"
+              className="quiet-button !h-8 !px-3 !text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]"
               onClick={layout.cancelEditMode}
             >
               <X size={14} /> Cancel
             </button>
             <button
               type="button"
-              className="main-add-button !h-8 !px-3.5 !text-xs"
+              className="main-add-button !h-8 !px-3.5 !text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]"
               onClick={() => void layout.saveAndExitEditMode()}
             >
               <Check size={14} /> Done
@@ -334,7 +335,7 @@ export default function CustomizableDashboardView(props: CustomizableDashboardPr
         >
           <div className="flex items-center gap-2.5">
             <AlertTriangle size={16} className="text-amber-600 dark:text-amber-400" />
-            <div className="text-xs">
+            <div className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]">
               <strong className="font-semibold text-foreground">
                 Your dashboard was updated on another device or browser tab.
               </strong>{" "}
@@ -346,14 +347,14 @@ export default function CustomizableDashboardView(props: CustomizableDashboardPr
           <div className="flex items-center gap-2">
             <button
               type="button"
-              className="quiet-button !h-8 !px-3 !text-xs"
+              className="quiet-button !h-8 !px-3 !text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]"
               onClick={layout.resolveConflictReloadServer}
             >
               Load latest from account
             </button>
             <button
               type="button"
-              className="main-add-button !h-8 !px-3 !text-xs"
+              className="main-add-button !h-8 !px-3 !text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]"
               onClick={layout.resolveConflictKeepMine}
             >
               Keep my layout
@@ -364,10 +365,40 @@ export default function CustomizableDashboardView(props: CustomizableDashboardPr
 
       {/* Dashboard Body */}
       {layout.saveState === "loading" && !layout.customized && layout.widgets.length === 0 ? (
-        <div className="flex items-center justify-center gap-2.5 rounded-2xl border border-border bg-card py-16 text-sm text-muted-foreground">
-          <Spinner className="size-4 text-primary" />
-          <span>Loading your personalized dashboard…</span>
-        </div>
+        <Skeleton loading id="dashboard-grid" label="Loading your personalized dashboard">
+          <DashboardGrid
+            widgets={createDefaultDashboardLayout().widgets}
+            isEditing={false}
+            onMoveById={() => undefined}
+            onStepOrder={() => undefined}
+            renderCell={(widget, index, dragProps) => (
+              <DashboardWidgetCard
+                widget={widget}
+                index={index}
+                totalCount={createDefaultDashboardLayout().widgets.length}
+                isEditing={false}
+                isDragging={dragProps.isDragging}
+                isDropTarget={dragProps.isDropTarget}
+                items={items}
+                contacts={contacts}
+                businessCards={businessCards}
+                medicalRecords={medicalRecords}
+                projectNotifications={projectNotifications}
+                data={data}
+                actions={actions}
+                onConfigure={() => undefined}
+                onResize={() => undefined}
+                onToggleCollapse={() => undefined}
+                onDuplicate={() => undefined}
+                onMoveUp={() => undefined}
+                onMoveDown={() => undefined}
+                onRemove={() => undefined}
+                onDragHandlePointerDown={dragProps.onDragHandlePointerDown}
+                onDragHandleKeyDown={dragProps.onDragHandleKeyDown}
+              />
+            )}
+          />
+        </Skeleton>
       ) : layout.widgets.length === 0 ? (
         <PersoraEmptyState
           icon={<LayoutGrid size={20} />}

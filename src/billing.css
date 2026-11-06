@@ -25,16 +25,17 @@
 
 .billing-page-copy h2 {
   margin: 0;
-  font-size: 23px;
-  font-weight: 700;
-  letter-spacing: -0.025em;
+  font-size: var(--ds-type-title-1-size);
+  line-height: var(--ds-type-title-1-line-height);
+  font-weight: var(--ds-font-weight-bold);
+  letter-spacing: normal;
   color: var(--ds-text);
 }
 
 .billing-page-copy p {
   margin: 0;
-  font-size: 13.5px;
-  line-height: 1.55;
+  font-size: var(--ds-type-body-size);
+  line-height: var(--ds-type-body-line-height);
   color: var(--ds-text-secondary);
 }
 
@@ -62,7 +63,8 @@
   min-height: 260px;
   gap: 12px;
   color: var(--ds-text-muted);
-  font-size: 13px;
+  font-size: var(--ds-type-body-2-size);
+  line-height: var(--ds-type-body-2-line-height);
   text-align: center;
 }
 
@@ -97,15 +99,17 @@
 
 .billing-card-title-row h3 {
   margin: 2px 0 0;
-  font-size: 19px;
-  font-weight: 650;
-  letter-spacing: -0.02em;
+  font-size: var(--ds-type-title-2-size);
+  line-height: var(--ds-type-title-2-line-height);
+  font-weight: var(--ds-font-weight-semibold);
+  letter-spacing: normal;
   color: var(--ds-text);
 }
 
 .billing-card-title-row h3 small {
-  font-size: 13.5px;
-  font-weight: 500;
+  font-size: var(--ds-type-body-size);
+  line-height: var(--ds-type-body-line-height);
+  font-weight: var(--ds-font-weight-semibold);
   color: var(--ds-text-muted);
 }
 
@@ -127,14 +131,17 @@
 }
 
 .billing-fact-item span {
-  font-size: 11px;
-  font-weight: 550;
+  font-size: var(--ds-type-caption-1-size);
+  letter-spacing: var(--ds-type-caption-1-letter-spacing);
+  line-height: var(--ds-type-caption-1-line-height);
+  font-weight: var(--ds-font-weight-semibold);
   color: var(--ds-text-muted);
 }
 
 .billing-fact-item b {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--ds-type-body-2-size);
+  line-height: var(--ds-type-body-2-line-height);
+  font-weight: var(--ds-font-weight-semibold);
   color: var(--ds-text);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -158,8 +165,10 @@
   background: var(--ds-emerald-soft);
   border: 1px solid var(--ds-emerald-border);
   color: var(--ds-emerald);
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--ds-type-caption-1-size);
+  letter-spacing: var(--ds-type-caption-1-letter-spacing);
+  line-height: var(--ds-type-caption-1-line-height);
+  font-weight: var(--ds-font-weight-bold);
   font-variant-numeric: tabular-nums;
 }
 
@@ -171,8 +180,9 @@
 
 .billing-meter-wrap > small {
   color: var(--ds-text-muted);
-  font-size: 12px;
-  line-height: 1.45;
+  font-size: var(--ds-type-caption-1-size);
+  letter-spacing: var(--ds-type-caption-1-letter-spacing);
+  line-height: var(--ds-type-caption-1-line-height);
 }
 
 .billing-usage-breakdown {
@@ -206,7 +216,9 @@
 }
 
 .billing-usage-stat span {
-  font-size: 11px;
+  font-size: var(--ds-type-body-2-size);
+  letter-spacing: normal;
+  line-height: var(--ds-type-body-2-line-height);
   color: var(--ds-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -214,8 +226,9 @@
 }
 
 .billing-usage-stat b {
-  font-size: 12.5px;
-  font-weight: 600;
+  font-size: var(--ds-type-body-2-size);
+  line-height: var(--ds-type-body-2-line-height);
+  font-weight: var(--ds-font-weight-semibold);
   color: var(--ds-text);
   font-variant-numeric: tabular-nums;
 }
@@ -245,13 +258,15 @@
 }
 
 .billing-banner b {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--ds-type-body-2-size);
+  line-height: var(--ds-type-body-2-line-height);
+  font-weight: var(--ds-font-weight-semibold);
   color: var(--ds-text);
 }
 
 .billing-banner span {
-  font-size: 12.5px;
+  font-size: var(--ds-type-body-2-size);
+  line-height: var(--ds-type-body-2-line-height);
   color: var(--ds-text-secondary);
 }
 
@@ -272,9 +287,10 @@
 
 .billing-section-heading h3 {
   margin: 3px 0 0;
-  font-size: 17px;
-  font-weight: 650;
-  letter-spacing: -0.015em;
+  font-size: var(--ds-type-title-3-size);
+  line-height: var(--ds-type-title-3-line-height);
+  font-weight: var(--ds-font-weight-semibold);
+  letter-spacing: normal;
   color: var(--ds-text);
 }
 
@@ -308,8 +324,10 @@
   background: transparent;
   color: var(--ds-text-muted);
   font: inherit;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--ds-type-body-size);
+  letter-spacing: normal;
+  line-height: var(--ds-type-body-line-height);
+  font-weight: var(--ds-font-weight-medium);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -370,31 +388,34 @@
 }
 
 .billing-plan-top > b {
-  font-size: 15px;
-  font-weight: 650;
+  font-size: var(--ds-type-headline-size);
+  line-height: var(--ds-type-headline-line-height);
+  font-weight: var(--ds-font-weight-semibold);
   color: var(--ds-text);
 }
 
 .billing-plan-capacity h4 {
   margin: 0;
-  font-size: 30px;
-  font-weight: 700;
-  letter-spacing: -0.04em;
+  font-size: var(--ds-type-display-4-size);
+  line-height: var(--ds-type-display-4-line-height);
+  font-weight: var(--ds-font-weight-bold);
+  letter-spacing: normal;
   color: var(--ds-text);
   font-variant-numeric: tabular-nums;
 }
 
 .billing-plan-capacity h4 small {
-  font-size: 15px;
-  font-weight: 550;
+  font-size: var(--ds-type-headline-size);
+  line-height: var(--ds-type-headline-line-height);
+  font-weight: var(--ds-font-weight-semibold);
   color: var(--ds-text-muted);
 }
 
 .billing-plan-capacity p {
   margin: 6px 0 0;
   min-height: 36px;
-  font-size: 12.5px;
-  line-height: 1.5;
+  font-size: var(--ds-type-body-2-size);
+  line-height: var(--ds-type-body-2-line-height);
   color: var(--ds-text-secondary);
 }
 
@@ -414,19 +435,24 @@
 }
 
 .billing-plan-price b {
-  font-size: 20px;
-  font-weight: 700;
+  font-size: var(--ds-type-title-2-size);
+  line-height: var(--ds-type-title-2-line-height);
+  font-weight: var(--ds-font-weight-bold);
   color: var(--ds-text);
   font-variant-numeric: tabular-nums;
 }
 
 .billing-plan-price span {
-  font-size: 12px;
+  font-size: var(--ds-type-body-2-size);
+  letter-spacing: normal;
+  line-height: var(--ds-type-body-2-line-height);
   color: var(--ds-text-muted);
 }
 
 .billing-per-gb {
-  font-size: 11.5px;
+  font-size: var(--ds-type-caption-1-size);
+  letter-spacing: var(--ds-type-caption-1-letter-spacing);
+  line-height: var(--ds-type-caption-1-line-height);
   color: var(--ds-text-muted);
 }
 
@@ -444,8 +470,8 @@
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  font-size: 12.5px;
-  line-height: 1.45;
+  font-size: var(--ds-type-body-2-size);
+  line-height: var(--ds-type-body-2-line-height);
   color: var(--ds-text-secondary);
 }
 
@@ -464,8 +490,9 @@
   background: var(--ds-subtle-bg);
   color: var(--ds-text);
   font: inherit;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--ds-type-body-size);
+  line-height: var(--ds-type-body-line-height);
+  font-weight: var(--ds-font-weight-medium);
   cursor: pointer;
   transition: background-color 0.14s ease, border-color 0.14s ease, color 0.14s ease;
 }
@@ -522,7 +549,8 @@
   justify-content: space-between;
   gap: 12px;
   padding: 10px 12px;
-  font-size: 12.5px;
+  font-size: var(--ds-type-body-2-size);
+  line-height: var(--ds-type-body-2-line-height);
   border-bottom: 1px solid var(--ds-border);
 }
 
@@ -536,7 +564,7 @@
 
 .billing-setting-row b {
   color: var(--ds-text);
-  font-weight: 600;
+  font-weight: var(--ds-font-weight-semibold);
   text-align: right;
 }
 
@@ -547,11 +575,12 @@
 }
 
 .billing-methods-label {
-  font-size: 11.5px;
-  font-weight: 600;
+  font-size: var(--ds-type-body-size);
+  line-height: var(--ds-type-body-line-height);
+  font-weight: var(--ds-font-weight-medium);
   color: var(--ds-text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: normal;
 }
 
 .billing-methods-list {
@@ -586,13 +615,16 @@
 }
 
 .billing-method-pill b {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--ds-type-body-2-size);
+  line-height: var(--ds-type-body-2-line-height);
+  font-weight: var(--ds-font-weight-medium);
   color: var(--ds-text);
 }
 
 .billing-method-pill small {
-  font-size: 11.5px;
+  font-size: var(--ds-type-caption-1-size);
+  letter-spacing: var(--ds-type-caption-1-letter-spacing);
+  line-height: var(--ds-type-caption-1-line-height);
   color: var(--ds-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -601,7 +633,8 @@
 
 .billing-muted-copy {
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--ds-type-body-size);
+  line-height: var(--ds-type-body-line-height);
   color: var(--ds-text-muted);
 }
 
@@ -639,15 +672,17 @@
 }
 
 .billing-payment-top b {
-  font-size: 13.5px;
-  font-weight: 600;
+  font-size: var(--ds-type-body-size);
+  line-height: var(--ds-type-body-line-height);
+  font-weight: var(--ds-font-weight-semibold);
   color: var(--ds-text);
 }
 
 .billing-payment-copy small {
-  font-size: 12px;
+  font-size: var(--ds-type-body-size);
+  letter-spacing: normal;
   color: var(--ds-text-muted);
-  line-height: 1.45;
+  line-height: var(--ds-type-body-line-height);
   overflow-wrap: anywhere;
 }
 
@@ -657,12 +692,16 @@
   background: var(--ds-subtle-bg);
   border: 1px solid var(--ds-border);
   color: var(--ds-text-secondary);
-  font-size: 11.5px;
+  font-size: var(--ds-type-body-size);
+  letter-spacing: normal;
+  line-height: var(--ds-type-body-line-height);
 }
 
 .billing-payment-note {
   margin: 2px 0 0;
-  font-size: 12px;
+  font-size: var(--ds-type-caption-1-size);
+  letter-spacing: var(--ds-type-caption-1-letter-spacing);
+  line-height: var(--ds-type-caption-1-line-height);
   color: var(--ds-text-secondary);
 }
 
@@ -671,7 +710,8 @@
   align-items: center;
   gap: 8px;
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--ds-type-body-2-size);
+  line-height: var(--ds-type-body-2-line-height);
   color: var(--ds-text-muted);
 }
 
@@ -687,15 +727,15 @@
 .document-image-viewer { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 310px; max-height: min(68vh,640px); overflow: hidden; border: 1px solid var(--ds-border); border-radius: 11px; background: var(--ds-card-bg); }
 .document-image-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 45px; flex: 0 0 auto; border-bottom: 1px solid var(--ds-border); padding: 6px 9px; background: var(--ds-card-bg); }
 .document-image-info { display: flex; align-items: flex-start; flex-direction: column; gap: 2px; min-width: 0; }
-.document-image-info b { max-width: 220px; overflow: hidden; color: var(--ds-text); font-size: 11.5px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
-.document-image-info span { color: var(--ds-text-muted); font-size: 10.5px; }
+.document-image-info b { max-width: 220px; overflow: hidden; color: var(--ds-text); font-size: var(--ds-type-caption-1-size); letter-spacing: var(--ds-type-caption-1-letter-spacing); line-height: var(--ds-type-caption-1-line-height); font-weight: var(--ds-font-weight-semibold); text-overflow: ellipsis; white-space: nowrap; }
+.document-image-info span { color: var(--ds-text-muted); font-size: var(--ds-type-caption-1-size); letter-spacing: var(--ds-type-caption-1-letter-spacing); line-height: var(--ds-type-caption-1-line-height); }
 .document-image-controls { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
 .document-image-controls button { display: grid; place-items: center; min-width: 29px; height: 29px; border: 0; border-radius: 7px; padding: 0 5px; color: var(--ds-text-muted); background: transparent; cursor: pointer; }
 .document-image-controls button:hover:not(:disabled) { color: var(--ds-primary); background: var(--ds-primary-soft); }
 .document-image-controls button:disabled { opacity: .42; cursor: not-allowed; }
-.document-image-controls button span { font-size: 10px; font-weight: 650; }
+.document-image-controls button span { font-size: var(--ds-type-body-size); letter-spacing: normal; line-height: var(--ds-type-body-line-height); font-weight: var(--ds-font-weight-medium); }
 .document-image-controls > i { width: 1px; height: 18px; margin: 0 3px; background: var(--ds-border); }
-.document-image-zoom { min-width: 38px; color: var(--ds-text-muted); font-size: 11px; font-variant-numeric: tabular-nums; text-align: center; }
+.document-image-zoom { min-width: 38px; color: var(--ds-text-muted); font-size: var(--ds-type-caption-1-size); letter-spacing: var(--ds-type-caption-1-letter-spacing); line-height: var(--ds-type-caption-1-line-height); font-variant-numeric: tabular-nums; text-align: center; }
 .document-image-viewport { position: relative; display: grid; flex: 1 1 auto; place-items: center; min-height: 0; overflow: hidden; padding: 14px; background: var(--ds-subtle-bg); touch-action: none; }
 .document-image-viewport img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; user-select: none; -webkit-user-drag: none; transform-origin: center; will-change: transform; }
 .document-image-viewport.can-pan { cursor: grab; }
@@ -706,8 +746,8 @@
 .detail-preview-audio { width: min(100%,520px); }
 .detail-preview-message { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-height: 250px; padding: 25px; color: var(--ds-text-muted); text-align: center; }
 .detail-preview-message > svg { color: var(--ds-primary); }
-.detail-preview-message b { max-width: 440px; color: var(--ds-text); font-size: 13.5px; }
-.detail-preview-message span { max-width: 440px; color: var(--ds-text-muted); font-size: 12px; line-height: 1.6; }
+.detail-preview-message b { max-width: 440px; color: var(--ds-text); font-size: var(--ds-type-body-size); line-height: var(--ds-type-body-line-height); }
+.detail-preview-message span { max-width: 440px; color: var(--ds-text-muted); font-size: var(--ds-type-caption-1-size); letter-spacing: var(--ds-type-caption-1-letter-spacing); line-height: var(--ds-type-caption-1-line-height); }
 
 /* ---- Blur-free, Dark-Mode-Safe Manual Checkout Drawer ---- */
 .billing-drawer-backdrop {
@@ -753,16 +793,17 @@
 .billing-drawer-header h2 {
   margin: 5px 0 0;
   color: var(--ds-text);
-  font-size: 21px;
-  font-weight: 650;
-  letter-spacing: -0.025em;
+  font-size: var(--ds-type-title-1-size);
+  line-height: var(--ds-type-title-1-line-height);
+  font-weight: var(--ds-font-weight-semibold);
+  letter-spacing: normal;
 }
 
 .billing-drawer-header p {
   margin: 5px 0 0;
   color: var(--ds-text-muted);
-  font-size: 12.5px;
-  line-height: 1.45;
+  font-size: var(--ds-type-body-2-size);
+  line-height: var(--ds-type-body-2-line-height);
 }
 
 .billing-drawer-close {
@@ -813,8 +854,9 @@
 .billing-method-choice legend {
   margin-bottom: 9px;
   color: var(--ds-text);
-  font-size: 13px;
-  font-weight: 650;
+  font-size: var(--ds-type-body-2-size);
+  line-height: var(--ds-type-body-2-line-height);
+  font-weight: var(--ds-font-weight-semibold);
 }
 
 .billing-plan-choice-list,
@@ -879,14 +921,17 @@
   align-items: center;
   gap: 7px;
   color: var(--ds-text);
-  font-size: 13.5px;
-  font-weight: 600;
+  font-size: var(--ds-type-body-size);
+  line-height: var(--ds-type-body-line-height);
+  font-weight: var(--ds-font-weight-semibold);
 }
 
 .billing-plan-choice-copy > small {
   overflow: hidden;
   color: var(--ds-text-muted);
-  font-size: 12px;
+  font-size: var(--ds-type-body-size);
+  letter-spacing: normal;
+  line-height: var(--ds-type-body-line-height);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -897,22 +942,27 @@
   color: var(--ds-emerald);
   background: var(--ds-emerald-soft);
   border: 1px solid var(--ds-emerald-border);
-  font-size: 10.5px;
-  font-weight: 600;
+  font-size: var(--ds-type-caption-1-size);
+  letter-spacing: var(--ds-type-caption-1-letter-spacing);
+  line-height: var(--ds-type-caption-1-line-height);
+  font-weight: var(--ds-font-weight-semibold);
 }
 
 .billing-plan-choice > strong {
   flex: 0 0 auto;
   color: var(--ds-text);
-  font-size: 13.5px;
+  font-size: var(--ds-type-body-size);
+  line-height: var(--ds-type-body-line-height);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .billing-plan-choice > strong small {
   color: var(--ds-text-muted);
-  font-size: 11.5px;
-  font-weight: 500;
+  font-size: var(--ds-type-caption-1-size);
+  letter-spacing: var(--ds-type-caption-1-letter-spacing);
+  line-height: var(--ds-type-caption-1-line-height);
+  font-weight: var(--ds-font-weight-medium);
 }
 
 .billing-radio-mark {
@@ -951,14 +1001,17 @@
   gap: 10px;
   margin-bottom: 10px;
   color: var(--ds-text);
-  font-size: 13px;
-  font-weight: 650;
+  font-size: var(--ds-type-body-size);
+  line-height: var(--ds-type-body-line-height);
+  font-weight: var(--ds-font-weight-semibold);
 }
 
 .billing-drawer-section-title small {
   color: var(--ds-text-muted);
-  font-size: 11.5px;
-  font-weight: 500;
+  font-size: var(--ds-type-body-size);
+  letter-spacing: normal;
+  line-height: var(--ds-type-body-line-height);
+  font-weight: var(--ds-font-weight-semibold);
 }
 
 .billing-drawer-term-controls {
@@ -985,8 +1038,9 @@
   color: var(--ds-text-muted);
   background: transparent;
   font: inherit;
-  font-size: 12.5px;
-  font-weight: 600;
+  font-size: var(--ds-type-body-size);
+  line-height: var(--ds-type-body-line-height);
+  font-weight: var(--ds-font-weight-medium);
   cursor: pointer;
 }
 
@@ -1005,8 +1059,10 @@
   display: grid;
   gap: 5px;
   color: var(--ds-text-secondary);
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--ds-type-body-size);
+  letter-spacing: normal;
+  line-height: var(--ds-type-body-line-height);
+  font-weight: var(--ds-font-weight-medium);
 }
 
 .billing-duration-input {
@@ -1028,14 +1084,17 @@
   color: var(--ds-text);
   background: transparent;
   font: inherit;
-  font-size: 13.5px;
+  font-size: var(--ds-type-body-size);
+  line-height: var(--ds-type-body-line-height);
 }
 
 .billing-duration-input b {
   flex: 0 0 auto;
   color: var(--ds-text-muted);
-  font-size: 11.5px;
-  font-weight: 550;
+  font-size: var(--ds-type-body-size);
+  letter-spacing: normal;
+  line-height: var(--ds-type-body-line-height);
+  font-weight: var(--ds-font-weight-medium);
   white-space: nowrap;
 }
 
@@ -1055,7 +1114,8 @@
   gap: 12px;
   padding: 7px 0;
   border-bottom: 1px solid var(--ds-border);
-  font-size: 12.5px;
+  font-size: var(--ds-type-body-2-size);
+  line-height: var(--ds-type-body-2-line-height);
 }
 
 .billing-price-line > span,
@@ -1066,7 +1126,7 @@
 .billing-price-line > b,
 .billing-price-equation > b {
   color: var(--ds-text);
-  font-weight: 600;
+  font-weight: var(--ds-font-weight-semibold);
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
@@ -1075,15 +1135,17 @@
   margin-top: 2px;
   border-bottom: 0;
   color: var(--ds-text);
-  font-size: 13.5px;
-  font-weight: 650;
+  font-size: var(--ds-type-body-size);
+  line-height: var(--ds-type-body-line-height);
+  font-weight: var(--ds-font-weight-semibold);
 }
 
 .billing-price-total strong {
   color: var(--ds-primary);
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-size: var(--ds-type-title-2-size);
+  line-height: var(--ds-type-title-2-line-height);
+  font-weight: var(--ds-font-weight-bold);
+  letter-spacing: normal;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1091,8 +1153,9 @@
   display: block;
   margin-top: 4px;
   color: var(--ds-text-muted);
-  font-size: 11.5px;
-  line-height: 1.45;
+  font-size: var(--ds-type-body-2-size);
+  letter-spacing: normal;
+  line-height: var(--ds-type-body-2-line-height);
 }
 
 .billing-method-option {
@@ -1146,8 +1209,9 @@
 .billing-method-option-copy b {
   overflow: hidden;
   color: var(--ds-text);
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--ds-type-body-size);
+  line-height: var(--ds-type-body-line-height);
+  font-weight: var(--ds-font-weight-semibold);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1155,7 +1219,9 @@
 .billing-method-option-copy small {
   overflow: hidden;
   color: var(--ds-text-muted);
-  font-size: 11.5px;
+  font-size: var(--ds-type-body-size);
+  letter-spacing: normal;
+  line-height: var(--ds-type-body-line-height);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1168,15 +1234,17 @@
   padding: 10px 12px;
   color: var(--ds-text-secondary);
   background: var(--ds-subtle-bg);
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: var(--ds-type-caption-1-size);
+  letter-spacing: var(--ds-type-caption-1-letter-spacing);
+  line-height: var(--ds-type-caption-1-line-height);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
 .billing-method-details b {
   color: var(--ds-primary);
-  font-size: 12.5px;
+  font-size: var(--ds-type-body-2-size);
+  line-height: var(--ds-type-body-2-line-height);
 }
 
 .billing-instructions {
@@ -1196,23 +1264,25 @@
 }
 
 .billing-instructions b {
-  font-size: 13px;
+  font-size: var(--ds-type-body-2-size);
+  line-height: var(--ds-type-body-2-line-height);
   color: var(--ds-text);
 }
 
 .billing-instructions p {
   margin: 4px 0;
   color: var(--ds-text-secondary);
-  font-size: 12.5px;
-  line-height: 1.5;
+  font-size: var(--ds-type-body-2-size);
+  line-height: var(--ds-type-body-2-line-height);
   white-space: pre-wrap;
 }
 
 .billing-instructions small {
   display: block;
   color: var(--ds-text-muted);
-  font-size: 11.5px;
-  line-height: 1.45;
+  font-size: var(--ds-type-caption-1-size);
+  letter-spacing: var(--ds-type-caption-1-letter-spacing);
+  line-height: var(--ds-type-caption-1-line-height);
 }
 
 .billing-not-open {
@@ -1224,8 +1294,9 @@
   padding: 10px 12px;
   color: var(--ds-text);
   background: var(--ds-amber-soft);
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: var(--ds-type-caption-1-size);
+  letter-spacing: var(--ds-type-caption-1-letter-spacing);
+  line-height: var(--ds-type-caption-1-line-height);
 }
 
 .billing-not-open > svg {
@@ -1238,8 +1309,9 @@
   display: grid;
   gap: 6px;
   color: var(--ds-text);
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--ds-type-body-size);
+  line-height: var(--ds-type-body-line-height);
+  font-weight: var(--ds-font-weight-medium);
 }
 
 .billing-reference-label input {
@@ -1252,7 +1324,8 @@
   color: var(--ds-text);
   background: var(--ds-input-bg);
   font: inherit;
-  font-size: 13.5px;
+  font-size: var(--ds-type-body-size);
+  line-height: var(--ds-type-body-line-height);
 }
 
 .billing-reference-label input:focus {
@@ -1274,13 +1347,15 @@
   gap: 12px;
   margin-bottom: 10px;
   color: var(--ds-text-muted);
-  font-size: 12.5px;
+  font-size: var(--ds-type-body-2-size);
+  line-height: var(--ds-type-body-2-line-height);
 }
 
 .billing-drawer-footer-total b {
   color: var(--ds-primary);
-  font-size: 20px;
-  font-weight: 700;
+  font-size: var(--ds-type-title-2-size);
+  line-height: var(--ds-type-title-2-line-height);
+  font-weight: var(--ds-font-weight-bold);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1297,8 +1372,9 @@
   background: var(--ds-primary);
   color: var(--ds-primary-fg);
   font: inherit;
-  font-size: 13.5px;
-  font-weight: 600;
+  font-size: var(--ds-type-body-size);
+  line-height: var(--ds-type-body-line-height);
+  font-weight: var(--ds-font-weight-medium);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -1328,7 +1404,9 @@
   gap: 5px;
   margin: 9px 0 0;
   color: var(--ds-text-muted);
-  font-size: 11.5px;
+  font-size: var(--ds-type-caption-1-size);
+  letter-spacing: var(--ds-type-caption-1-letter-spacing);
+  line-height: var(--ds-type-caption-1-line-height);
   text-align: center;
 }
 

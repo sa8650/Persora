@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/reui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
+import { Skeleton } from "skullet/react";
 import { PersoraDeleteModal, PersoraEmptyState } from "@/design-system";
 
 function ChoiceDistributionChart({
@@ -352,10 +353,36 @@ export default function FormResponsesTab({
       </div>
 
       {loading ? (
-        <div className="pf-card pf-centered-state" role="status">
-          <Spinner className="size-4" />
-          <span>Loading submissions…</span>
-        </div>
+        <Skeleton loading id={`form-responses-${form.id}`} label="Loading submissions">
+          <div className="pf-card">
+            <table className="pf-responses-table">
+              <thead>
+                <tr>
+                  <th>Respondent</th>
+                  <th>Submitted</th>
+                  <th>Status</th>
+                  <th>Score</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  ["Amina Rahman", "12 Apr, 10:04", "Complete", "8/10"],
+                  ["Samir Khan", "11 Apr, 16:22", "Complete", "6/10"],
+                  ["Nadia Islam", "10 Apr, 09:18", "Complete", "9/10"],
+                  ["Rafi Chowdhury", "9 Apr, 14:41", "Complete", "7/10"],
+                  ["Lina Ahmed", "8 Apr, 11:05", "Complete", "10/10"],
+                ].map(([name, when, status, score]) => (
+                  <tr key={name}>
+                    <td>{name}</td>
+                    <td>{when}</td>
+                    <td>{status}</td>
+                    <td>{score}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Skeleton>
       ) : loadError ? (
         <div className="pf-card pf-error-retry-card" role="alert">
           <div className="pf-error-retry-copy">

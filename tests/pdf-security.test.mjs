@@ -46,7 +46,7 @@ async function readWithPdfJs(bytes, password) {
     const text = (await page.getTextContent()).items.map((item) => item.str).join(' ');
     const { info } = await doc.getMetadata();
     const result = { pages: doc.numPages, text, title: info.Title, author: info.Author };
-    await doc.destroy();
+    await doc.loadingTask.destroy();
     return result;
   } catch (error) {
     return { error: error.name, code: error.code };

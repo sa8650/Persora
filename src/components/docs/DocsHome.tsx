@@ -17,7 +17,6 @@ import {
   ArrowUpDown,
   Check,
   ChevronDown,
-  ChevronsUpDown,
   Copy,
   FolderOpen,
   LayoutGrid,
@@ -52,7 +51,9 @@ import {
 } from "../../lib/docs-api";
 import { PersoraDeleteModal, PersoraEmptyState } from "@/design-system";
 import { Spinner } from "@/components/ui/spinner";
+import { Skeleton } from "skullet/react";
 import ModalPortal from "../ModalPortal";
+import { StartShelf, type StartShelfItem } from "../shared/start-shelf";
 import { TemplateCardThumb, templateGradient } from "../shared/template-card";
 import { LauncherModuleIcon } from "../launcher/LauncherIcons";
 import ShareTableDialog from "../table/ShareTableDialog";
@@ -68,7 +69,30 @@ type SortMode = "opened" | "updated" | "title" | "created";
 type ViewMode = "grid" | "list";
 
 const VIEW_STORAGE_KEY = "persora.docs.viewMode";
-const INLINE_TEMPLATE_LIMIT = 5;
+
+const SAMPLE_DOCS: DocSummary[] = [
+  "Quarterly planning notes",
+  "Home renovation brief",
+  "Travel packing list",
+  "Team kickoff agenda",
+  "Lease renewal checklist",
+  "Personal reading log",
+].map((title, index) => ({
+  id: `sample-doc-${index + 1}`,
+  title,
+  starred: index === 0,
+  previewBlocks: [
+    { style: "h1", text: title },
+    { style: "body", text: "Agenda items and follow-ups for the next review." },
+    { style: "body", text: "Owners, dates, and open questions live in this brief." },
+  ],
+  snippet: "Agenda items and follow-ups for the next review.",
+  wordCount: 280 + index * 12,
+  revision: 1,
+  createdAt: "2026-04-01T10:00:00.000Z",
+  updatedAt: "2026-04-12T10:00:00.000Z",
+  openedAt: "2026-04-12T10:00:00.000Z",
+}));
 
 function readInitialViewMode(): ViewMode {
   try {
@@ -315,7 +339,6 @@ export default function DocsHome({
   const [filter, setFilter] = useState<FilterMode>("all");
   const [sort, setSort] = useState<SortMode>("opened");
   const [viewMode, setViewMode] = useState<ViewMode>(readInitialViewMode);
-  const [galleryOpen, setGalleryOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
 
   const [filterAnchor, setFilterAnchor] = useState<HTMLElement | null>(null);
@@ -372,18 +395,16 @@ export default function DocsHome({
 
   const starterTemplates = useMemo(() => {
     const today = todayIso();
-    const list: readonly DocTemplateInfo[] = galleryOpen
-      ? DOC_TEMPLATES
-      : DOC_TEMPLATES.slice(0, INLINE_TEMPLATE_LIMIT);
-    return list.map((tpl) => ({
+    return DOC_TEMPLATES.map((tpl) => ({
       info: tpl,
       seed: buildDocTemplate(tpl.id, today),
     }));
-  }, [galleryOpen]);
+  }, []);
 
+  const sourceDocs = loading && docs.length === 0 ? SAMPLE_DOCS : docs;
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return docs
+    return sourceDocs
       .filter((doc) => {
         if (filter === "starred" && !doc.starred) return false;
         if (filter === "shared" && !doc.shared && !doc.hasShares) return false;
@@ -405,7 +426,7 @@ export default function DocsHome({
         if (sort === "updated") return Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
         return lastOpenedMs(b) - lastOpenedMs(a);
       });
-  }, [docs, filter, search, sort]);
+  }, [sourceDocs, filter, search, sort]);
 
   const activeFilterLabel =
     filter === "starred" ? "Starred" : filter === "shared" ? "Shared" : "All";
@@ -527,61 +548,61 @@ export default function DocsHome({
 
   return (
     <div className="pd-home">
-      {/* Start Shelf (#fafcff / rgb(250, 252, 255)) */}
-      <section className="pd-start-shelf" aria-labelledby="pd-start-heading">
-        <div className="pd-start-head">
-          <h2 id="pd-start-heading" className="pd-start-title">
-            Start a new document
-          </h2>
-          <div className="pd-start-controls">
-            <button
-              type="button"
-              className={`pd-gallery-toggle ${galleryOpen ? "is-open" : ""}`}
-              onClick={() => setGalleryOpen((o) => !o)}
-              aria-expanded={galleryOpen}
-            >
-              <span>Template gallery</span>
-              <ChevronsUpDown size={14} />
-            </button>
-          </div>
-        </div>
-
-        <div className={`pd-starter-grid ${galleryOpen ? "is-expanded" : ""}`}>
-          <button
-            type="button"
-            className="pd-starter-card"
-            onClick={() => void handleCreateBlank()}
-            disabled={Boolean(busy) || atLimit}
-            aria-label="New blank document"
-          >
-            <TemplateCardThumb className="pd-starter-thumb pd-starter-thumb-blank">
-              <BlankDocArtwork />
-            </TemplateCardThumb>
-            <div className="pd-starter-caption">
-              <strong className="pd-starter-name">Blank document</strong>
-            </div>
-          </button>
-
-          {starterTemplates.map(({ info, seed }, index) => (
-            <button
-              key={info.id}
-              type="button"
-              className="pd-starter-card"
-              onClick={() => void handleCreateFromTemplate(info.id)}
-              disabled={Boolean(busy) || atLimit}
-            >
-              <TemplateCardThumb className="pd-starter-thumb" gradient={templateGradient(index)}>
-                <div className="pd-mini">
-                  <DocContentMiniature content={seed.content} />
+      {/* Start Shelf */}
+      <StartShelf
+        headingId="pd-start-heading"
+        heading="Start a new document"
+        collapsedLabel="Template gallery"
+        expandedLabel="Collapse gallery"
+        shelfClassName="pd-start-shelf"
+        headClassName="pd-start-head"
+        titleClassName="pd-start-title"
+        controlsClassName="pd-start-controls"
+        toggleClassName="pd-gallery-toggle"
+        gridClassName="pd-starter-grid"
+        itemClassName="pd-starter-item"
+        items={[
+          {
+            key: "blank-doc",
+            render: () => (
+              <button
+                type="button"
+                className="pd-starter-card"
+                onClick={() => void handleCreateBlank()}
+                disabled={Boolean(busy) || atLimit}
+                aria-label="New blank document"
+              >
+                <TemplateCardThumb className="pd-starter-thumb pd-starter-thumb-blank">
+                  <BlankDocArtwork />
+                </TemplateCardThumb>
+                <div className="pd-starter-caption">
+                  <strong className="pd-starter-name">Blank document</strong>
                 </div>
-              </TemplateCardThumb>
-              <div className="pd-starter-caption">
-                <strong className="pd-starter-name">{info.label}</strong>
-              </div>
-            </button>
-          ))}
-        </div>
-      </section>
+              </button>
+            ),
+          },
+          ...starterTemplates.map<StartShelfItem>(({ info, seed }, index) => ({
+            key: info.id,
+            render: () => (
+              <button
+                type="button"
+                className="pd-starter-card"
+                onClick={() => void handleCreateFromTemplate(info.id)}
+                disabled={Boolean(busy) || atLimit}
+              >
+                <TemplateCardThumb className="pd-starter-thumb" gradient={templateGradient(index)}>
+                  <div className="pd-mini">
+                    <DocContentMiniature content={seed.content} />
+                  </div>
+                </TemplateCardThumb>
+                <div className="pd-starter-caption">
+                  <strong className="pd-starter-name">{info.label}</strong>
+                </div>
+              </button>
+            ),
+          })),
+        ]}
+      />
 
       {/* Recent Documents Toolbar */}
       <section className="pd-recent-section" aria-labelledby="pd-recent-heading">
@@ -725,44 +746,49 @@ export default function DocsHome({
           </div>
         </div>
 
-        {/* Content States */}
-        {loading ? (
-          <div className="pd-loading" role="status">
-            <Spinner className="size-4 text-primary" />
-            <span>Loading your documents…</span>
-          </div>
-        ) : loadError ? (
-          <div className="pd-error-box" role="alert">
-            <AlertCircle size={16} />
-            <span>{loadError}</span>
-            <button
-              type="button"
-              className="pd-btn-secondary"
-              onClick={() => void load()}
-            >
-              <RefreshCw size={13} /> Try again
-            </button>
-          </div>
-        ) : docs.length === 0 ? (
-          <PersoraEmptyState
-            className="pd-empty"
-            role="status"
-            moduleId="docs"
-            tone="blue"
-            title="No documents yet"
-            description="Start a blank document or pick a template above to write notes, letters, proposals, and plans in a clean page workspace."
-            action={
-              <button
-                type="button"
-                className="pd-btn-primary"
-                onClick={() => void handleCreateBlank()}
-                disabled={Boolean(busy)}
-              >
-                New document
-              </button>
-            }
-          />
-        ) : visible.length === 0 ? (
+        {/* Content States — measure the real list/grid, not a shared card template */}
+        <Skeleton
+          loading={loading}
+          id={`docs-home-${viewMode}`}
+          label="Loading your documents"
+          error={
+            loadError ? (
+              <div className="pd-error-box" role="alert">
+                <AlertCircle size={16} />
+                <span>{loadError}</span>
+                <button
+                  type="button"
+                  className="pd-btn-secondary"
+                  onClick={() => void load()}
+                >
+                  <RefreshCw size={13} /> Try again
+                </button>
+              </div>
+            ) : undefined
+          }
+          empty={!loading && !loadError && docs.length === 0}
+          emptyMessage={
+            <PersoraEmptyState
+              className="pd-empty"
+              role="status"
+              moduleId="docs"
+              tone="blue"
+              title="No documents yet"
+              description="Start a blank document or pick a template above to write notes, letters, proposals, and plans in a clean page workspace."
+              action={
+                <button
+                  type="button"
+                  className="pd-btn-primary"
+                  onClick={() => void handleCreateBlank()}
+                  disabled={Boolean(busy)}
+                >
+                  New document
+                </button>
+              }
+            />
+          }
+        >
+        {visible.length === 0 ? (
           <PersoraEmptyState
             className="pd-empty"
             role="status"
@@ -913,6 +939,7 @@ export default function DocsHome({
             })}
           </div>
         )}
+        </Skeleton>
       </section>
 
       {/* Card 3-Dot Action Menu */}

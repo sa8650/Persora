@@ -712,7 +712,7 @@ test('Project, Field, and Task Add/Edit/View modals render with fast GPU-cached 
 
   const taskTitleMatch = css.match(/\.pj-task-title\s*\{([^}]+)\}/);
   assert.ok(taskTitleMatch, '.pj-task-title rule exists');
-  assert.match(taskTitleMatch[1], /font-size:\s*13px/, 'task card title uses compact smaller font size');
+  assert.match(taskTitleMatch[1], /font-size:\s*var\(--ds-type-body-2-size\)/, 'task card title uses the dense Body 2 token');
   assert.match(taskTitleMatch[1], /rgba\(30,\s*41,\s*59,\s*0\.77\)/, 'task card title is slightly faded');
 
   ownerFixture();

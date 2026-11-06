@@ -130,7 +130,7 @@ export async function renderThumbnailDataUrl(bytes: Uint8Array): Promise<string 
   } catch {
     return null;
   } finally {
-    void doc?.destroy();
+    if (doc) void doc.loadingTask.destroy();
   }
 }
 

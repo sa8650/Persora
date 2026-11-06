@@ -88,6 +88,7 @@ import { LauncherModuleIcon } from "../launcher/LauncherIcons";
 import { PersoraEmptyState } from "@/design-system";
 import { Badge } from "@/components/reui/badge";
 import { Spinner } from "@/components/ui/spinner";
+import { Skeleton } from "skullet/react";
 import { Checkbox } from "@/components/ui/checkbox";
 
 const DRAFT_THROTTLE_MS = 900;
@@ -569,7 +570,7 @@ export default function DocEditor({
         suppressEditorUpdateRef.current = true;
         editor.commands.setContent(
           { type: "doc", content: safeContent.content },
-          false,
+          { emitUpdate: false },
         );
         suppressEditorUpdateRef.current = false;
 
@@ -851,7 +852,7 @@ export default function DocEditor({
     setComments(restoredComments);
 
     suppressEditorUpdateRef.current = true;
-    editor.commands.setContent({ type: "doc", content: restoredContent.content }, false);
+    editor.commands.setContent({ type: "doc", content: restoredContent.content }, { emitUpdate: false });
     suppressEditorUpdateRef.current = false;
     contentRef.current = restoredContent;
     titleRef.current = restoredTitle;
@@ -887,10 +888,40 @@ export default function DocEditor({
 
   if (loading) {
     return (
-      <div className="pd-editor pd-editor-state" role="status">
-        <Spinner className="size-4 text-primary" />
-        <span>Opening document…</span>
-      </div>
+      <Skeleton loading id={`doc-editor-${docId}`} label="Opening document" className="pd-editor">
+        <div className="pd-editor">
+          <header className="pd-topbar">
+            <div className="pd-topbar-left">
+              <span className="pd-icon-btn" skullet-block="" />
+              <div className="pd-title-cluster">
+                <h2 className="pd-title-readonly">Quarterly planning notes</h2>
+              </div>
+            </div>
+            <div className="pd-topbar-right">
+              <span className="pd-btn-secondary">Comments</span>
+              <span className="pd-btn-secondary">Print</span>
+              <span className="pd-btn-primary">Share</span>
+            </div>
+          </header>
+          <div className="pd-toolbar-bar" skullet-block="" />
+          <div className="pd-workspace-body">
+            <div className="pd-canvas">
+              <div className="pd-zoom-shell">
+                <div className="pd-pages-stage">
+                  <article className="pd-page-card">
+                    <h1>Quarterly planning notes</h1>
+                    <p>Kickoff notes for the next planning cycle, including owners and open questions.</p>
+                    <p>Keep decisions close to the work so the next visit picks up without a layout jump.</p>
+                    <p>Follow-ups live under the agenda so nothing is lost between drafts.</p>
+                    <p>Attachments and comments will land in the same column once the document opens.</p>
+                    <p>A short recap of last week sits here so the page already has its final height.</p>
+                  </article>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Skeleton>
     );
   }
 

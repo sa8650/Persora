@@ -190,7 +190,7 @@ function BusinessCardEditor({ card, connected, canUpload, onUpgrade, onClose, on
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-3">
             <BusinessCardImage dataUrl={profilePreview || (clearProfilePhoto ? undefined : form.profilePhotoDataUrl)} storageKey={clearProfilePhoto || profilePhotoFile ? undefined : form.profilePhotoKey} className="business-card-edit-photo shrink-0" alt={form.fullName || "Your profile"}/>
-            <span className="text-xs font-semibold text-foreground">Profile photo</span>
+            <span className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] font-semibold text-foreground">Profile photo</span>
           </div>
           <ReuiFileAttachmentField
             file={profilePhotoFile}
@@ -210,7 +210,7 @@ function BusinessCardEditor({ card, connected, canUpload, onUpgrade, onClose, on
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-3">
             <BusinessCardImage dataUrl={logoPreview || (clearBusinessLogo ? undefined : form.businessLogoDataUrl)} storageKey={clearBusinessLogo || businessLogoFile ? undefined : form.businessLogoKey} className="business-card-edit-logo shrink-0" alt={form.company || "Business logo"}/>
-            <span className="text-xs font-semibold text-foreground">Business logo</span>
+            <span className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] font-semibold text-foreground">Business logo</span>
           </div>
           <ReuiFileAttachmentField
             file={businessLogoFile}

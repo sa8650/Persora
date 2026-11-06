@@ -208,7 +208,7 @@ export default function PdfEditorModal({ request, folders, defaultFolderId, canS
         added.push({ id, name: input.name, bytes, pdf });
         newPages.push(...info.map((entry, index) => ({ id: makeId("pg"), sourceId: id, sourceIndex: index, width: entry.width, height: entry.height, baseRotation: entry.rotation, rotation: 0 as const, overlays: [] })));
       } catch (error) {
-        if (pdf) void pdf.destroy();
+        if (pdf) void pdf.loadingTask.destroy();
         errors.push(errorMessage(error, `“${input.name}” couldn't be opened.`));
       }
     }
@@ -229,7 +229,7 @@ export default function PdfEditorModal({ request, folders, defaultFolderId, canS
       ? request.files.map((file) => ({ name: file.name, file }))
       : [{ name: request.kind === "saved" ? request.document.fileName : `${request.title}.pdf`, bytes: request.bytes }];
     void importInputs(inputs, 0, (message) => { if (!cancelled) setLoadMessage(message); }).then((result) => {
-      if (cancelled) { for (const source of result.added) void source.pdf.destroy(); return; }
+      if (cancelled) { for (const source of result.added) void source.pdf.loadingTask.destroy(); return; }
       if (!result.newPages.length) { setLoadError(result.errors.join(" ") || "Nothing could be opened."); setPhase("error"); return; }
       adopt(result);
       revCounter.current = 1;
@@ -247,7 +247,7 @@ export default function PdfEditorModal({ request, folders, defaultFolderId, canS
 
   // Release PDF.js documents and image URLs when the editor closes.
   useEffect(() => () => {
-    for (const source of sources.current.values()) void source.pdf.destroy();
+    for (const source of sources.current.values()) void source.pdf.loadingTask.destroy();
     for (const image of images.current.values()) URL.revokeObjectURL(image.url);
     sources.current.clear(); images.current.clear(); libCache.current.clear(); thumbCache.current.clear(); htmlImages.current.clear();
   }, []);

@@ -45,7 +45,7 @@ async function readPdf(bytes, password) {
     const doc = await pdfjs.getDocument({ data: new Uint8Array(bytes), password, useSystemFonts: false, disableFontFace: true, verbosity: 0 }).promise;
     const pages = [];
     for (let n = 1; n <= doc.numPages; n += 1) pages.push((await (await doc.getPage(n)).getTextContent()).items.map((item) => item.str));
-    await doc.destroy();
+    await doc.loadingTask.destroy();
     return { pages };
   } catch (error) { return { error: error.name, code: error.code }; }
 }

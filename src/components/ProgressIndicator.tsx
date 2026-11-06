@@ -34,7 +34,7 @@ export function TransferProgressIndicator({
       data-slot="transfer-progress"
       aria-live="polite"
       className={cn(
-        "flex w-full flex-col gap-2 rounded-lg border border-border bg-muted/40 p-3 text-xs",
+        "flex w-full flex-col gap-2 rounded-lg border border-border bg-muted/40 p-3 text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]",
         className
       )}
     >
@@ -52,7 +52,7 @@ export function TransferProgressIndicator({
         </span>
       </div>
       <Progress value={pct} aria-label={label} />
-      <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+      <div className="flex items-center justify-between gap-2 text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">
         <span className="truncate">
           {detail || formatRemaining(progress.remainingSeconds)}
         </span>
@@ -83,7 +83,7 @@ export function ImportProgressIndicator({
       data-slot="import-progress"
       aria-live="polite"
       className={cn(
-        "flex w-full flex-col gap-2 rounded-lg border border-border bg-muted/40 p-3 text-xs",
+        "flex w-full flex-col gap-2 rounded-lg border border-border bg-muted/40 p-3 text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]",
         className
       )}
     >
@@ -101,7 +101,7 @@ export function ImportProgressIndicator({
         </span>
       </div>
       <Progress value={pct} aria-label={label} />
-      <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+      <div className="flex items-center justify-between gap-2 text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">
         <span className="truncate">
           {progress.currentName
             ? `Saving ${progress.currentName} · contact ${Math.min(progress.total, progress.completed + 1)} of ${progress.total}`
@@ -136,7 +136,7 @@ export function StageProgressIndicator({
       data-slot="stage-progress"
       aria-live="polite"
       className={cn(
-        "flex w-full flex-col gap-2 rounded-lg border border-border bg-muted/40 p-3 text-xs",
+        "flex w-full flex-col gap-2 rounded-lg border border-border bg-muted/40 p-3 text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]",
         className
       )}
     >
@@ -153,7 +153,7 @@ export function StageProgressIndicator({
       </div>
       <Progress value={pct} aria-label={label} />
       {detail ? (
-        <div className="text-[11px] text-muted-foreground">{detail}</div>
+        <div className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">{detail}</div>
       ) : null}
     </div>
   )

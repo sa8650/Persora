@@ -221,6 +221,11 @@ test("Template and starter cards share one geometry and the canonical gradients"
     "linear-gradient(90deg, rgb(253, 172, 62) 0%, rgb(250, 212, 63) 100%)",
     "linear-gradient(90deg, rgb(1, 187, 177) 0%, rgb(1, 198, 129) 100%)",
     "linear-gradient(90deg, rgb(255, 119, 90) 0%, rgb(255, 163, 90) 100%)",
+    "linear-gradient(90deg, #7C3AED, #C084FC)",
+    "linear-gradient(90deg, #172554, #38BDF8)",
+    "linear-gradient(90deg, #65A30D, #D9F99D)",
+    "linear-gradient(90deg, #881337, #E879F9)",
+    "linear-gradient(90deg, #334155, #94A3B8)",
   ];
   stops.forEach((stop, index) => {
     assert.ok(tokens.includes(stop), `--ds-template-gradient-${index + 1} must use the exact stops`);
@@ -245,8 +250,9 @@ test("Template and starter cards share one geometry and the canonical gradients"
   assert.doesNotMatch(docsCss, /\.pd-starter-thumb \{[^}]*height:/);
   assert.doesNotMatch(formsCss, /\.pf-starter-thumb \{[^}]*height:/);
 
-  // Table and Docs template cards carry the gradient; blank cards stay neutral.
+  // All three products share the deterministic 10-gradient mapper; blank cards stay neutral.
   assert.match(read("src/components/table/TableHome.tsx"), /gradient=\{templateGradient\(index\)\}/);
+  assert.match(read("src/components/forms/FormsDashboard.tsx"), /gradient=\{templateGradient\(index\)\}/);
   assert.match(read("src/components/docs/DocsHome.tsx"), /gradient=\{templateGradient\(index\)\}/);
 });
 

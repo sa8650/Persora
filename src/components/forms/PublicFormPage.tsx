@@ -6,6 +6,7 @@ import "./forms.css";
 import { Award, CheckCircle2, Lock, Mail, ShieldCheck, Ticket, X, XCircle } from "lucide-react";
 import type { AppUser } from "../../types";
 import {
+  createBlankQuestion,
   formErrorMessage,
   getPublicForm,
   submitPublicFormResponse,
@@ -20,7 +21,7 @@ import ModalPortal from "../ModalPortal";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/reui/badge";
 import { IconTile } from "@/components/reui/icon-tile";
-import { Spinner } from "@/components/ui/spinner";
+import { Skeleton } from "skullet/react";
 import { PersoraEmptyState } from "@/design-system";
 
 export default function PublicFormPage({
@@ -100,10 +101,22 @@ export default function PublicFormPage({
     <main className="pf-public-page pf-themed-surface" style={themeVars}>
       <div className="pf-public-container">
         {loading ? (
-          <div className="pf-respondent-card pf-centered-state" role="status">
-            <Spinner className="size-5" />
-            <span>Loading form…</span>
-          </div>
+          <Skeleton loading id={`public-form-${slug}`} label="Loading form">
+            <FormRespondentRenderer
+              title="Event RSVP"
+              description="Tell us if you can join this event."
+              headerImage={null}
+              questions={[
+                { ...createBlankQuestion("short_text", true), title: "Your name" },
+                { ...createBlankQuestion("short_text", true), title: "Email address" },
+                { ...createBlankQuestion("multiple_choice", true), title: "Will you attend?" },
+                { ...createBlankQuestion("long_text", false), title: "Anything we should know?" },
+              ]}
+              quizEnabled={false}
+              previewMode
+              onSubmit={() => {}}
+            />
+          </Skeleton>
         ) : unavailableError || !payload ? (
           <div className="pf-respondent-card">
             <PersoraEmptyState

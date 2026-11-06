@@ -3,6 +3,7 @@ import { Check, CircleAlert, Copy, KeyRound, Link2, Plug, RefreshCw, ShieldCheck
 import { formatDate } from "../../lib/utils";
 import { loadIntegrationStatus, saveIntegration, testIntegration, type IntegrationStatus } from "../../lib/connections-api";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Skeleton } from "skullet/react";
 
 type Notify = (message: string, kind?: "success" | "error") => void;
 
@@ -58,7 +59,22 @@ export default function AdminIntegrationsPanel({ notify }: { notify: Notify }) {
   };
 
   if (error) return <section className="admin-card"><div className="admin-hint-box"><CircleAlert size={15}/><span>{error}</span></div><button className="admin-secondary-button" onClick={() => void refresh()}><RefreshCw size={14}/> Retry</button></section>;
-  if (!status) return <section className="admin-card"><p className="admin-section-copy">Loading integration settings…</p></section>;
+  if (!status) {
+    return (
+      <Skeleton loading id="admin-ems-integration" label="Loading integration settings">
+        <div className="admin-content-grid">
+          <section className="admin-card">
+            <div className="admin-card-heading"><div><span>CONNECTIONS · DEXTER STUDIO</span><h2>EMS integration</h2></div></div>
+            <form className="admin-form" autoComplete="off">
+              <label className="admin-toggle-row admin-form-wide"><span><b>Enable EMS connections</b><small>Members can connect EMS and browse Vaultium files.</small></span></label>
+              <label className="admin-form-wide">EMS address (HTTPS)<input type="url" value="https://ems.example.com" readOnly /></label>
+              <label className="admin-form-wide">Shared secret<input type="password" value="••••••••••••" readOnly /></label>
+            </form>
+          </section>
+        </div>
+      </Skeleton>
+    );
+  }
   const envSecret = status.secretSource === "environment";
 
   return <div className="admin-content-grid">

@@ -450,7 +450,8 @@ test('compact day-header CSS (44-52px) and outside-fade modal backdrops (no back
 
   const dateMatch = calCss.match(/^\.cal-tg-date\s*\{([^}]+)\}/m);
   assert.ok(dateMatch);
-  assert.match(dateMatch[1], /font-size:\s*15px/);
+  assert.match(dateMatch[1], /font-size:\s*var\(--ds-type-headline-size\)/);
+  assert.match(dateMatch[1], /line-height:\s*var\(--ds-type-headline-line-height\)/);
   assert.match(dateMatch[1], /width:\s*26px/);
 
   const overlaysCss = readFileSync(new URL('../src/overlays.css', import.meta.url), 'utf8');

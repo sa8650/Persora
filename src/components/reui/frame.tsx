@@ -113,7 +113,7 @@ function FrameHeader({ className, ...props }: React.ComponentProps<"header">) {
 function FrameTitle({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
-      className={cn("text-sm font-semibold", className)}
+      className={cn("text-[length:var(--ds-type-body-size)] leading-[var(--ds-type-body-line-height)] font-semibold", className)}
       data-slot="frame-panel-title"
       {...props}
     />
@@ -126,7 +126,7 @@ function FrameDescription({
 }: React.ComponentProps<"div">) {
   return (
     <div
-      className={cn("text-muted-foreground text-sm", className)}
+      className={cn("text-muted-foreground text-[length:var(--ds-type-body-size)] leading-[var(--ds-type-body-line-height)]", className)}
       data-slot="frame-panel-description"
       {...props}
     />

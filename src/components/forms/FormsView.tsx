@@ -40,6 +40,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/reui/badge";
 import { IconTile } from "@/components/reui/icon-tile";
 import { Spinner } from "@/components/ui/spinner";
+import { Skeleton } from "skullet/react";
 
 type EditorTab = "builder" | "responses" | "settings";
 
@@ -399,11 +400,32 @@ export default function FormsView({
 
   if (loadingForm || !activeForm) {
     return (
-      <section className="pf-root">
-        <div className="pf-card pf-centered-state" role="status">
-          <Spinner className="size-4" />
-          <span>Opening form editor…</span>
-        </div>
+      <section className="pf-root pf-editor-shell" aria-label="Opening form editor">
+        <Skeleton loading id="forms-editor" label="Opening form editor">
+          <header className="pf-editor-topbar">
+            <div className="pf-editor-topbar-left">
+              <h2 className="pf-editor-heading">Event RSVP</h2>
+            </div>
+          </header>
+          <div className="pf-builder-canvas">
+            <article className="pf-question-card">
+              <h3>Your name</h3>
+              <p>Short answer</p>
+            </article>
+            <article className="pf-question-card">
+              <h3>Email address</h3>
+              <p>Email</p>
+            </article>
+            <article className="pf-question-card">
+              <h3>Will you attend?</h3>
+              <p>Multiple choice</p>
+            </article>
+            <article className="pf-question-card">
+              <h3>Anything we should know?</h3>
+              <p>Paragraph</p>
+            </article>
+          </div>
+        </Skeleton>
       </section>
     );
   }

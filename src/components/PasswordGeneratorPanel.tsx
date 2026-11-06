@@ -253,7 +253,7 @@ export default function PasswordGeneratorPanel({
                   size="xs"
                   radius="full"
                   variant={report.level === "weak" ? "destructive-outline" : report.level === "fair" ? "warning-outline" : report.level === "strong" ? "info-outline" : "success-outline"}
-                  className="pm-strength-badge uppercase tracking-wider font-bold"
+                  className="pm-strength-badge uppercase font-bold"
                 >
                   {report.label}
                 </Badge>

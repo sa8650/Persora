@@ -119,7 +119,7 @@ export function WidgetLibraryModal({
                   role="tab"
                   aria-selected={selectedCategory === "all"}
                   onClick={() => setSelectedCategory("all")}
-                  className={`h-8 rounded-full border px-3 text-xs font-medium transition-colors ${
+                  className={`h-8 rounded-full border px-3 text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] font-medium transition-colors ${
                     selectedCategory === "all"
                       ? "border-primary bg-accent text-accent-foreground"
                       : "border-border bg-secondary text-muted-foreground hover:text-foreground"
@@ -134,7 +134,7 @@ export function WidgetLibraryModal({
                     role="tab"
                     aria-selected={selectedCategory === cat.id}
                     onClick={() => setSelectedCategory(cat.id)}
-                    className={`h-8 rounded-full border px-3 text-xs font-medium transition-colors ${
+                    className={`h-8 rounded-full border px-3 text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] font-medium transition-colors ${
                       selectedCategory === cat.id
                         ? "border-primary bg-accent text-accent-foreground"
                         : "border-border bg-secondary text-muted-foreground hover:text-foreground"
@@ -171,8 +171,8 @@ export function WidgetLibraryModal({
                   <div key={category.id} className="space-y-2.5">
                     <div className="flex items-baseline justify-between border-b border-border pb-1.5">
                       <div>
-                        <h3 className="text-[13px] font-semibold text-foreground">{category.label}</h3>
-                        <p className="text-[11.5px] text-muted-foreground">{category.description}</p>
+                        <h3 className="text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-semibold text-foreground">{category.label}</h3>
+                        <p className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">{category.description}</p>
                       </div>
                       <Badge variant="secondary" size="xs" radius="full">
                         {items.length}
@@ -203,7 +203,7 @@ export function WidgetLibraryModal({
                               </IconTile>
                               <div className="min-w-0 flex-1 space-y-1">
                                 <div className="flex flex-wrap items-center gap-1.5">
-                                  <h4 className="text-[13px] font-semibold text-foreground">{item.name}</h4>
+                                  <h4 className="text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-semibold text-foreground">{item.name}</h4>
                                   {count > 0 && (
                                     <Badge variant="primary-light" size="xs" radius="full">
                                       Added{count > 1 ? ` ×${count}` : ""}
@@ -215,14 +215,14 @@ export function WidgetLibraryModal({
                                     </Badge>
                                   )}
                                 </div>
-                                <p className="text-[12px] leading-relaxed text-muted-foreground">
+                                <p className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">
                                   {item.description}
                                 </p>
                               </div>
                             </div>
 
                             <div className="flex items-center justify-between gap-2 border-t border-border pt-2.5">
-                              <span className="truncate text-[11px] font-medium text-muted-foreground">
+                              <span className="truncate text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] font-medium text-muted-foreground">
                                 {item.previewSummary}
                               </span>
                               <button
@@ -232,8 +232,8 @@ export function WidgetLibraryModal({
                                 onClick={() => onAddWidget(item.type)}
                                 className={
                                   canAdd
-                                    ? "main-add-button !h-8 !px-3 !text-xs"
-                                    : "quiet-button !h-8 !px-3 !text-xs opacity-60 cursor-not-allowed"
+                                    ? "main-add-button !h-8 !px-3 !text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]"
+                                    : "quiet-button !h-8 !px-3 !text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] opacity-60 cursor-not-allowed"
                                 }
                               >
                                 {canAdd ? (
@@ -260,7 +260,7 @@ export function WidgetLibraryModal({
           </div>
 
           <div className="modal-footer">
-            <span className="text-xs text-muted-foreground">
+            <span className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">
               {existingWidgets.length} widget{existingWidgets.length === 1 ? "" : "s"} currently active on your dashboard
             </span>
             <button type="button" className="quiet-button" onClick={onClose}>

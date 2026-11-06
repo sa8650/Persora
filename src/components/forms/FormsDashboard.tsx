@@ -18,7 +18,6 @@ import {
   CalendarCheck2,
   Check,
   ChevronDown,
-  ChevronsUpDown,
   Copy,
   ExternalLink,
   Eye,
@@ -49,9 +48,10 @@ import {
 } from "../../lib/forms-api";
 import { buildFormThemeCssVars } from "../../lib/form-themes";
 import { Badge, PersoraDeleteModal, PersoraEmptyState } from "@/design-system";
-import { Spinner } from "@/components/ui/spinner";
 import ModalPortal from "../ModalPortal";
-import { TemplateCardThumb } from "../shared/template-card";
+import { StartShelf, type StartShelfItem } from "../shared/start-shelf";
+import { Skeleton } from "skullet/react";
+import { TemplateCardThumb, templateGradient } from "../shared/template-card";
 import { LauncherModuleIcon } from "../launcher/LauncherIcons";
 import FormRespondentRenderer from "./FormRespondentRenderer";
 import {
@@ -66,7 +66,37 @@ type SortMode = "updated" | "responses" | "title" | "created";
 type ViewMode = "grid" | "list";
 
 const VIEW_MODE_KEY = "persora.forms.viewMode";
-const INLINE_TEMPLATE_LIMIT = 5;
+
+const SAMPLE_FORMS: FormSummary[] = [
+  "Event RSVP",
+  "Feedback form",
+  "Quiz: basics",
+  "Volunteer signup",
+  "Intake form",
+  "Workshop survey",
+].map((title, index) => ({
+  id: `sample-form-${index + 1}`,
+  title,
+  description: "Collect responses with a short, focused form.",
+  status: index % 2 === 0 ? "published" : "draft",
+  acceptingResponses: index % 2 === 0,
+  publicSlug: `sample-${index + 1}`,
+  questionCount: 4,
+  responseCount: index * 3,
+  quizEnabled: title.startsWith("Quiz"),
+  eventEnabled: title === "Event RSVP",
+  maxRegistrations: null,
+  revision: 1,
+  createdAt: "2026-04-01T10:00:00.000Z",
+  updatedAt: "2026-04-12T10:00:00.000Z",
+}));
+
+const SAMPLE_PREVIEW_QUESTIONS = [
+  { ...createBlankQuestion("short_text", true), title: "Your name" },
+  { ...createBlankQuestion("short_text", true), title: "Email address" },
+  { ...createBlankQuestion("multiple_choice", true), title: "Will you attend?" },
+  { ...createBlankQuestion("long_text", false), title: "Anything we should know?" },
+];
 
 function readInitialViewMode(): ViewMode {
   try {
@@ -599,7 +629,6 @@ export default function FormsDashboard({
   const [filter, setFilter] = useState<FilterMode>("all");
   const [sort, setSort] = useState<SortMode>("updated");
   const [viewMode, setViewMode] = useState<ViewMode>(readInitialViewMode);
-  const [galleryOpen, setGalleryOpen] = useState(false);
 
   const [renaming, setRenaming] = useState<FormSummary | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
@@ -622,10 +651,7 @@ export default function FormsDashboard({
   };
 
   const starterItems = useMemo(() => {
-    const visible = galleryOpen
-      ? STARTER_TEMPLATES
-      : STARTER_TEMPLATES.slice(0, INLINE_TEMPLATE_LIMIT);
-    return visible.map((tpl) => {
+    return STARTER_TEMPLATES.map((tpl) => {
       const seed = buildStarterSeed(tpl.id);
       const miniature: FormMiniatureInput = {
         title: seed.title,
@@ -635,11 +661,12 @@ export default function FormsDashboard({
       };
       return { tpl, miniature };
     });
-  }, [galleryOpen]);
+  }, []);
 
+  const sourceForms = loading && forms.length === 0 ? SAMPLE_FORMS : forms;
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const list = forms.filter((f) => {
+    const list = sourceForms.filter((f) => {
       if (filter === "published" && f.status !== "published") return false;
       if (filter === "draft" && f.status !== "draft") return false;
       if (filter === "quiz" && !f.quizEnabled) return false;
@@ -658,7 +685,7 @@ export default function FormsDashboard({
       return Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
     });
     return list;
-  }, [forms, search, filter, sort]);
+  }, [sourceForms, search, filter, sort]);
 
   const activeFilterLabel = useMemo(() => {
     switch (filter) {
@@ -966,39 +993,38 @@ export default function FormsDashboard({
   return (
     <div className="pf-dashboard">
       {/* Top Google Forms-style creation & real template shelf (#F0F4F9) */}
-      <section className="pf-start-shelf" aria-labelledby="pf-start-heading">
-        <div className="pf-start-head">
-          <h2 className="pf-start-title" id="pf-start-heading">Start a new form</h2>
-          <div className="pf-start-controls">
-            <button
-              type="button"
-              className={`pf-gallery-toggle ${galleryOpen ? "is-open" : ""}`}
-              aria-expanded={galleryOpen}
-              onClick={() => setGalleryOpen((prev) => !prev)}
-            >
-              <span>Template gallery</span>
-              <ChevronsUpDown size={14} aria-hidden="true" />
-            </button>
-          </div>
-        </div>
-
-        <ul className="pf-starter-grid">
-          <li className="pf-starter-item">
-            <button
-              type="button"
-              className="pf-starter-card"
-              disabled={creating}
-              onClick={() => void onCreate(buildStarterSeed("blank"))}
-            >
-              <TemplateCardThumb className="pf-starter-thumb">
-                <BlankFormArtwork />
-              </TemplateCardThumb>
-              <span className="pf-starter-label">Blank form</span>
-            </button>
-          </li>
-
-          {starterItems.map(({ tpl, miniature }) => (
-            <li key={tpl.id} className="pf-starter-item">
+      <StartShelf
+        headingId="pf-start-heading"
+        heading="Start a new form"
+        collapsedLabel="Template gallery"
+        expandedLabel="Collapse gallery"
+        shelfClassName="pf-start-shelf"
+        headClassName="pf-start-head"
+        titleClassName="pf-start-title"
+        controlsClassName="pf-start-controls"
+        toggleClassName="pf-gallery-toggle"
+        gridClassName="pf-starter-grid"
+        itemClassName="pf-starter-item"
+        items={[
+          {
+            key: "blank-form",
+            render: () => (
+              <button
+                type="button"
+                className="pf-starter-card"
+                disabled={creating}
+                onClick={() => void onCreate(buildStarterSeed("blank"))}
+              >
+                <TemplateCardThumb className="pf-starter-thumb">
+                  <BlankFormArtwork />
+                </TemplateCardThumb>
+                <span className="pf-starter-label">Blank form</span>
+              </button>
+            ),
+          },
+          ...starterItems.map<StartShelfItem>(({ tpl, miniature }, index) => ({
+            key: tpl.id,
+            render: () => (
               <button
                 type="button"
                 className="pf-starter-card"
@@ -1006,15 +1032,15 @@ export default function FormsDashboard({
                 title={tpl.description}
                 onClick={() => void onCreate(buildStarterSeed(tpl.id))}
               >
-                <TemplateCardThumb className="pf-starter-thumb">
+                <TemplateCardThumb className="pf-starter-thumb" gradient={templateGradient(index)}>
                   <FormContentMiniature input={miniature} compact />
                 </TemplateCardThumb>
                 <span className="pf-starter-label">{tpl.label}</span>
               </button>
-            </li>
-          ))}
-        </ul>
-      </section>
+            ),
+          })),
+        ]}
+      />
 
       {/* Recent forms toolbar + responsive preview card grid */}
       <section className="pf-recent-section" aria-labelledby="pf-recent-heading">
@@ -1079,56 +1105,59 @@ export default function FormsDashboard({
           </div>
         </div>
 
-        {loading ? (
-          <div className="pf-loading" role="status">
-            <Spinner className="size-4" />
-            <span>Loading your forms…</span>
-          </div>
-        ) : forms.length === 0 ? (
-          <PersoraEmptyState
-            className="pf-empty"
-            moduleId="forms"
-            title="No forms yet"
-            description="Start from a blank form or choose a starter template above to collect responses, run scored quizzes, or manage event registrations."
-            action={(
-              <button
-                type="button"
-                className="pf-btn pf-btn-primary"
-                disabled={creating}
-                onClick={() => void onCreate(buildStarterSeed("blank"))}
-              >
-                Blank form
-              </button>
-            )}
-          />
-        ) : filtered.length === 0 ? (
-          <PersoraEmptyState
-            className="pf-empty"
-            moduleId="forms"
-            title="No matching forms"
-            description="No forms match your current search or filter."
-            action={(
-              <button
-                type="button"
-                className="pf-btn"
-                onClick={() => {
-                  setSearch("");
-                  setFilter("all");
-                }}
-              >
-                Clear filters
-              </button>
-            )}
-          />
-        ) : viewMode === "grid" ? (
-          <ul className="pf-card-grid">
-            {filtered.map(renderCard)}
-          </ul>
-        ) : (
-          <ul className="pf-list">
-            {filtered.map(renderListRow)}
-          </ul>
-        )}
+        <Skeleton
+          loading={loading}
+          id={`forms-home-${viewMode}`}
+          label="Loading your forms"
+          empty={!loading && forms.length === 0}
+          emptyMessage={
+            <PersoraEmptyState
+              className="pf-empty"
+              moduleId="forms"
+              title="No forms yet"
+              description="Start from a blank form or choose a starter template above to collect responses, run scored quizzes, or manage event registrations."
+              action={(
+                <button
+                  type="button"
+                  className="pf-btn pf-btn-primary"
+                  disabled={creating}
+                  onClick={() => void onCreate(buildStarterSeed("blank"))}
+                >
+                  Blank form
+                </button>
+              )}
+            />
+          }
+        >
+          {filtered.length === 0 ? (
+            <PersoraEmptyState
+              className="pf-empty"
+              moduleId="forms"
+              title="No matching forms"
+              description="No forms match your current search or filter."
+              action={(
+                <button
+                  type="button"
+                  className="pf-btn"
+                  onClick={() => {
+                    setSearch("");
+                    setFilter("all");
+                  }}
+                >
+                  Clear filters
+                </button>
+              )}
+            />
+          ) : viewMode === "grid" ? (
+            <ul className="pf-card-grid">
+              {filtered.map(renderCard)}
+            </ul>
+          ) : (
+            <ul className="pf-list">
+              {filtered.map(renderListRow)}
+            </ul>
+          )}
+        </Skeleton>
       </section>
 
       {/* Rename Form Modal */}
@@ -1274,25 +1303,24 @@ export default function FormsDashboard({
                 className="pf-preview-modal-body pf-themed-surface"
                 style={buildFormThemeCssVars(quickPreviewDetail?.settings)}
               >
-                {quickPreviewLoading || !quickPreviewDetail ? (
-                  <div className="pf-loading">
-                    <Spinner className="size-4" />
-                    <span>Loading form preview…</span>
-                  </div>
-                ) : (
+                <Skeleton
+                  loading={quickPreviewLoading || !quickPreviewDetail}
+                  id="forms-quick-preview"
+                  label="Loading form preview"
+                >
                   <FormRespondentRenderer
-                    title={quickPreviewDetail.title}
-                    description={quickPreviewDetail.description}
-                    headerImage={quickPreviewDetail.headerImage}
-                    theme={quickPreviewDetail.settings.theme}
-                    questions={quickPreviewDetail.questions}
-                    quizEnabled={quickPreviewDetail.quizEnabled}
-                    eventRegistration={quickPreviewDetail.settings.eventRegistration}
-                    formId={quickPreviewDetail.id}
+                    title={quickPreviewDetail?.title || "Event RSVP"}
+                    description={quickPreviewDetail?.description || "Tell us if you can join this event."}
+                    headerImage={quickPreviewDetail?.headerImage ?? null}
+                    theme={quickPreviewDetail?.settings.theme}
+                    questions={quickPreviewDetail?.questions?.length ? quickPreviewDetail.questions : SAMPLE_PREVIEW_QUESTIONS}
+                    quizEnabled={quickPreviewDetail?.quizEnabled ?? false}
+                    eventRegistration={quickPreviewDetail?.settings.eventRegistration}
+                    formId={quickPreviewDetail?.id || "sample-form-preview"}
                     previewMode
                     onSubmit={() => {}}
                   />
-                )}
+                </Skeleton>
               </div>
             </div>
           </div>

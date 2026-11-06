@@ -37,20 +37,53 @@
   /* 3. Typography — Geist Sans is the single canonical UI typeface */
   /* Per-glyph fallback (localised scripts, emoji) is left to the generic `sans-serif`
      keyword so no obsolete webfont family has to be declared here. */
-  --ds-font-sans: "Geist Variable", "Geist Sans", Geist, ui-sans-serif, system-ui, -apple-system,
-    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --ds-font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
-    monospace;
+  --ds-font-sans: "Geist Variable", "Geist Sans", Geist, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ds-font-mono: "Geist Mono Variable", "Geist Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
   --ds-font-ui: var(--ds-font-sans);
   --ds-font-heading: var(--ds-font-sans);
   --ds-font-body: var(--ds-font-sans);
 
-  /* Sidebar navigation typography (Geist Sans 13px / #676879) */
+  --ds-font-weight-regular: 400;
+  --ds-font-weight-medium: 500;
+  --ds-font-weight-semibold: 600;
+  --ds-font-weight-bold: 700;
+
+  /* Persora Typography System v1: the complete 13-family scale. */
+  --ds-type-large-title-size: 64px;
+  --ds-type-large-title-line-height: 80px;
+  --ds-type-display-1-size: 56px;
+  --ds-type-display-1-line-height: 72px;
+  --ds-type-display-2-size: 48px;
+  --ds-type-display-2-line-height: 64px;
+  --ds-type-display-3-size: 40px;
+  --ds-type-display-3-line-height: 54px;
+  --ds-type-display-4-size: 32px;
+  --ds-type-display-4-line-height: 44px;
+  --ds-type-title-1-size: 24px;
+  --ds-type-title-1-line-height: 34px;
+  --ds-type-title-2-size: 20px;
+  --ds-type-title-2-line-height: 26px;
+  --ds-type-title-3-size: 18px;
+  --ds-type-title-3-line-height: 26px;
+  --ds-type-headline-size: 16px;
+  --ds-type-headline-line-height: 22px;
+  --ds-type-body-size: 14px;
+  --ds-type-body-line-height: 20px;
+  --ds-type-body-2-size: 13px;
+  --ds-type-body-2-line-height: 18px;
+  --ds-type-caption-1-size: 12px;
+  --ds-type-caption-1-line-height: 16px;
+  --ds-type-caption-1-letter-spacing: 0.15px;
+  --ds-type-caption-2-size: 11px;
+  --ds-type-caption-2-line-height: 15px;
+  --ds-type-caption-2-letter-spacing: 0.2px;
+
+  /* Sidebar navigation typography (Geist Sans Body 2 / #676879) */
   --ds-sidebar-font: var(--ds-font-sans);
-  --ds-sidebar-font-size: 13px;
-  --ds-sidebar-font-weight: 500;
+  --ds-sidebar-font-size: var(--ds-type-body-2-size);
+  --ds-sidebar-font-weight: var(--ds-font-weight-medium);
   --ds-sidebar-text: #676879;
-  --ds-sidebar-label-size: 10.5px;
+  --ds-sidebar-label-size: var(--ds-type-caption-2-size);
   --ds-sidebar-label-color: #8b8d9c;
 
   /* 4. Ink Hierarchy */
@@ -136,11 +169,17 @@
   /* Per-card gradient slot consumed by .ds-template-thumb (empty by default). */
   --ds-template-gradient: none;
 
+  /* Shared 10-gradient template palette (Persora Table, Forms, and Docs) */
   --ds-template-gradient-1: linear-gradient(90deg, rgb(87, 154, 252) 0%, rgb(87, 99, 252) 100%);
   --ds-template-gradient-2: linear-gradient(90deg, rgb(255, 90, 194) 0%, rgb(253, 91, 115) 100%);
   --ds-template-gradient-3: linear-gradient(90deg, rgb(253, 172, 62) 0%, rgb(250, 212, 63) 100%);
   --ds-template-gradient-4: linear-gradient(90deg, rgb(1, 187, 177) 0%, rgb(1, 198, 129) 100%);
   --ds-template-gradient-5: linear-gradient(90deg, rgb(255, 119, 90) 0%, rgb(255, 163, 90) 100%);
+  --ds-template-gradient-6: linear-gradient(90deg, #7C3AED, #C084FC);
+  --ds-template-gradient-7: linear-gradient(90deg, #172554, #38BDF8);
+  --ds-template-gradient-8: linear-gradient(90deg, #65A30D, #D9F99D);
+  --ds-template-gradient-9: linear-gradient(90deg, #881337, #E879F9);
+  --ds-template-gradient-10: linear-gradient(90deg, #334155, #94A3B8);
 
   /* 6c. Note page surfaces (light tints only; readable in both themes) */
   --ds-note-surface-paper: #ffffff;

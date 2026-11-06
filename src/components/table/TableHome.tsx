@@ -3,7 +3,7 @@
 // and simplified 2-row card footers).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  AlertCircle, ArrowUpDown, ChevronDown, ChevronsUpDown, Copy, FileSpreadsheet, FolderOpen,
+  AlertCircle, ArrowUpDown, ChevronDown, Copy, FileSpreadsheet, FolderOpen,
   LayoutGrid, List, MoreVertical, Pencil, RefreshCw, Search, Share2, Star, Table2, Tag, Trash2, Upload, Users, X,
 } from "lucide-react";
 import { TABLE_LIMITS, cleanName, type TableKind } from "../../../cloudflare/table-rules.js";
@@ -19,6 +19,8 @@ import type { AppUser } from "../../types";
 import ImportDialog from "./ImportDialog";
 import ShareTableDialog from "./ShareTableDialog";
 import { BlankTableArtwork, TableCardPreview, TableContentMiniature, clearTablePreviewCache } from "./TableCardPreview";
+import { StartShelf, type StartShelfItem } from "../shared/start-shelf";
+import { Skeleton } from "skullet/react";
 import { TemplateCardThumb, templateGradient } from "../shared/template-card";
 import { Menu, PromptDialog } from "./table-ui";
 
@@ -33,7 +35,22 @@ type Sort = "opened" | "recent" | "name" | "created";
 type ViewMode = "grid" | "list";
 
 const FEATURED_TEMPLATE_IDS = ["monthly-budget", "savings-tracker", "expense-tracker", "study-planner"];
+const ORDERED_TABLE_TEMPLATES: TemplateInfo[] = [
+  ...FEATURED_TEMPLATE_IDS
+    .map((id) => TABLE_TEMPLATES.find((tpl) => tpl.id === id))
+    .filter((tpl): tpl is TemplateInfo => Boolean(tpl)),
+  ...TABLE_TEMPLATES.filter((tpl) => !FEATURED_TEMPLATE_IDS.includes(tpl.id)),
+];
 const VIEW_STORAGE_KEY = "persora.table.homeView";
+
+const SAMPLE_TABLES: TableSummary[] = [
+  { id: "sample-table-1", kind: "spreadsheet", name: "Monthly budget", label: "Finance", starred: true, template: null, revision: 1, sheetCount: 3, recordCount: 0, sizeBytes: 24000, createdAt: "2026-04-01T10:00:00.000Z", updatedAt: "2026-04-12T10:00:00.000Z", openedAt: "2026-04-12T10:00:00.000Z" },
+  { id: "sample-table-2", kind: "smart", name: "Inventory tracker", label: "Work", starred: false, template: null, revision: 1, sheetCount: 1, recordCount: 48, sizeBytes: 18000, createdAt: "2026-04-02T10:00:00.000Z", updatedAt: "2026-04-11T10:00:00.000Z", openedAt: "2026-04-11T10:00:00.000Z" },
+  { id: "sample-table-3", kind: "spreadsheet", name: "Travel packing list", label: "Travel", starred: false, template: null, revision: 1, sheetCount: 2, recordCount: 0, sizeBytes: 12000, createdAt: "2026-04-03T10:00:00.000Z", updatedAt: "2026-04-10T10:00:00.000Z", openedAt: "2026-04-10T10:00:00.000Z" },
+  { id: "sample-table-4", kind: "spreadsheet", name: "Lease renewal checklist", label: "Home", starred: false, template: null, revision: 1, sheetCount: 1, recordCount: 0, sizeBytes: 8600, createdAt: "2026-04-04T10:00:00.000Z", updatedAt: "2026-04-09T10:00:00.000Z", openedAt: "2026-04-09T10:00:00.000Z" },
+  { id: "sample-table-5", kind: "smart", name: "Team kickoff agenda", label: "Work", starred: false, template: null, revision: 1, sheetCount: 1, recordCount: 12, sizeBytes: 9400, createdAt: "2026-04-05T10:00:00.000Z", updatedAt: "2026-04-08T10:00:00.000Z", openedAt: "2026-04-08T10:00:00.000Z" },
+  { id: "sample-table-6", kind: "spreadsheet", name: "Personal reading log", label: "", starred: false, template: null, revision: 1, sheetCount: 1, recordCount: 0, sizeBytes: 4200, createdAt: "2026-04-06T10:00:00.000Z", updatedAt: "2026-04-07T10:00:00.000Z", openedAt: "2026-04-07T10:00:00.000Z" },
+];
 
 const todayIso = () => {
   const now = new Date();
@@ -91,7 +108,6 @@ export default function TableHome({ user, notify, onOpen, onTrashChanged }: {
   const [filter, setFilter] = useState<Filter>("all");
   const [sort, setSort] = useState<Sort>("opened");
   const [viewMode, setViewMode] = useState<ViewMode>(readInitialViewMode);
-  const [galleryOpen, setGalleryOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<TableSummary | null>(null);
@@ -147,9 +163,10 @@ export default function TableHome({ user, notify, onOpen, onTrashChanged }: {
     }
   }, [filter, labels]);
 
+  const sourceTables = loading && tables.length === 0 ? SAMPLE_TABLES : tables;
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return tables
+    return sourceTables
       .filter((table) => {
         if (filter === "starred" && !table.starred) return false;
         if (filter === "shared" && !table.shared && !table.hasShares) return false;
@@ -169,23 +186,18 @@ export default function TableHome({ user, notify, onOpen, onTrashChanged }: {
         if (sort === "recent") return Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
         return lastOpenedMillis(b) - lastOpenedMillis(a);
       });
-  }, [tables, search, filter, sort]);
+  }, [sourceTables, search, filter, sort]);
 
   const ownedCount = useMemo(() => tables.filter((table) => !table.shared).length, [tables]);
   const atLimit = ownedCount >= TABLE_LIMITS.tables;
 
   const starterTemplates = useMemo(() => {
     const today = todayIso();
-    const list: TemplateInfo[] = galleryOpen
-      ? [...TABLE_TEMPLATES]
-      : FEATURED_TEMPLATE_IDS
-          .map((id) => TABLE_TEMPLATES.find((tpl) => tpl.id === id))
-          .filter((tpl): tpl is TemplateInfo => Boolean(tpl));
-    return list.map((tpl) => ({
+    return ORDERED_TABLE_TEMPLATES.map((tpl) => ({
       info: tpl,
       content: buildTemplate(tpl.id, today),
     }));
-  }, [galleryOpen]);
+  }, []);
 
   const activeFilterLabel = useMemo(() => {
     switch (filter) {
@@ -598,53 +610,56 @@ export default function TableHome({ user, notify, onOpen, onTrashChanged }: {
       )}
 
       {/* Top Google Sheets-style creation & real template strip */}
-      <section className="tb-start-shelf" aria-labelledby="tb-start-heading">
-        <div className="tb-start-head">
-          <h2 className="tb-start-title" id="tb-start-heading">Start a new table</h2>
-          <div className="tb-start-controls">
-            <button
-              type="button"
-              className={`tb-gallery-toggle ${galleryOpen ? "is-open" : ""}`}
-              aria-expanded={galleryOpen}
-              onClick={() => setGalleryOpen((prev) => !prev)}
-            >
-              <span>Template gallery</span>
-              <ChevronsUpDown size={14} aria-hidden="true" />
-            </button>
-          </div>
-        </div>
-
-        <ul className={`tb-starter-grid ${galleryOpen ? "is-expanded" : ""}`}>
-          <li className="tb-starter-item">
-            <button
-              type="button"
-              className="tb-starter-card"
-              disabled={atLimit || busy === "create"}
-              onClick={() => void createBlank("spreadsheet")}
-            >
-              <TemplateCardThumb className="tb-starter-thumb">
-                <BlankTableArtwork kind="spreadsheet" />
-              </TemplateCardThumb>
-              <span className="tb-starter-label">Blank spreadsheet</span>
-              <span className="tb-starter-kind">Spreadsheet</span>
-            </button>
-          </li>
-          <li className="tb-starter-item">
-            <button
-              type="button"
-              className="tb-starter-card"
-              disabled={atLimit || busy === "create"}
-              onClick={() => void createBlank("smart")}
-            >
-              <TemplateCardThumb className="tb-starter-thumb">
-                <BlankTableArtwork kind="smart" />
-              </TemplateCardThumb>
-              <span className="tb-starter-label">Blank Smart Table</span>
-              <span className="tb-starter-kind">Smart Table</span>
-            </button>
-          </li>
-          {starterTemplates.map(({ info, content }, index) => (
-            <li key={info.id} className="tb-starter-item">
+      <StartShelf
+        headingId="tb-start-heading"
+        heading="Start a new table"
+        collapsedLabel="Template gallery"
+        expandedLabel="Collapse gallery"
+        shelfClassName="tb-start-shelf"
+        headClassName="tb-start-head"
+        titleClassName="tb-start-title"
+        controlsClassName="tb-start-controls"
+        toggleClassName="tb-gallery-toggle"
+        gridClassName="tb-starter-grid"
+        itemClassName="tb-starter-item"
+        items={[
+          {
+            key: "blank-spreadsheet",
+            render: () => (
+              <button
+                type="button"
+                className="tb-starter-card"
+                disabled={atLimit || busy === "create"}
+                onClick={() => void createBlank("spreadsheet")}
+              >
+                <TemplateCardThumb className="tb-starter-thumb">
+                  <BlankTableArtwork kind="spreadsheet" />
+                </TemplateCardThumb>
+                <span className="tb-starter-label">Blank spreadsheet</span>
+                <span className="tb-starter-kind">Spreadsheet</span>
+              </button>
+            ),
+          },
+          {
+            key: "blank-smart",
+            render: () => (
+              <button
+                type="button"
+                className="tb-starter-card"
+                disabled={atLimit || busy === "create"}
+                onClick={() => void createBlank("smart")}
+              >
+                <TemplateCardThumb className="tb-starter-thumb">
+                  <BlankTableArtwork kind="smart" />
+                </TemplateCardThumb>
+                <span className="tb-starter-label">Blank Smart Table</span>
+                <span className="tb-starter-kind">Smart Table</span>
+              </button>
+            ),
+          },
+          ...starterTemplates.map<StartShelfItem>(({ info, content }, index) => ({
+            key: info.id,
+            render: () => (
               <button
                 type="button"
                 className="tb-starter-card"
@@ -668,10 +683,10 @@ export default function TableHome({ user, notify, onOpen, onTrashChanged }: {
                   {info.kind === "spreadsheet" ? "Spreadsheet" : "Smart Table"}
                 </span>
               </button>
-            </li>
-          ))}
-        </ul>
-      </section>
+            ),
+          })),
+        ]}
+      />
 
       {/* Recent tables toolbar + single combined filter dropdown + card grid */}
       <section className="tb-recent-section" aria-labelledby="tb-recent-heading">
@@ -752,70 +767,74 @@ export default function TableHome({ user, notify, onOpen, onTrashChanged }: {
           </div>
         )}
 
-        {loading ? (
-          <div className="tb-loading" role="status">
-            <span className="tb-spinner" aria-hidden="true" />Loading your tables…
-          </div>
-        ) : tables.length === 0 ? (
-          <PersoraEmptyState
-            className="tb-empty"
-            moduleId="tables"
-            tone="emerald"
-            title="No tables yet"
-            description="Create a blank spreadsheet or Smart Table above, pick a template, or import an existing CSV or .xlsx file."
-            action={
-              <>
-                <button
-                  type="button"
-                  className="tb-button tb-button-primary"
-                  disabled={busy === "create"}
-                  onClick={() => void createBlank("spreadsheet")}
-                >
-                  <FileSpreadsheet size={15} aria-hidden="true" />Blank spreadsheet
-                </button>
-                <button
-                  type="button"
-                  className="tb-button"
-                  disabled={busy === "create"}
-                  onClick={() => void createBlank("smart")}
-                >
-                  <Table2 size={15} aria-hidden="true" />Blank Smart Table
-                </button>
-              </>
-            }
-          />
-        ) : visible.length === 0 ? (
-          <PersoraEmptyState
-            compact
-            className="tb-empty"
-            moduleId="tables"
-            tone="emerald"
-            title={filter === "shared" ? "No shared tables yet" : "No matching tables"}
-            description={
-              filter === "shared"
-                ? "Tables shared with you or shared by you will appear right here."
-                : "Try a different search term or change the filter."
-            }
-            action={
-              (filter !== "all" || search) ? (
-                <button
-                  type="button"
-                  className="tb-button"
-                  onClick={() => {
-                    setFilter("all");
-                    setSearch("");
-                  }}
-                >
-                  Show all tables
-                </button>
-              ) : undefined
-            }
-          />
-        ) : viewMode === "list" ? (
-          <ul className="tb-list">{visible.map(renderListRow)}</ul>
-        ) : (
-          <ul className="tb-card-grid">{visible.map(renderCard)}</ul>
-        )}
+        <Skeleton
+          loading={loading}
+          id={`tables-home-${viewMode}`}
+          label="Loading your tables"
+          empty={!loading && tables.length === 0}
+          emptyMessage={
+            <PersoraEmptyState
+              className="tb-empty"
+              moduleId="tables"
+              tone="emerald"
+              title="No tables yet"
+              description="Create a blank spreadsheet or Smart Table above, pick a template, or import an existing CSV or .xlsx file."
+              action={
+                <>
+                  <button
+                    type="button"
+                    className="tb-button tb-button-primary"
+                    disabled={busy === "create"}
+                    onClick={() => void createBlank("spreadsheet")}
+                  >
+                    <FileSpreadsheet size={15} aria-hidden="true" />Blank spreadsheet
+                  </button>
+                  <button
+                    type="button"
+                    className="tb-button"
+                    disabled={busy === "create"}
+                    onClick={() => void createBlank("smart")}
+                  >
+                    <Table2 size={15} aria-hidden="true" />Blank Smart Table
+                  </button>
+                </>
+              }
+            />
+          }
+        >
+          {visible.length === 0 ? (
+            <PersoraEmptyState
+              compact
+              className="tb-empty"
+              moduleId="tables"
+              tone="emerald"
+              title={filter === "shared" ? "No shared tables yet" : "No matching tables"}
+              description={
+                filter === "shared"
+                  ? "Tables shared with you or shared by you will appear right here."
+                  : "Try a different search term or change the filter."
+              }
+              action={
+                (filter !== "all" || search) ? (
+                  <button
+                    type="button"
+                    className="tb-button"
+                    onClick={() => {
+                      setFilter("all");
+                      setSearch("");
+                    }}
+                  >
+                    Show all tables
+                  </button>
+                ) : undefined
+              }
+            />
+          ) : viewMode === "list" ? (
+            <ul className="tb-list">{visible.map(renderListRow)}</ul>
+          ) : (
+            <ul className="tb-card-grid">{visible.map(renderCard)}</ul>
+          )}
+        </Skeleton>
       </section>
 
       {importOpen && (

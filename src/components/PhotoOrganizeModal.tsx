@@ -7,6 +7,7 @@ import ItemModalShell from "./ItemModalShell";
 import ModalPortal from "./ModalPortal";
 import { TransferProgressIndicator } from "./ProgressIndicator";
 import { Spinner } from "@/components/ui/spinner";
+import { SkeletonBox } from "skullet/react";
 
 const NEW_FOLDER = "__new__";
 
@@ -110,7 +111,7 @@ export default function PhotoOrganizeModal({ mode, previewUrl, analysis, photo, 
       <form className="editor-form" onSubmit={(event) => void submit(event)} noValidate>
         <div className="vault-modal-scroll ps-organize-body">
           <div className="ps-organize-preview">
-            <div className="ps-checker ps-organize-image">{previewUrl ? <img src={previewUrl} alt="Photo preview"/> : <span className="ps-thumb-loading" aria-label="Loading preview"/>}</div>
+            <div className="ps-checker ps-organize-image">{previewUrl ? <img src={previewUrl} alt="Photo preview" width={320} height={240} /> : <SkeletonBox className="ps-thumb-loading" width="100%" height="100%" />}</div>
             {presetText && <div className={`ps-preset-match ${presetExact ? "is-exact" : ""}`}>{presetExact ? <Check size={13}/> : <Info size={13}/>}<span>{presetExact ? "Matches" : "Same shape as"} <b>{presetText}</b></span></div>}
             <dl className="ps-meta-list" aria-label="Detected photo details">
               {rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}

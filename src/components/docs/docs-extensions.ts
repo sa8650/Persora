@@ -13,7 +13,7 @@ import { ReactNodeViewRenderer } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Paragraph from "@tiptap/extension-paragraph";
 import Underline from "@tiptap/extension-underline";
-import TextStyle from "@tiptap/extension-text-style";
+import { TextStyle } from "@tiptap/extension-text-style";
 import Color from "@tiptap/extension-color";
 import Highlight from "@tiptap/extension-highlight";
 import TextAlign from "@tiptap/extension-text-align";
@@ -1304,6 +1304,8 @@ export function createPersoraDocExtensions() {
       },
       codeBlock: false,
       code: false,
+      link: false,
+      underline: false,
     }),
     DocParagraph,
     HeadingLineHeightExtension,

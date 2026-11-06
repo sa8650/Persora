@@ -19,6 +19,7 @@ import {
 } from "../../lib/audio-space";
 import { Badge } from "../reui/badge";
 import { Checkbox } from "../ui/checkbox";
+import { Skeleton } from "skullet/react";
 import { IconTile } from "../reui/icon-tile";
 import { PersoraAsideStat, PersoraEmptyState } from "../../design-system";
 import VaultFolderShelf from "../VaultFolderShelf";
@@ -510,7 +511,7 @@ export default function AudioSpaceView({ player, user, canUpload, maxUploadMb, t
       </div>
     </>}
 
-    {loading ? <div className={layout === "grid" ? "as-grid" : "as-list"} aria-busy="true" aria-label="Loading audio">{[0, 1, 2, 3].map((key) => <div key={key} className="as-card as-card-skeleton"><div className="as-card-media"/><div className="as-card-body"><span/><span/></div></div>)}</div>
+    {loading ? <Skeleton loading id={`audio-space-${layout}`} label="Loading audio"><div className={layout === "grid" ? "as-grid" : "as-list"}>{["Voice memo", "Interview notes", "Family call", "Lecture recording"].map((title) => layout === "grid" ? <article key={title} className="as-card"><div className="as-card-media" skullet-block="" /><div className="as-card-body"><h3>{title}</h3><p>Added this week</p></div></article> : <article key={title} className="as-row"><span className="as-sk-icon" skullet-block="" /><div className="as-card-body flex-1"><h3>{title}</h3><p>Added this week</p></div></article>)}</div></Skeleton>
       : loadError ? <PersoraEmptyState role="alert" stacked={false} icon={<AlertTriangle size={20}/>} tone="rose" title="Your audio library couldn't be loaded" description={loadError} action={<button type="button" className="quiet-button" onClick={() => void loadItems()}><RefreshCw size={15}/> Try again</button>}/>
         : section === "overview" ? overview
           : section === "trash" ? trashSection

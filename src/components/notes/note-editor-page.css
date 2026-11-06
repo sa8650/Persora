@@ -69,8 +69,9 @@
   gap: 6px;
   min-width: 0;
   color: var(--ds-text-muted);
-  font-size: 12.5px;
-  font-weight: 500;
+  font-size: var(--ds-type-body-2-size);
+  line-height: var(--ds-type-body-2-line-height);
+  font-weight: var(--ds-font-weight-medium);
   white-space: nowrap;
 }
 
@@ -83,14 +84,16 @@
   overflow: hidden;
   max-width: min(46vw, 420px);
   color: var(--ds-text);
-  font-weight: 600;
+  font-weight: var(--ds-font-weight-semibold);
   text-overflow: ellipsis;
 }
 
 .note-page-state {
   color: var(--ds-text-muted);
-  font-size: 12px;
-  font-weight: 500;
+  font-size: var(--ds-type-body-2-size);
+  letter-spacing: normal;
+  line-height: var(--ds-type-body-2-line-height);
+  font-weight: var(--ds-font-weight-medium);
   white-space: nowrap;
 }
 
@@ -108,8 +111,9 @@
   border-radius: 9px;
   background: var(--ds-primary);
   color: var(--ds-primary-fg);
-  font-size: 12.5px;
-  font-weight: 600;
+  font-size: var(--ds-type-body-2-size);
+  line-height: var(--ds-type-body-2-line-height);
+  font-weight: var(--ds-font-weight-semibold);
   cursor: pointer;
   transition: background-color 140ms ease, filter 140ms ease;
 }
@@ -147,8 +151,9 @@
 .note-page-meta {
   margin: 0;
   color: var(--ds-text-soft);
-  font-size: 12.5px;
-  font-weight: 500;
+  font-size: var(--ds-type-body-2-size);
+  line-height: var(--ds-type-body-2-line-height);
+  font-weight: var(--ds-font-weight-medium);
 }
 
 .workspace-content input.note-page-title {
@@ -160,10 +165,10 @@
   background: transparent;
   color: var(--ds-text);
   font-family: var(--ds-font-heading);
-  font-size: clamp(30px, 3.6vw, 40px);
-  font-weight: 700;
-  line-height: 1.15;
-  letter-spacing: -0.03em;
+  font-size: clamp(var(--ds-type-display-4-size), 3.6vw, var(--ds-type-display-3-size));
+  font-weight: var(--ds-font-weight-bold);
+  line-height: var(--ds-type-display-3-line-height);
+  letter-spacing: normal;
   outline: 0;
   box-shadow: none;
   transition: border-color 160ms ease;
@@ -186,7 +191,7 @@
 
 .note-page-title::placeholder {
   color: var(--ds-text-soft);
-  font-weight: 600;
+  font-weight: var(--ds-font-weight-semibold);
 }
 
 .note-page-title:focus {
@@ -272,8 +277,9 @@
   align-items: center;
   gap: 6px;
   color: var(--ds-text-secondary);
-  font-size: 12.5px;
-  font-weight: 600;
+  font-size: var(--ds-type-body-size);
+  line-height: var(--ds-type-body-line-height);
+  font-weight: var(--ds-font-weight-medium);
 }
 
 .note-page-field-label > svg {
@@ -282,8 +288,10 @@
 
 .note-page-field-label small {
   color: var(--ds-text-soft);
-  font-size: 11px;
-  font-weight: 500;
+  font-size: var(--ds-type-body-size);
+  letter-spacing: normal;
+  line-height: var(--ds-type-body-line-height);
+  font-weight: var(--ds-font-weight-medium);
 }
 
 .note-page-tag-input {
@@ -294,7 +302,8 @@
   background: transparent;
   color: var(--ds-text);
   font-family: var(--ds-font-sans);
-  font-size: 13px;
+  font-size: var(--ds-type-body-size);
+  line-height: var(--ds-type-body-line-height);
   outline: 0;
 }
 
@@ -321,7 +330,8 @@
   border-radius: 999px;
   background: var(--ds-subtle-bg);
   color: var(--ds-text-secondary);
-  font-size: 12.5px;
+  font-size: var(--ds-type-body-2-size);
+  line-height: var(--ds-type-body-2-line-height);
 }
 
 .note-page-attachment-icon {
@@ -338,14 +348,16 @@
   overflow: hidden;
   max-width: 42ch;
   color: var(--ds-text);
-  font-weight: 550;
+  font-weight: var(--ds-font-weight-semibold);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .note-page-attachment-size {
   color: var(--ds-text-soft);
-  font-size: 11.5px;
+  font-size: var(--ds-type-caption-1-size);
+  letter-spacing: var(--ds-type-caption-1-letter-spacing);
+  line-height: var(--ds-type-caption-1-line-height);
 }
 
 .note-page-attachment-remove {
@@ -374,7 +386,9 @@
   gap: 6px;
   margin: 0;
   color: var(--ds-text-soft);
-  font-size: 12px;
+  font-size: var(--ds-type-caption-1-size);
+  letter-spacing: var(--ds-type-caption-1-letter-spacing);
+  line-height: var(--ds-type-caption-1-line-height);
 }
 
 .note-page-file-input {
@@ -419,8 +433,10 @@
   border: 0;
   background: transparent;
   color: var(--ds-rose);
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--ds-type-caption-1-size);
+  letter-spacing: var(--ds-type-caption-1-letter-spacing);
+  line-height: var(--ds-type-caption-1-line-height);
+  font-weight: var(--ds-font-weight-semibold);
   cursor: pointer;
 }
 
@@ -471,9 +487,10 @@
 
 .note-page .rich-note-surface-title {
   color: var(--ds-text-muted);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-size: var(--ds-type-body-size);
+  line-height: var(--ds-type-body-line-height);
+  font-weight: var(--ds-font-weight-semibold);
+  letter-spacing: normal;
   white-space: nowrap;
 }
 

@@ -1505,7 +1505,7 @@ function ContactEditorDialog({
                   }
                 />
               ) : (
-                <div className="text-xs text-muted-foreground">
+                <div className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">
                   <span className="font-medium text-foreground block">Profile photo</span>
                   <span>Paid plan required for new photos.</span>
                   {onUpgrade && (
@@ -1751,7 +1751,7 @@ function ContactDetailDialog({
               {contact.category}
             </Badge>
             <h2 id="contact-detail-title">{contact.name}</h2>
-            <p className="text-xs text-muted-foreground m-0">
+            <p className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground m-0">
               {[contact.jobTitle, contact.company].filter(Boolean).join(" · ") || "Personal contact"}
             </p>
           </div>
@@ -1784,7 +1784,7 @@ function ContactDetailDialog({
               <IconTile variant="soft" size="xs" className="text-primary">
                 <Phone size={13} />
               </IconTile>
-              <b className="text-xs">Phone numbers</b>
+              <b className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]">Phone numbers</b>
               <Badge variant="secondary" size="xs" radius="full" className="ml-auto">
                 {contact.phoneNumbers.length || "None"}
               </Badge>
@@ -1796,7 +1796,7 @@ function ContactDetailDialog({
                     <Badge variant="outline" size="xs">
                       {phone.label}
                     </Badge>
-                    <b className="tabular-nums text-xs flex-1">{phone.number}</b>
+                    <b className="tabular-nums text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] flex-1">{phone.number}</b>
                     <a href={phoneUri(phone.number)} aria-label={`Call ${phone.number}`}>
                       <Phone size={14} />
                     </a>
@@ -1804,7 +1804,7 @@ function ContactDetailDialog({
                 ))}
               </div>
             ) : (
-              <p className="contact-detail-empty text-xs text-muted-foreground">
+              <p className="contact-detail-empty text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">
                 Add a number when you&apos;re ready to reach this person.
               </p>
             )}
@@ -1817,8 +1817,8 @@ function ContactDetailDialog({
                     <Mail size={13} />
                   </IconTile>
                   <span className="flex flex-col min-w-0 flex-1">
-                    <small className="text-[11px] text-muted-foreground">Email</small>
-                    <b className="text-xs truncate">{contact.email}</b>
+                    <small className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">Email</small>
+                    <b className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] truncate">{contact.email}</b>
                   </span>
                   <a href={emailHref} aria-label="Send email">
                     <ArrowRight size={14} />
@@ -1831,8 +1831,8 @@ function ContactDetailDialog({
                     <UsersRound size={13} />
                   </IconTile>
                   <span className="flex flex-col min-w-0 flex-1">
-                    <small className="text-[11px] text-muted-foreground">Work</small>
-                    <b className="text-xs">{[contact.jobTitle, contact.company].filter(Boolean).join(" · ")}</b>
+                    <small className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">Work</small>
+                    <b className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]">{[contact.jobTitle, contact.company].filter(Boolean).join(" · ")}</b>
                   </span>
                 </div>
               )}
@@ -1842,8 +1842,8 @@ function ContactDetailDialog({
                     <MapPin size={13} />
                   </IconTile>
                   <span className="flex flex-col min-w-0 flex-1">
-                    <small className="text-[11px] text-muted-foreground">Address</small>
-                    <b className="text-xs">{contact.address}</b>
+                    <small className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">Address</small>
+                    <b className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]">{contact.address}</b>
                   </span>
                 </div>
               )}
@@ -1853,8 +1853,8 @@ function ContactDetailDialog({
                     <Cake size={13} />
                   </IconTile>
                   <span className="flex flex-col min-w-0 flex-1">
-                    <small className="text-[11px] text-muted-foreground">Birthday</small>
-                    <b className="text-xs">{formatDate(contact.birthday)}</b>
+                    <small className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">Birthday</small>
+                    <b className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]">{formatDate(contact.birthday)}</b>
                   </span>
                 </div>
               )}
@@ -1961,20 +1961,20 @@ function PhoneImportFeedbackDialog({
                 <div className="contacts-feedback-numbers">
                   {entry.invalidPhones.map((number, index) => (
                     <div className="contacts-feedback-number-item" key={`inv-${number}-${index}`}>
-                      <Badge variant="warning-outline" size="default" className="font-mono tabular-nums text-xs">
+                      <Badge variant="warning-outline" size="default" className="font-mono tabular-nums text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]">
                         {number || "(empty number)"}
                       </Badge>
-                      <span className="text-xs text-amber-800 dark:text-amber-400">
+                      <span className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-amber-800 dark:text-amber-400">
                         Invalid format — not saved
                       </span>
                     </div>
                   ))}
                   {entry.duplicatePhones.map((number, index) => (
                     <div className="contacts-feedback-number-item" key={`dup-${number}-${index}`}>
-                      <Badge variant="outline" size="default" className="font-mono tabular-nums text-xs">
+                      <Badge variant="outline" size="default" className="font-mono tabular-nums text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]">
                         {number}
                       </Badge>
-                      <span className="text-xs text-muted-foreground">Duplicate — removed</span>
+                      <span className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">Duplicate — removed</span>
                     </div>
                   ))}
                 </div>

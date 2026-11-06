@@ -66,7 +66,7 @@ test('overlays land exactly where they were placed for every page rotation and c
         assert.equal(items[0].str, 'HELLO');
         assert.ok(Math.abs(items[0].x - 20) < 0.5, `x for base=${base} extra=${extra} box=${!!box}: ${items[0].x}`);
         assert.ok(Math.abs(items[0].y - (30 + 20 * studio.TEXT_ASCENT)) < 0.5, `y for base=${base} extra=${extra} box=${!!box}: ${items[0].y}`);
-        await doc.destroy();
+        await doc.loadingTask.destroy();
       }
     }
   }
@@ -91,7 +91,7 @@ test('export applies order, duplicates, deletions and rotation without touching 
   const doc = await openWithPdfJs(out);
   assert.equal((await textPositions(doc, 2)).items.length, 0, 'overlays stay on their own page copy');
   assert.equal((await textPositions(doc, 3)).items[0].str, 'COPY');
-  await doc.destroy();
+  await doc.loadingTask.destroy();
 });
 
 test('every overlay type exports, including images, ink, arrows and non-Latin text via the raster hook', async () => {
@@ -123,7 +123,7 @@ test('every overlay type exports, including images, ink, arrows and non-Latin te
   const ops = await (await doc.getPage(1)).getOperatorList();
   const paintImages = ops.fnArray.filter((fn) => fn === pdfjs.OPS.paintImageXObject).length;
   assert.equal(paintImages, 2, 'signature image + rasterised Bengali text');
-  await doc.destroy();
+  await doc.loadingTask.destroy();
 });
 
 test('Create PDF builds pages from images, text and PDFs in order', async () => {
@@ -144,7 +144,7 @@ test('Create PDF builds pages from images, text and PDFs in order', async () => 
   const doc = await openWithPdfJs(out);
   const first = await textPositions(doc, 3);
   assert.equal(first.items[0].str, 'Meeting notes');
-  await doc.destroy();
+  await doc.loadingTask.destroy();
 
   const a4 = await PDFDocument.load(await engine.buildPdf([{ kind: 'image', name: 'wide.jpg', image: { bytes: makeJpeg(1600, 900), mime: 'image/jpeg', width: 1600, height: 900 } }], { pageSize: 'a4', orientation: 'auto', margin: 'normal', fontSize: 12 }));
   const a4Size = a4.getPage(0).getSize();

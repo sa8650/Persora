@@ -5,6 +5,7 @@ import { deletePhotoStudioPhoto, isPagesApiConfigured, listPhotoStudioPhotos, lo
 import { Badge } from "@/components/reui/badge";
 import { IconTile } from "@/components/reui/icon-tile";
 import { Spinner } from "@/components/ui/spinner";
+import { Skeleton, SkeletonBox } from "skullet/react";
 import { PersoraAsideStat, PersoraEmptyState } from "@/design-system";
 import {
   PHOTO_CATEGORIES, PHOTO_EDITOR_ACCEPT, aspectRatio, PHOTO_UPLOAD_ACCEPT, SAVEABLE_PHOTO_TYPES, analysisMetadata, analyzePhoto, categoryLabel, defaultTitleFromFileName, editedFileName,
@@ -314,14 +315,14 @@ export default function PhotoStudioView({ user, canUpload, maxUploadMb, onUpgrad
     <div className="section-list-meta"><span><b>{String(visible.length).padStart(2, "0")}</b> {visible.length === 1 ? "photo" : "photos"}{selectedFolderId ? ` in ${folderName(selectedFolderId) || "this folder"}` : ""}</span><span className="list-meta-private"><ShieldCheck size={12}/> Nothing is uploaded until you press Save</span></div>
     {preparing && <div className="ps-preparing" role="status"><Spinner className="size-4"/> Reading your photo on this device…</div>}
 
-    {loading ? <div className="ps-grid" aria-busy="true" aria-label="Loading photos">{[0, 1, 2, 3].map((key) => <div key={key} className="ps-card ps-card-skeleton"><div className="ps-card-media"/><div className="ps-card-body"><span/><span/></div></div>)}</div>
+    {loading ? <Skeleton loading id="photo-studio-grid" label="Loading photos"><div className="ps-grid">{["Evening walk", "Studio still", "Family dinner", "Garden light"].map((title) => <article key={title} className="ps-card"><div className="ps-card-media" skullet-block="" /><div className="ps-card-body"><div className="ps-card-title"><h3>{title}</h3></div><p className="ps-card-sub">Added this week</p></div></article>)}</div></Skeleton>
     : loadError ? <PersoraEmptyState role="alert" stacked={false} icon={<AlertTriangle size={20}/>} tone="rose" title="Your photos couldn't be loaded" description={loadError} action={<button type="button" className="quiet-button" onClick={() => void loadPhotos()}><RefreshCw size={15}/> Try again</button>}/>
     : visible.length ? <div className="ps-grid">{visible.map((photo) => {
       const source = photo.sourcePhotoId ? photoById.get(photo.sourcePhotoId) : null;
       const print = printSizeLabel(photo.width, photo.height, photo.dpi);
       return <article key={photo.id} className="ps-card">
         <button type="button" className="ps-card-media" onClick={() => setViewing(photo)} aria-label={`View ${photo.title}`}>
-          {urls[photo.id] ? <img src={urls[photo.id]} alt="" loading="lazy"/> : failed[photo.id] ? <span className="ps-thumb-failed"><ImageIcon size={20}/><small>Preview unavailable</small></span> : <span className="ps-thumb-loading" aria-label="Loading preview"/>}
+          {urls[photo.id] ? <img src={urls[photo.id]} alt="" loading="lazy" width={photo.width || 400} height={photo.height || 300} /> : failed[photo.id] ? <span className="ps-thumb-failed"><ImageIcon size={20}/><small>Preview unavailable</small></span> : <SkeletonBox className="ps-thumb-loading" width="100%" height="100%" />}
           {photo.sourcePhotoId && <Badge variant="secondary" size="xs" className="ps-edited-badge"><GitBranch className="size-3"/> Edited</Badge>}
         </button>
         <div className="ps-card-body">
@@ -407,7 +408,7 @@ function CreateChooser({ photos, urls, preparing, onClose, onFile, onPhoto, noti
         {photos.length ? <>
           <label className="ps-search ps-chooser-search"><Search size={15}/><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search saved photos…" aria-label="Search saved photos"/></label>
           <div className="ps-chooser-grid">{list.map((photo) => <button key={photo.id} type="button" className="ps-chooser-item" onClick={() => onPhoto(photo)} disabled={preparing}>
-            <span>{urls[photo.id] ? <img src={urls[photo.id]} alt=""/> : <span className="ps-thumb-loading"/>}</span>
+            <span>{urls[photo.id] ? <img src={urls[photo.id]} alt="" width={64} height={64} /> : <SkeletonBox className="ps-thumb-loading" width={64} height={64} />}</span>
             <b>{photo.title}</b><small>{categoryLabel(photo.category)}</small>
           </button>)}</div>
           {!list.length && <p className="ps-muted-note">No saved photos match “{search}”.</p>}
@@ -442,7 +443,7 @@ function PhotoViewer({ photo, url, source, versions, folder, onClose, onOpen, on
   return <ModalPortal>
     <ItemModalShell labelledBy={titleId} className="ps-viewer-modal" icon={<Camera size={18}/>} eyebrow="Photo Studio" title={photo.title} onClose={onClose}>
       <div className="vault-modal-scroll ps-viewer-body">
-        <div className="ps-viewer-image ps-checker">{url ? <img src={url} alt={photo.title}/> : <span className="ps-thumb-loading"/>}</div>
+        <div className="ps-viewer-image ps-checker">{url ? <img src={url} alt={photo.title} width={photo.width || 800} height={photo.height || 600} /> : <SkeletonBox className="ps-thumb-loading" width="100%" height="100%" />}</div>
         <div className="ps-viewer-side">
           <dl className="ps-meta-list">{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
           {photo.notes && <p className="ps-viewer-notes">{photo.notes}</p>}

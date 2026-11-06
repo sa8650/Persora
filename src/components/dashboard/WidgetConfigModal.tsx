@@ -303,10 +303,10 @@ export function WidgetConfigModal({
                 return (
                   <div key={key} className="space-y-2 rounded-xl border border-border bg-secondary/40 p-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-foreground">
+                      <span className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] font-semibold text-foreground">
                         Active shortcuts ({activeQuickActions.length})
                       </span>
-                      <span className="text-[11px] text-muted-foreground">Check to include · Arrows to reorder</span>
+                      <span className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">Check to include · Arrows to reorder</span>
                     </div>
                     <div className="max-h-48 space-y-1.5 overflow-y-auto pr-1">
                       {[
@@ -323,7 +323,7 @@ export function WidgetConfigModal({
                             key={def.id}
                             className="flex items-center justify-between gap-2 rounded-lg border border-border bg-card px-2.5 py-1.5"
                           >
-                            <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-xs">
+                            <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]">
                               <Checkbox
                                 checked={checked}
                                 onCheckedChange={(val) => toggleQuickAction(def.id, Boolean(val))}
@@ -449,7 +449,7 @@ export function WidgetConfigModal({
                 return (
                   <label
                     key={key}
-                    className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-border bg-secondary/40 px-3.5 py-2.5 text-[12.5px] font-medium text-foreground"
+                    className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-border bg-secondary/40 px-3.5 py-2.5 text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-medium text-foreground"
                   >
                     <span>{label}</span>
                     <Checkbox checked={checked} onCheckedChange={(val) => setField(key, Boolean(val))} />
@@ -460,7 +460,7 @@ export function WidgetConfigModal({
               return null;
             })}
 
-            <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-border bg-secondary/40 px-3.5 py-2.5 text-[12.5px] font-medium text-foreground">
+            <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-border bg-secondary/40 px-3.5 py-2.5 text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-medium text-foreground">
               <span>Collapse widget body by default</span>
               <Checkbox checked={collapsed} onCheckedChange={(val) => setCollapsed(Boolean(val))} />
             </label>

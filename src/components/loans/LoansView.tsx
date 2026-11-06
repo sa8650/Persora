@@ -21,8 +21,34 @@ import {
 import { Badge } from "@/components/reui/badge";
 import { PersoraDeleteModal, PersoraEmptyState } from "@/design-system";
 import { Spinner } from "@/components/ui/spinner";
+import { Skeleton } from "skullet/react";
 
 type Filter = "all" | "borrowed" | "lent" | "active" | "completed" | "overdue";
+
+function sampleLoan(id: string, name: string, partyName: string): Loan {
+  const installment: LoanInstallment = {
+    id: `${id}-i1`, number: 1, dueDate: "2026-05-12", principal: 10000, interest: 250, amount: 10250,
+    paid: 0, remaining: 10250, status: "due", paymentCount: 0, scheduleVersion: 1,
+  };
+  return {
+    id, name, direction: "borrowed", partyName, borrowerName: "You", currency: "BDT",
+    principal: 125000, interestMethod: "reducing", interestRate: 8, installmentCount: 12, frequency: "monthly",
+    startDate: "2026-01-01", firstDueDate: "2026-02-01", anchorDate: "2026-02-01", anchorNumber: 1,
+    reference: "", notes: "", documentIds: [], reminderDaysBefore: 3, overdueAlerts: true, reminderEmail: false,
+    status: "active", completedAt: null, closedAt: null, closeNote: null, originalTerms: {}, scheduleChanges: [],
+    scheduleVersion: 1, revision: 1, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-04-01T00:00:00.000Z",
+    summary: {
+      scheduled: 125000, paid: 25000, outstanding: 100000, installmentsTotal: 12, paidCount: 2, overdueCount: 0,
+      overdueAmount: 0, writtenOff: 0, progress: 20, state: "active", next: installment,
+    },
+  };
+}
+const SAMPLE_LOANS: Loan[] = [
+  sampleLoan("sample-loan-1", "Home renovation loan", "City Bank"),
+  sampleLoan("sample-loan-2", "Car finance", "Delta Motors"),
+  sampleLoan("sample-loan-3", "Family support", "Amina Rahman"),
+  sampleLoan("sample-loan-4", "Education fund", "North Campus"),
+];
 const FILTERS: { id: Filter; label: string }[] = [
   { id: "all", label: "All" }, { id: "borrowed", label: "Borrowed" }, { id: "lent", label: "Lent" },
   { id: "active", label: "Active" }, { id: "completed", label: "Completed" }, { id: "overdue", label: "Overdue" },
@@ -236,7 +262,14 @@ export default function LoansView({ user, items, notify, onOpenItem, focusReques
           <button type="button" className="ln-button ln-button-small" onClick={() => openLoan(null)}>Back to loans</button>
         </div>
       </div>}
-      {!detail || detail.loan.id !== selectedId ? (detailState !== "error" && <LoanSkeleton detail/>) : <LoanDetails
+      <Skeleton loading={!detail || detail.loan.id !== selectedId} id="loan-detail" label="Loading loan">
+      {!detail || detail.loan.id !== selectedId ? (detailState !== "error" && (
+        <section className="ln-panel" aria-label="Loan">
+          <ul className="ln-list">
+            {SAMPLE_LOANS.slice(0, 1).map((loan) => <LoanRow key={loan.id} loan={loan} onOpen={() => undefined} />)}
+          </ul>
+        </section>
+      )) : <LoanDetails
         detail={detail} items={items} busy={busy}
         onEdit={() => { setDialogError(null); setEditor({ loan: detail.loan }); }}
         onPay={(installment) => { setDialogError(null); setPayTarget({ mode: "pay", installment }); }}
@@ -248,6 +281,7 @@ export default function LoansView({ user, items, notify, onOpenItem, focusReques
         onDelete={() => { setDialogError(null); setDeleteOpen(true); }}
         onOpenItem={onOpenItem}
       />}
+      </Skeleton>
       {editorEl}
       {payTarget && detail && <PaymentDialog
         loan={detail.loan} today={detail.today} target={payTarget} busy={busy} error={dialogError}
@@ -302,7 +336,21 @@ export default function LoansView({ user, items, notify, onOpenItem, focusReques
       <button type="button" className="ln-button ln-button-small" onClick={() => setReloadKey((key) => key + 1)}>Retry</button>
     </div>}
 
-    {initialLoading ? <LoanSkeleton/> : payload && <>
+    <Skeleton loading={initialLoading} id="loans-list" label="Loading loans">
+    {initialLoading ? (
+      <>
+        <section className="ln-stats" aria-label="Loan summary">
+          <div className="ln-stat"><span className="ln-stat-label">Active amount</span><b>BDT 12,500</b><small>4 active loans</small></div>
+          <div className="ln-stat"><span className="ln-stat-label">Remaining balance</span><b>BDT 98,400</b><small>Still to repay</small></div>
+          <div className="ln-stat"><span className="ln-stat-label">Next installment</span><b>BDT 10,250</b><small>May 12 · Home renovation loan</small></div>
+          <div className="ln-stat"><span className="ln-stat-label">Overdue</span><b>BDT 0</b><small>Nothing overdue</small></div>
+          <div className="ln-stat"><span className="ln-stat-label">Total paid</span><b>BDT 25,000</b><small>All loans</small></div>
+        </section>
+        <section className="ln-panel" aria-label="Loans">
+          <ul className="ln-list">{SAMPLE_LOANS.map((loan) => <LoanRow key={loan.id} loan={loan} onOpen={() => undefined} />)}</ul>
+        </section>
+      </>
+    ) : payload && <>
       {loans.length > 0 && <section className="ln-stats" aria-label="Loan summary">
         <div className="ln-stat">
           <span className="ln-stat-label">Active amount</span>
@@ -354,6 +402,7 @@ export default function LoansView({ user, items, notify, onOpenItem, focusReques
         </ul>}
       </section>
     </>}
+    </Skeleton>
     {editorEl}
   </div>;
 }
@@ -386,12 +435,6 @@ function LoanRow({ loan, onOpen }: { loan: Loan; onOpen: () => void }) {
       <ChevronRight size={16} className="ln-row-chevron" aria-hidden="true"/>
     </button>
   </li>;
-}
-
-function LoanSkeleton({ detail = false }: { detail?: boolean }) {
-  return <div className="ln-panel ln-skeleton" aria-busy="true" aria-label={detail ? "Loading loan" : "Loading loans"}>
-    {Array.from({ length: detail ? 5 : 4 }, (_, index) => <div className="ln-skeleton-row" key={index}><span/><span/><span/></div>)}
-  </div>;
 }
 
 // ---------------------------------------------------------------------------

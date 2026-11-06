@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, BarChart3, Loader2, RefreshCw } from "lucide-react";
+import { SkeletonBox } from "skullet/react";
 import { loadProjectActivityStats } from "../../lib/cloud";
 import type { ProjectActivityMetric, ProjectActivityRange, ProjectActivityStats } from "../../types";
 import { AnalyticsLineChart } from "./analytics-chart";
@@ -118,8 +119,7 @@ export function ProjectActivityChart({ projectId, refreshKey = "", loadStats = l
           </div>
         ) : !current ? (
           <div className="pc-state" aria-label="Loading activity analytics">
-            <Loader2 size={18} className="pj-spin" aria-hidden="true" />
-            <p>Counting project activity…</p>
+            <SkeletonBox className="pc-chart" width="100%" height={260} radius="12px" />
           </div>
         ) : (
           <>

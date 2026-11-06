@@ -239,9 +239,10 @@
 .island-np-title {
   overflow: hidden;
   color: var(--ds-text);
-  font-size: 12px;
-  font-weight: 620;
-  line-height: 1.25;
+  font-size: var(--ds-type-body-size);
+  letter-spacing: normal;
+  font-weight: var(--ds-font-weight-semibold);
+  line-height: var(--ds-type-body-line-height);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -252,8 +253,9 @@
   gap: 5px;
   overflow: hidden;
   color: var(--ds-text-muted);
-  font-size: 10px;
-  line-height: 1.2;
+  font-size: var(--ds-type-caption-1-size);
+  letter-spacing: var(--ds-type-caption-1-letter-spacing);
+  line-height: var(--ds-type-caption-1-line-height);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -332,8 +334,10 @@
 .island-np-time {
   flex: 0 0 auto;
   color: var(--ds-text-muted);
-  font-size: 10px;
-  font-weight: 560;
+  font-size: var(--ds-type-caption-1-size);
+  letter-spacing: var(--ds-type-caption-1-letter-spacing);
+  line-height: var(--ds-type-caption-1-line-height);
+  font-weight: var(--ds-font-weight-semibold);
   font-variant-numeric: tabular-nums;
 }
 
@@ -386,7 +390,9 @@
   padding: 4px 7px;
   background: var(--ds-danger-soft);
   color: var(--ds-danger);
-  font-size: 10px;
+  font-size: var(--ds-type-body-2-size);
+  letter-spacing: normal;
+  line-height: var(--ds-type-body-2-line-height);
   white-space: normal;
 }
 
@@ -519,8 +525,10 @@
   border-radius: 50%;
   background: var(--ds-primary-soft);
   color: var(--ds-sidebar-active-text);
-  font-size: 11px;
-  font-weight: 680;
+  font-size: var(--ds-type-caption-1-size);
+  letter-spacing: var(--ds-type-caption-1-letter-spacing);
+  line-height: var(--ds-type-caption-1-line-height);
+  font-weight: var(--ds-font-weight-bold);
   cursor: pointer;
   overflow: hidden;
   transition: box-shadow 140ms ease;
@@ -606,9 +614,9 @@
 
 .island-menu-identity-copy b {
   color: var(--ds-text);
-  font-size: 12.5px;
-  font-weight: 640;
-  line-height: 1.3;
+  font-size: var(--ds-type-body-size);
+  font-weight: var(--ds-font-weight-semibold);
+  line-height: var(--ds-type-body-line-height);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -616,7 +624,9 @@
 
 .island-menu-identity-copy small {
   color: var(--ds-text-muted);
-  font-size: 11px;
+  font-size: var(--ds-type-body-size);
+  letter-spacing: normal;
+  line-height: var(--ds-type-body-line-height);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -633,8 +643,9 @@
   background: transparent;
   color: var(--ds-text);
   font-family: var(--ds-font-sans);
-  font-size: 12.5px;
-  font-weight: 560;
+  font-size: var(--ds-type-body-size);
+  line-height: var(--ds-type-body-line-height);
+  font-weight: var(--ds-font-weight-medium);
   text-align: left;
   cursor: pointer;
 }

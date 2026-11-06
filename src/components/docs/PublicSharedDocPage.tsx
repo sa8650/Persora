@@ -58,6 +58,7 @@ import { LauncherModuleIcon } from "../launcher/LauncherIcons";
 import { PersoraEmptyState, ThemeToggleButton } from "@/design-system";
 import { Badge } from "@/components/reui/badge";
 import { Spinner } from "@/components/ui/spinner";
+import { Skeleton } from "skullet/react";
 
 export default function PublicSharedDocPage({
   token,
@@ -247,7 +248,7 @@ export default function PublicSharedDocPage({
         contentRef.current = safeContent;
         titleRef.current = res.doc.title;
         suppressUpdateRef.current = true;
-        editor.commands.setContent({ type: "doc", content: safeContent.content }, false);
+        editor.commands.setContent({ type: "doc", content: safeContent.content }, { emitUpdate: false });
         suppressUpdateRef.current = false;
 
         setPermission(res.permission);
@@ -351,11 +352,28 @@ export default function PublicSharedDocPage({
 
   if (loading) {
     return (
-      <main className="pd-public-screen pd-public-centered" role="status">
-        <div className="pd-loading">
-          <Spinner className="size-4 text-primary" />
-          <span>Opening shared document…</span>
-        </div>
+      <main className="pd-public-screen">
+        <Skeleton loading id={`public-doc-${token}`} label="Opening shared document" className="pd-editor">
+          <div className="pd-editor">
+            <header className="pd-topbar">
+              <div className="pd-topbar-left">
+                <div className="pd-title-cluster">
+                  <h2 className="pd-title-readonly">Quarterly planning notes</h2>
+                </div>
+              </div>
+            </header>
+            <div className="pd-workspace-body">
+              <div className="pd-canvas">
+                <article className="pd-page-card">
+                  <h1>Quarterly planning notes</h1>
+                  <p>Kickoff notes for the next planning cycle, including owners and open questions.</p>
+                  <p>Keep decisions close to the work so the next visit picks up without a layout jump.</p>
+                  <p>Follow-ups live under the agenda so nothing is lost between drafts.</p>
+                </article>
+              </div>
+            </div>
+          </div>
+        </Skeleton>
       </main>
     );
   }

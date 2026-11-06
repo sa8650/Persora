@@ -1,6 +1,8 @@
 /* ==========================================================================
-   Shared template / starter card (src/components/shared/template-card.css)
-   One geometry for Persora Table, Persora Docs and Persora Forms shelves.
+   Shared template / starter card & start-shelf rules
+   (src/components/shared/template-card.css)
+   One geometry, one 10-gradient palette, and one sidebar-responsive shelf
+   rhythm for Persora Table, Persora Docs and Persora Forms.
    Page stylesheets only add layout (grid) and interaction states; the surface,
    size and gradient ramp are owned here so the three products cannot drift.
    ========================================================================== */
@@ -27,7 +29,9 @@
 .ds-template-thumb.is-gradient .tb-mini,
 .ds-template-thumb.is-gradient .pd-mini,
 .ds-template-thumb.is-gradient .tb-blank-art,
-.ds-template-thumb.is-gradient .pf-mini {
+.ds-template-thumb.is-gradient .pf-mini,
+.dark .ds-template-thumb.is-gradient .pf-mini,
+[data-theme="dark"] .ds-template-thumb.is-gradient .pf-mini {
   background-color: transparent;
   background-image: none;
 }
@@ -51,26 +55,116 @@
   border: 0;
   border-radius: 4px;
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.18);
+  color: #0f172a;
 }
 
+.ds-template-thumb.is-gradient .tb-mini-grid {
+  color: #0f172a;
+}
+
+.ds-template-thumb.is-gradient .tb-mini-cell {
+  border-right-color: #e2e8f0;
+  border-bottom-color: #e2e8f0;
+}
+
+.ds-template-thumb.is-gradient .tb-mini-grid tr.is-frozen-edge > td {
+  border-bottom-color: #cbd5e1;
+}
+
+.ds-template-thumb.is-gradient .tb-mini-smarthead {
+  background-color: #f8fafc;
+  color: #334155;
+  border-right-color: #e2e8f0;
+  border-bottom-color: #cbd5e1;
+}
+
+/* Persora Forms miniature inside a gradient band: crisp floating white paper
+   stack framed on left, right, and top with legible ink in Light & Dark modes. */
+.ds-template-thumb.is-gradient .pf-mini {
+  align-items: center;
+  justify-content: flex-start;
+  padding: 10px 14px 0;
+}
+
+.ds-template-thumb.is-gradient .pf-mini .pf-mini-stack {
+  max-width: 176px;
+}
+
+.ds-template-thumb.is-gradient .pf-mini .pf-mini-banner,
+.ds-template-thumb.is-gradient .pf-mini .pf-mini-title-card,
+.ds-template-thumb.is-gradient .pf-mini .pf-mini-q-card,
+.ds-template-thumb.is-gradient .pf-mini .pf-mini-section-card {
+  background-color: #ffffff;
+  border-color: rgba(15, 23, 42, 0.08);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.16);
+}
+
+.ds-template-thumb.is-gradient .pf-mini .pf-mini-title,
+.ds-template-thumb.is-gradient .pf-mini .pf-mini-q-title {
+  color: #0f172a;
+}
+
+.ds-template-thumb.is-gradient .pf-mini .pf-mini-desc,
+.ds-template-thumb.is-gradient .pf-mini .pf-mini-opt-txt,
+.ds-template-thumb.is-gradient .pf-mini .pf-mini-scale-num,
+.ds-template-thumb.is-gradient .pf-mini .pf-mini-line-input,
+.ds-template-thumb.is-gradient .pf-mini .pf-mini-select {
+  color: #475569;
+}
+
+.ds-template-thumb.is-gradient .pf-mini .pf-mini-radio,
+.ds-template-thumb.is-gradient .pf-mini .pf-mini-checkbox {
+  background-color: #ffffff;
+  border-color: #cbd5e1;
+}
+
+/* Shared 10-gradient palette bindings */
 .ds-template-thumb[data-template-gradient="1"] { --ds-template-gradient: var(--ds-template-gradient-1); }
 .ds-template-thumb[data-template-gradient="2"] { --ds-template-gradient: var(--ds-template-gradient-2); }
 .ds-template-thumb[data-template-gradient="3"] { --ds-template-gradient: var(--ds-template-gradient-3); }
 .ds-template-thumb[data-template-gradient="4"] { --ds-template-gradient: var(--ds-template-gradient-4); }
 .ds-template-thumb[data-template-gradient="5"] { --ds-template-gradient: var(--ds-template-gradient-5); }
+.ds-template-thumb[data-template-gradient="6"] { --ds-template-gradient: var(--ds-template-gradient-6); }
+.ds-template-thumb[data-template-gradient="7"] { --ds-template-gradient: var(--ds-template-gradient-7); }
+.ds-template-thumb[data-template-gradient="8"] { --ds-template-gradient: var(--ds-template-gradient-8); }
+.ds-template-thumb[data-template-gradient="9"] { --ds-template-gradient: var(--ds-template-gradient-9); }
+.ds-template-thumb[data-template-gradient="10"] { --ds-template-gradient: var(--ds-template-gradient-10); }
+
+.ds-start-shelf-item {
+  min-width: 0;
+}
+
+.ds-start-shelf-toggle-icon {
+  flex: 0 0 auto;
+  transition: transform 0.16s ease;
+}
 
 /* No banding: the gradient is painted once, as a single smooth raster. */
 @media (prefers-reduced-motion: reduce) {
-  .ds-template-thumb { transition: none; }
+  .ds-template-thumb,
+  .ds-start-shelf-toggle-icon {
+    transition: none;
+  }
 }
 
 /* ---- Shelf rhythm --------------------------------------------------------
    Five cards per row with the sidebar rail open, six when it is collapsed.
-   Only the column count changes — the 224 × 157px card size never does. */
+   Only the column count changes — the 224 × 157px card size never does.
+   When the gallery is collapsed, additional cards never wrap into another row. */
 @media (min-width: 821px) {
+  .ds-start-shelf[data-sidebar-state="collapsed"],
+  .workspace-shell:has(.workspace-sidebar.is-collapsed) .ds-start-shelf,
   .workspace-shell:has(.workspace-sidebar.is-collapsed) .tb-start-shelf,
   .workspace-shell:has(.workspace-sidebar.is-collapsed) .pd-start-shelf,
   .workspace-shell:has(.workspace-sidebar.is-collapsed) .pf-start-shelf {
     --ds-template-shelf-columns: 6;
+  }
+
+  .ds-start-shelf[data-sidebar-state="expanded"] .ds-start-shelf-grid:not(.is-expanded) > :nth-child(n + 6) {
+    display: none;
+  }
+
+  .ds-start-shelf[data-sidebar-state="collapsed"] .ds-start-shelf-grid:not(.is-expanded) > :nth-child(n + 7) {
+    display: none;
   }
 }

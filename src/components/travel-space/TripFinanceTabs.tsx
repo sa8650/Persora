@@ -120,14 +120,14 @@ export default function TripFinanceTabs({
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <div className="ts-header-row">
           <div>
-            <strong style={{ fontSize: 14.5 }}>
+            <strong style={{ fontSize: "var(--ds-type-headline-size)", lineHeight: "var(--ds-type-headline-line-height)" }}>
               {overview.budgetScope === "group"
                 ? "Combined Group Budget"
                 : overview.budgetScope === "personal"
                   ? "Personal Budget"
                   : "Unconfigured Budget"}
             </strong>
-            <span style={{ marginLeft: 8, fontSize: 12.5, color: "var(--ds-text-secondary)" }}>
+            <span style={{ marginLeft: 8, fontSize: "var(--ds-type-body-2-size)", lineHeight: "var(--ds-type-body-2-line-height)", color: "var(--ds-text-secondary)" }}>
               Primary currency: {primaryCur}
             </span>
           </div>
@@ -200,7 +200,7 @@ export default function TripFinanceTabs({
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {overview.categories.map((cat) => (
               <div key={cat.name} style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--ds-type-body-2-size)", lineHeight: "var(--ds-type-body-2-line-height)" }}>
                   <span>
                     <b>{cat.name}</b>
                     {cat.alertStatus === "exceeded" && (
@@ -235,7 +235,7 @@ export default function TripFinanceTabs({
           <div className="ts-panel">
             <div className="ts-panel-head">
               <h3>Traveller Contributions</h3>
-              <span style={{ fontSize: 12, color: "var(--ds-text-muted)" }}>
+              <span style={{ fontSize: "var(--ds-type-caption-1-size)", lineHeight: "var(--ds-type-caption-1-line-height)", color: "var(--ds-text-muted)" }}>
                 Tracked separately from shared expense splits
               </span>
             </div>
@@ -325,7 +325,7 @@ export default function TripFinanceTabs({
           <select
             aria-label="Filter by category"
             className="ts-select"
-            style={{ width: "auto", height: 32, fontSize: 12.5 }}
+            style={{ width: "auto", height: 32, fontSize: "var(--ds-type-body-2-size)", lineHeight: "var(--ds-type-body-2-line-height)" }}
             value={catFilter}
             onChange={(e) => setCatFilter(e.target.value)}
           >
@@ -341,7 +341,7 @@ export default function TripFinanceTabs({
             <select
               aria-label="Filter by traveller"
               className="ts-select"
-              style={{ width: "auto", height: 32, fontSize: 12.5 }}
+              style={{ width: "auto", height: 32, fontSize: "var(--ds-type-body-2-size)", lineHeight: "var(--ds-type-body-2-line-height)" }}
               value={travellerFilter}
               onChange={(e) => setTravellerFilter(e.target.value)}
             >
@@ -408,13 +408,13 @@ export default function TripFinanceTabs({
       <div className="ts-panel">
         <div className="ts-panel-head">
           <h3>Recorded Expenses ({filteredExpenses.length})</h3>
-          <span className="ts-num" style={{ fontSize: 12.5, color: "var(--ds-text-secondary)" }}>
+          <span className="ts-num" style={{ fontSize: "var(--ds-type-body-2-size)", lineHeight: "var(--ds-type-body-2-line-height)", color: "var(--ds-text-secondary)" }}>
             Total Trip Spend: <b>{formatTravelMoney(overview.totalExpenses, primaryCur)}</b>
           </span>
         </div>
 
         {filteredExpenses.length === 0 ? (
-          <div style={{ fontSize: 13, color: "var(--ds-text-muted)", padding: "14px 0" }}>
+          <div style={{ fontSize: "var(--ds-type-body-2-size)", lineHeight: "var(--ds-type-body-2-line-height)", color: "var(--ds-text-muted)", padding: "14px 0" }}>
             No expenses recorded matching the current filters.
           </div>
         ) : (
@@ -548,11 +548,11 @@ export default function TripFinanceTabs({
                         {b.settled ? (
                           <span className="ts-status-pill ts-status-completed">Settled</span>
                         ) : b.shouldReceive > 0 ? (
-                          <span style={{ color: "#15803d", fontWeight: 600 }}>
+                          <span style={{ color: "#15803d", fontWeight: "var(--ds-font-weight-semibold)" }}>
                             Receives {formatTravelMoney(b.shouldReceive, primaryCur)}
                           </span>
                         ) : (
-                          <span style={{ color: "#b91c1c", fontWeight: 600 }}>
+                          <span style={{ color: "#b91c1c", fontWeight: "var(--ds-font-weight-semibold)" }}>
                             Owes {formatTravelMoney(b.owes, primaryCur)}
                           </span>
                         )}
@@ -570,7 +570,7 @@ export default function TripFinanceTabs({
             </div>
             {overview.suggestedSettlements.length > 0 ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
-                <small style={{ color: "var(--ds-text-muted)", fontWeight: 600 }}>SUGGESTED TRANSFERS</small>
+                <small style={{ color: "var(--ds-text-muted)", fontWeight: "var(--ds-font-weight-semibold)" }}>SUGGESTED TRANSFERS</small>
                 {overview.suggestedSettlements.map((s, idx) => (
                   <div
                     key={idx}
@@ -582,12 +582,12 @@ export default function TripFinanceTabs({
                       padding: "8px 10px",
                       borderRadius: 8,
                       border: "1px solid var(--ds-border)",
-                      fontSize: 12.5,
+                      fontSize: "var(--ds-type-body-2-size)", lineHeight: "var(--ds-type-body-2-line-height)",
                     }}
                   >
                     <span>
                       <b>{s.fromName}</b> <ArrowRight size={12} style={{ verticalAlign: "middle" }} /> <b>{s.toName}</b>:{" "}
-                      <span className="ts-num" style={{ fontWeight: 600 }}>
+                      <span className="ts-num" style={{ fontWeight: "var(--ds-font-weight-semibold)" }}>
                         {formatTravelMoney(s.amount, primaryCur)}
                       </span>
                     </span>
@@ -611,14 +611,14 @@ export default function TripFinanceTabs({
                 ))}
               </div>
             ) : (
-              <div style={{ fontSize: 12.5, color: "var(--ds-text-muted)", marginBottom: 10 }}>
+              <div style={{ fontSize: "var(--ds-type-body-2-size)", lineHeight: "var(--ds-type-body-2-line-height)", color: "var(--ds-text-muted)", marginBottom: 10 }}>
                 All shared expenses are settled.
               </div>
             )}
 
             {workspace.settlements.length > 0 && (
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <small style={{ color: "var(--ds-text-muted)", fontWeight: 600 }}>RECORDED SETTLEMENTS</small>
+                <small style={{ color: "var(--ds-text-muted)", fontWeight: "var(--ds-font-weight-semibold)" }}>RECORDED SETTLEMENTS</small>
                 {workspace.settlements.map((st) => (
                   <div
                     key={st.id}
@@ -626,7 +626,7 @@ export default function TripFinanceTabs({
                       display: "flex",
                       justifyContent: "space-between",
                       alignItems: "center",
-                      fontSize: 12,
+                      fontSize: "var(--ds-type-caption-1-size)", lineHeight: "var(--ds-type-caption-1-line-height)",
                       padding: "6px 0",
                       borderBottom: "1px solid var(--ds-border)",
                     }}
@@ -1348,7 +1348,7 @@ function BudgetConfigModal({
                         {!c.isDefault && (
                           <button
                             type="button"
-                            style={{ border: 0, background: "transparent", color: "#b91c1c", cursor: "pointer", fontSize: 11 }}
+                            style={{ border: 0, background: "transparent", color: "#b91c1c", cursor: "pointer", fontSize: "var(--ds-type-caption-1-size)", lineHeight: "var(--ds-type-caption-1-line-height)" }}
                             onClick={() => setCats((prev) => prev.filter((_, i) => i !== idx))}
                           >
                             Remove

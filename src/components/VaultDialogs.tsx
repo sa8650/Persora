@@ -1255,7 +1255,7 @@ export function ItemDetailDialog({ item, familyMembers = [], filePreview, shareA
       iconClassName={`detail-icon ${detailColors[item.section]}`}
       eyebrow={section.eyebrow}
       title={item.title}
-      headerMeta={<Badge variant={shareAccess ? "info-light" : "secondary"} size="sm" radius="full" className="mt-1 tracking-wide">{shareAccess ? <><Share2 size={11} /> {shareAccess.direction === "incoming" ? `SHARED BY ${shareAccess.owner.fullName}` : `SHARED WITH ${shareAccess.recipient.fullName}`}</> : <><LockKeyhole size={11} /> YOUR PRIVATE VAULT</>}</Badge>}
+      headerMeta={<Badge variant={shareAccess ? "info-light" : "secondary"} size="sm" radius="full" className="mt-1 ">{shareAccess ? <><Share2 size={11} /> {shareAccess.direction === "incoming" ? `SHARED BY ${shareAccess.owner.fullName}` : `SHARED WITH ${shareAccess.recipient.fullName}`}</> : <><LockKeyhole size={11} /> YOUR PRIVATE VAULT</>}</Badge>}
       onClose={onClose}
       closeLabel="Close details"
     >

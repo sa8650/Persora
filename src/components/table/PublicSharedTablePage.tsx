@@ -1,7 +1,7 @@
 // Full-Screen Public Shared Table Page (/SharedTable/:token)
 // Renders a dedicated Google Sheets–style spreadsheet / Smart Table view with
 // zero private workspace navigation, supporting Viewer, Commenter, and Editor links.
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./table.css";
 import {
   ArrowUpRight,
@@ -38,6 +38,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/reui/badge";
 import { IconTile } from "@/components/reui/icon-tile";
 import { Spinner } from "@/components/ui/spinner";
+import { Skeleton, SkeletonSuspense } from "skullet/react";
 import { PersoraEmptyState } from "@/design-system";
 
 const SpreadsheetEditor = lazy(() => import("./SpreadsheetEditor"));
@@ -259,10 +260,22 @@ export default function PublicSharedTablePage({
 
   if (loading) {
     return (
-      <main className="tb-public-screen tb-public-centered" aria-busy="true">
-        <div className="tb-loading" role="status">
-          <Spinner className="size-4" /> Opening shared table…
-        </div>
+      <main className="tb-public-screen">
+        <Skeleton loading id="public-table-opening" label="Opening shared table" className="tb-editor">
+          <section className="tb-editor is-spreadsheet" aria-label="Opening shared table">
+            <header className="tb-editor-head">
+              <div className="tb-title-static"><h2>Monthly budget</h2></div>
+            </header>
+            <div className="tb-editor-workspace-row">
+              <div className="tb-editor-main-pane">
+                <p>Item · Owner · Due · Status · Notes</p>
+                <p>Kitchen tiles · Alex · May 12 · Open · Need samples</p>
+                <p>Domain renew · Alex · May 18 · Due · Registrar email</p>
+                <p>Visa photos · Sam · May 20 · Done · Printed</p>
+              </div>
+            </div>
+          </section>
+        </Skeleton>
       </main>
     );
   }
@@ -421,7 +434,7 @@ export default function PublicSharedTablePage({
 
       <div className="tb-public-body">
         <div className="tb-public-editor-wrap tb-view">
-          <Suspense fallback={<div className="tb-loading" role="status"><Spinner className="size-4" /> Loading spreadsheet…</div>}>
+          <SkeletonSuspense id="public-table-canvas" label="Loading spreadsheet">
             {doc.kind === "spreadsheet" ? (
               <SpreadsheetEditor
                 doc={doc}
@@ -448,7 +461,7 @@ export default function PublicSharedTablePage({
                 maxUploadMb={0}
               />
             )}
-          </Suspense>
+          </SkeletonSuspense>
         </div>
 
         {commentsOpen && (

@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
+import { lazy, useCallback, useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import { AlertTriangle, ArrowDownUp, Download, FilePlus2, FileStack, FileText, FolderOpen, FolderInput, Image as ImageIcon, Info, Lock, Pencil, RefreshCw, Search, ShieldCheck, Trash2, Upload, WandSparkles } from "lucide-react";
 import PdfSecurityPanel, { type SecurityMode } from "./PdfSecurityPanel";
 import type { AppUser, PdfStudioDocument, PdfStudioFileMeta, PdfStudioSaveInput, TransferProgress, VaultFolder } from "../types";
@@ -14,6 +14,8 @@ import { Badge } from "@/components/reui/badge";
 import { FileType } from "@/components/reui/file-type";
 import { IconTile } from "@/components/reui/icon-tile";
 import { Spinner } from "@/components/ui/spinner";
+import { Skeleton, SkeletonSuspense } from "skullet/react";
+
 import { PersoraEmptyState } from "@/design-system";
 import "./pdf-studio.css";
 
@@ -283,7 +285,7 @@ export default function PdfStudioView({ user, canUpload, maxUploadMb, onUpgrade,
       </div>
       <div className="section-list-meta"><span><b>{String(visible.length).padStart(2, "0")}</b> {visible.length === 1 ? "PDF" : "PDFs"}{selectedFolderId ? ` in ${folderName(selectedFolderId) || "this folder"}` : ""}</span><span className="list-meta-private"><ShieldCheck size={12}/> Nothing is uploaded until you press Save to Persora</span></div>
 
-      {loading ? <div className="pdfs-grid" aria-busy="true" aria-label="Loading PDFs">{[0, 1, 2, 3].map((key) => <div key={key} className="pdfs-card pdfs-card-skeleton"><div className="pdfs-card-media"/><div className="pdfs-card-body"><span/><span/></div></div>)}</div>
+      {loading ? <Skeleton loading id="pdf-studio-grid" label="Loading PDFs"><div className="pdfs-grid">{["Lease agreement", "Flight itinerary", "Lab results", "Invoice April"].map((title) => <article key={title} className="pdfs-card"><div className="pdfs-card-media" skullet-block="" /><div className="pdfs-card-body"><div className="pdfs-card-title"><h3>{title}</h3></div><p className="pdfs-card-sub">Saved this week</p></div></article>)}</div></Skeleton>
       : loadError ? <PersoraEmptyState role="alert" stacked={false} icon={<AlertTriangle size={20}/>} tone="rose" title="Your PDFs couldn't be loaded" description={loadError} action={<button type="button" className="quiet-button" onClick={() => void loadDocuments()}><RefreshCw size={15}/> Try again</button>}/>
       : visible.length ? <div className="pdfs-grid">{visible.map((doc) => <article key={doc.id} className="pdfs-card">
         <button type="button" className="pdfs-card-media" onClick={() => void openSaved(doc)} aria-label={`Open ${doc.title} in the editor`} disabled={Boolean(opening)}>
@@ -307,15 +309,15 @@ export default function PdfStudioView({ user, canUpload, maxUploadMb, onUpgrade,
       : <PersoraEmptyState className="pdfs-empty" moduleId="pdf-studio" tone="rose" title={documents.length ? "No PDFs match" : "No saved PDFs yet"} description={documents.length ? "Try another search or folder." : "Create a PDF or open one to edit. When you're happy with it, choose Save to Persora to keep it here."}/>}
     </>}
 
-    {createFiles && <Suspense fallback={<div className="pdfs-lazy-fallback" role="status"><Spinner className="size-4"/> Loading Create PDF…</div>}>
+    {createFiles && <SkeletonSuspense id="pdf-create" label="Loading Create PDF">
       <PdfCreateModal
         initialFiles={createFiles}
         onClose={() => setCreateFiles(null)}
         onOpenInEditor={(bytes, title) => { setCreateFiles(null); setEditor({ kind: "created", bytes, title }); }}
         notify={notify}
       />
-    </Suspense>}
-    {editor && <Suspense fallback={<div className="pdfs-lazy-fallback" role="status"><Spinner className="size-4"/> Loading the PDF editor…</div>}>
+    </SkeletonSuspense>}
+    {editor && <SkeletonSuspense id="pdf-editor" label="Loading the PDF editor">
       <PdfEditorModal
         request={editor}
         folders={folders}
@@ -328,7 +330,7 @@ export default function PdfStudioView({ user, canUpload, maxUploadMb, onUpgrade,
         onClose={() => setEditor(null)}
         notify={notify}
       />
-    </Suspense>}
+    </SkeletonSuspense>}
     {detailsFor && <PdfSaveModal
       mode="details"
       folders={folders}

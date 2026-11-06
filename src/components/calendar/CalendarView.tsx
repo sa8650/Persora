@@ -5,6 +5,7 @@ import PageToolbar from "../page-toolbar/PageToolbar";
 import type { AppUser } from "../../types";
 import { PagesApiError, isPagesApiConfigured } from "../../lib/cloud";
 import { Spinner } from "@/components/ui/spinner";
+import { Skeleton } from "skullet/react";
 import {
   CALENDAR_CHANGED_EVENT, checkCalendarConflicts, createCalendarEvent, deleteCalendarEvent, loadCalendarEvent, loadCalendarEvents, loadCalendarMeta,
   loadCalendarPreferences, saveCalendarPreferences, searchCalendarEvents, setCalendarTaskCompletion, updateCalendarEvent,
@@ -526,7 +527,7 @@ export default function CalendarView({ user, notify, focusRequest }: Props) {
             <h2 aria-live="polite">{rangeHeading(mode, anchor)}</h2>
             {!(wide && sidebarOpen) && <ChevronDown size={16} aria-hidden="true"/>}
           </button>
-          {loadState === "loading" && <Spinner className="cal-spinner size-3.5 text-primary" aria-label="Loading events"/>}
+          {loadState === "loading" && rangeReady && <Spinner className="cal-spinner size-3.5 text-primary" aria-label="Refreshing events"/>}
         </div>
       )}
       children={(
@@ -587,11 +588,21 @@ export default function CalendarView({ user, notify, focusRequest }: Props) {
           {emptyRange && (filteredEmpty
             ? <p className="cal-empty-note" role="status">Nothing this {viewLabel === "day" ? "day" : viewLabel} matches your filters. <button type="button" className="cal-link-button" onClick={resetFilters}>Reset filters</button></p>
             : <p className="cal-empty-note" role="status">No events this {viewLabel === "day" ? "day" : viewLabel}. {mode === "month" ? "Click a day to add one." : "Click a time to add one."}</p>)}
-          {(mode === "week" || mode === "day") && <TimeGrid days={days} occurrences={visibleOccurrences} zone={zone} today={today} nowMs={nowMs} highlightId={highlightId} onCreate={openCreate} onSelect={(occurrence, rect) => { setQuick(null); setSelected({ occurrence, anchor: rect }); }} onOpenDay={openDay} onMove={moveDisabled} onInvalidMove={disabled ? undefined : handleInvalidMove} savingIds={savingIds} restoringIds={restoringIds}/>}
-          {mode === "month" && <MonthGrid from={range.from} to={range.to} month={anchor} occurrences={visibleOccurrences} zone={zone} today={today} highlightId={highlightId} onCreate={openCreate} onSelect={(occurrence, rect) => { setQuick(null); setSelected({ occurrence, anchor: rect }); }} onOpenDay={openDay} onMove={moveDisabled} onInvalidMove={disabled ? undefined : handleInvalidMove} savingIds={savingIds} restoringIds={restoringIds}/>}
-          {mode === "agenda" && (rangeReady || loadState !== "loading"
-            ? <AgendaList from={range.from} to={range.to} occurrences={visibleOccurrences} zone={zone} today={today} nowMs={nowMs} highlightId={highlightId} onSelect={(occurrence, rect) => setSelected({ occurrence, anchor: rect })} onCreate={openNewEvent} filtered={occurrences.length > visibleOccurrences.length} onResetFilters={resetFilters} savingIds={savingIds}/>
-            : <div className="cal-agenda-loading" role="status">Loading events…</div>)}
+          {mode === "week" || mode === "day" ? (
+            <Skeleton loading={loadState === "loading" && !rangeReady} id={`calendar-timegrid-${mode}`} label="Loading calendar">
+              <TimeGrid days={days} occurrences={visibleOccurrences} zone={zone} today={today} nowMs={nowMs} highlightId={highlightId} onCreate={openCreate} onSelect={(occurrence, rect) => { setQuick(null); setSelected({ occurrence, anchor: rect }); }} onOpenDay={openDay} onMove={moveDisabled} onInvalidMove={disabled ? undefined : handleInvalidMove} savingIds={savingIds} restoringIds={restoringIds}/>
+            </Skeleton>
+          ) : null}
+          {mode === "month" && (
+            <Skeleton loading={loadState === "loading" && !rangeReady} id="calendar-monthgrid" label="Loading calendar">
+              <MonthGrid from={range.from} to={range.to} month={anchor} occurrences={visibleOccurrences} zone={zone} today={today} highlightId={highlightId} onCreate={openCreate} onSelect={(occurrence, rect) => { setQuick(null); setSelected({ occurrence, anchor: rect }); }} onOpenDay={openDay} onMove={moveDisabled} onInvalidMove={disabled ? undefined : handleInvalidMove} savingIds={savingIds} restoringIds={restoringIds}/>
+            </Skeleton>
+          )}
+          {mode === "agenda" && (
+            <Skeleton loading={loadState === "loading" && !rangeReady} id="calendar-agenda" label="Loading events">
+              <AgendaList from={range.from} to={range.to} occurrences={visibleOccurrences} zone={zone} today={today} nowMs={nowMs} highlightId={highlightId} onSelect={(occurrence, rect) => setSelected({ occurrence, anchor: rect })} onCreate={openNewEvent} filtered={occurrences.length > visibleOccurrences.length} onResetFilters={resetFilters} savingIds={savingIds}/>
+            </Skeleton>
+          )}
         </>}
       </section>
     </div>

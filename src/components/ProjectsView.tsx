@@ -30,9 +30,27 @@ import { Attachment, AttachmentAction, AttachmentActions, AttachmentContent, Att
 import { Checkbox } from "./ui/checkbox";
 import { Progress } from "./ui/progress";
 import { Spinner } from "./ui/spinner";
+import { Skeleton } from "skullet/react";
 import { Badge } from "./reui/badge";
 import { FileType, getFileType } from "./reui/file-type";
 import { IconTile } from "./reui/icon-tile";
+
+const SAMPLE_PROJECTS: ProjectSummary[] = [
+  ["sample-project-1", "Kitchen remodel", "personal", "Finish the downstairs kitchen before summer."],
+  ["sample-project-2", "Website relaunch", "shared", "Ship the new marketing site with the field team."],
+  ["sample-project-3", "Summer trip", "personal", "Flights, stays, and packing for the family holiday."],
+  ["sample-project-4", "Health archive", "personal", "Keep lab results and follow-ups in one place."],
+].map(([id, name, kind, description], index) => ({
+  id,
+  owner_id: "sample-owner",
+  name,
+  description,
+  kind: kind as ProjectKind,
+  created_at: "2026-04-01T10:00:00.000Z",
+  updated_at: "2026-04-12T10:00:00.000Z",
+  access: { owner: true, role: "owner", canCreateFields: true },
+  stats: { fields: 6 + index, completed: 2 + index, inReview: 1, members: kind === "shared" ? 4 : 1, pendingRequests: 0, tasksTotal: 8, tasksCompleted: 3 },
+}));
 
 interface Props { user: AppUser; maxUploadMb?: number; notify: (message: string, kind?: "success" | "error") => void }
 type DetailTab = "overview" | "fields" | "task-list" | "activity";
@@ -302,8 +320,12 @@ export default function ProjectsView({ user, maxUploadMb = 25, notify }: Props) 
           </div>
         </div>
         {listError && <div className="pj-alert" role="alert"><CircleAlert size={15} /> {listError}<button type="button" onClick={() => void refreshList()}>Retry</button></div>}
-        {!projects && !listError && <div className="pj-loading"><Spinner className="size-5 text-primary" /> Loading projects…</div>}
-        {projects && !projects.length && (
+        <Skeleton
+          loading={!projects && !listError}
+          id="projects-home"
+          label="Loading projects"
+          empty={Boolean(projects && !projects.length)}
+          emptyMessage={
           <PersoraEmptyState
             className="pj-empty"
             moduleId="projects"
@@ -312,10 +334,11 @@ export default function ProjectsView({ user, maxUploadMb = 25, notify }: Props) 
             description="Create a personal project to organise field work, or a shared one to bring the team in."
             action={<button type="button" className="pj-primary-button" onClick={() => setModal({ kind: "project", editing: null })}><Plus size={15} /> Create your first project</button>}
           />
-        )}
-        {projects && projects.length > 0 && (
+          }
+        >
+        {(projects && projects.length > 0 ? projects : !projects && !listError ? SAMPLE_PROJECTS : []).length > 0 && (
           <div className="pj-project-grid">
-            {projects.map((project) => {
+            {(projects && projects.length > 0 ? projects : SAMPLE_PROJECTS).map((project) => {
               const priority = priorityMeta(project.priority);
               const tags = Array.isArray(project.tags) ? project.tags.filter(Boolean) : [];
               return (
@@ -356,6 +379,7 @@ export default function ProjectsView({ user, maxUploadMb = 25, notify }: Props) 
             })}
           </div>
         )}
+        </Skeleton>
         {modal?.kind === "project" && <ProjectFormModal busy={busy} editing={null} onClose={() => setModal(null)} onSubmit={async (input) => {
           setBusy(true);
           try {
@@ -420,7 +444,30 @@ export default function ProjectsView({ user, maxUploadMb = 25, notify }: Props) 
         )}
       </div>
 
-      {detailLoading && <div className="pj-loading"><Spinner className="size-5 text-primary" /> Opening project…</div>}
+      {detailLoading && !detail && (
+        <Skeleton loading id="project-detail" label="Loading project summary">
+          <section className="pj-panel">
+            <div className="pj-stats-grid">
+              {[
+                { label: "Active fields", value: "6", note: "Planning, in progress, or paused" },
+                { label: "In review", value: "1", note: "Waiting for sign-off" },
+                { label: "Completed", value: "2", note: "Ready to archive" },
+                { label: "Members", value: "3", note: "Including you" },
+              ].map((card) => (
+                <MagicCard key={card.label} className="pj-stat">
+                  <div className="pj-stat-content">
+                    <div>
+                      <span>{card.label}</span>
+                      <b>{card.value}</b>
+                      <small>{card.note}</small>
+                    </div>
+                  </div>
+                </MagicCard>
+              ))}
+            </div>
+          </section>
+        </Skeleton>
+      )}
       {detailError && <div className="pj-alert" role="alert"><CircleAlert size={15} /> {detailError}<button type="button" onClick={() => void reloadDetail(selectedId)}>Retry</button></div>}
       {listError && <div className="pj-alert" role="alert"><CircleAlert size={15} /> Project summary could not refresh. {listError}<button type="button" onClick={() => void refreshList()}>Retry</button></div>}
 
@@ -1470,7 +1517,9 @@ function ProjectNotificationPreferencesModal({ onClose, notify }: { onClose: () 
   };
   return <ProjectModal title="Project notification preferences" onClose={onClose}>
     <p className="pj-modal-copy">Choose which project events create persistent in-app notifications. Access checks still apply when notifications are opened.</p>
-    {loading ? <div className="pj-loading"><Spinner className="size-4 text-primary"/> Loading preferences…</div> : preferences && <div className="pj-notification-preferences">{rows.map((row) => <label key={row.key}><span><b>{row.label}</b><small>{row.note}</small></span><Checkbox checked={preferences[row.key]} onCheckedChange={(next) => setPreferences((current) => current ? { ...current, [row.key]: next === true } : current)} aria-label={row.label}/></label>)}</div>}
+    <Skeleton loading={loading} id="project-notification-preferences" label="Loading notification preferences">
+      <div className="pj-notification-preferences">{rows.map((row) => <label key={row.key}><span><b>{row.label}</b><small>{row.note}</small></span><Checkbox checked={preferences ? preferences[row.key] : true} onCheckedChange={(next) => setPreferences((current) => current ? { ...current, [row.key]: next === true } : current)} aria-label={row.label} disabled={loading || !preferences}/></label>)}</div>
+    </Skeleton>
     {error && <p className="pj-form-error" role="alert">{error}</p>}
     <div className="pj-modal-actions"><button type="button" className="pj-ghost-button" onClick={onClose} disabled={saving}>Cancel</button><button type="button" className="pj-primary-button" onClick={() => void save()} disabled={loading || saving || !preferences}>{saving ? <Spinner className="size-3.5"/> : <Check size={14}/>} Save preferences</button></div>
   </ProjectModal>;

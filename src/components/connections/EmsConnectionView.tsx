@@ -20,6 +20,7 @@ import { Badge } from "@/components/reui/badge";
 import { FileType, getFileType } from "@/components/reui/file-type";
 import { IconTile } from "@/components/reui/icon-tile";
 import { Spinner } from "@/components/ui/spinner";
+import { Skeleton } from "skullet/react";
 import "./connections.css";
 
 type Notify = (message: string, kind?: "success" | "error") => void;
@@ -206,7 +207,7 @@ export default function EmsConnectionView({ canUpload, notify, onUpgrade, onVaul
       </div>
       <div className="cn-browser-body">
       {filesState.error ? <div className="cn-alert cn-alert-bad"><CircleAlert size={15}/><span>{filesState.error}</span>{filesState.code !== "reauth_required" && <button className="cn-link-button" onClick={() => void loadFiles(0)}>Try again</button>}</div>
-        : !files.length && filesState.loading ? <div className="cn-file-list">{[0, 1, 2, 3].map((i) => <div className="cn-file-row cn-skeleton" key={i}><i/><i/></div>)}</div>
+        : !files.length && filesState.loading ? <Skeleton loading id="ems-files" label="Loading EMS files"><div className="cn-file-list">{["Invoice April.pdf", "Shop receipt.jpg", "Expense claim.xlsx", "Delivery note.pdf"].map((name) => <div className="cn-file-row" key={name}><span className="cn-sk-icon" skullet-block="" /><div className="cn-row-copy"><b>{name}</b><p>Vaultium · 240 KB · Yesterday</p></div></div>)}</div></Skeleton>
           : !files.length ? <div className="cn-empty"><FileText size={22}/><b>{debounced ? "No files match your search." : "No Vaultium files here yet."}</b><span>{debounced ? "Try a different file name, invoice or expense number." : "Files uploaded to Vaultium in EMS appear here."}</span></div>
             : <ul className="cn-file-list">{files.map((file) => <li key={file.id} className="cn-file-row">
               <Attachment size="sm" className="w-full justify-between border-0 bg-transparent px-0">

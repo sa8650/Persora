@@ -225,7 +225,7 @@ function QuickNoteBody({
         onChange={(e) => setDraftTitle(e.target.value)}
         placeholder={pinnedNote ? "Note title" : "New note title…"}
         aria-label="Quick note title"
-        className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-[12.5px] font-medium text-foreground focus:border-primary focus:outline-none"
+        className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-medium text-foreground focus:border-primary focus:outline-none"
       />
       <textarea
         rows={3}
@@ -233,24 +233,24 @@ function QuickNoteBody({
         onChange={(e) => setDraftBody(e.target.value)}
         placeholder="Jot down a thought — saves directly to your Notes vault…"
         aria-label="Quick note content"
-        className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-[12.5px] text-foreground focus:border-primary focus:outline-none"
+        className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] text-foreground focus:border-primary focus:outline-none"
       />
       <div className="flex items-center justify-between gap-2">
         {pinnedNote ? (
           <button
             type="button"
-            className="text-[11.5px] font-medium text-primary hover:underline"
+            className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] font-medium text-primary hover:underline"
             onClick={() => onOpenNote(pinnedNote)}
           >
             Open full note
           </button>
         ) : (
-          <span className="text-[11px] text-muted-foreground">Saves to Tasks &amp; Notes (Notes tab)</span>
+          <span className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">Saves to Tasks &amp; Notes (Notes tab)</span>
         )}
         <button
           type="submit"
           disabled={saving || (!pinnedNote && !draftBody.trim())}
-          className="main-add-button !h-7 !px-3 !text-xs disabled:opacity-50"
+          className="main-add-button !h-7 !px-3 !text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] disabled:opacity-50"
         >
           {saving ? "Saving…" : pinnedNote ? "Update note" : "Save note"}
         </button>
@@ -284,11 +284,11 @@ function NumericHabitControl({
         onChange={(e) => setVal(e.target.value)}
         placeholder={target ? `${target}` : "0"}
         aria-label={`Log ${unit || "value"}`}
-        className="h-7 w-16 rounded-md border border-border bg-background px-2 text-right text-xs text-foreground"
+        className="h-7 w-16 rounded-md border border-border bg-background px-2 text-right text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-foreground"
       />
       <button
         type="button"
-        className="quiet-button !h-7 !px-2 !text-[11px]"
+        className="quiet-button !h-7 !px-2 !text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]"
         onClick={() => {
           const parsed = Number(val);
           if (Number.isFinite(parsed) && parsed >= 0) onSave(parsed);
@@ -422,7 +422,7 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
                 key={def.id}
                 type="button"
                 onClick={() => runQuickAction(def.id)}
-                className="inline-flex items-center gap-2 rounded-full border border-border bg-secondary px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary/50 hover:bg-accent"
+                className="inline-flex items-center gap-2 rounded-full border border-border bg-secondary px-3 py-1.5 text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] font-medium text-foreground transition-colors hover:border-primary/50 hover:bg-accent"
               >
                 <Icon size={13} className="text-primary" />
                 <span>{def.label}</span>
@@ -438,11 +438,11 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
                   <Icon size={15} />
                 </IconTile>
                 <span className="min-w-0 flex-1">
-                  <strong className="block truncate text-[12.5px] font-semibold text-foreground">
+                  <strong className="block truncate text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-semibold text-foreground">
                     {def.label}
                   </strong>
                   {showDesc && (
-                    <small className="block truncate text-[11px] text-muted-foreground">{def.hint}</small>
+                    <small className="block truncate text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">{def.hint}</small>
                   )}
                 </span>
                 <ArrowUpRight size={14} className="shrink-0 text-muted-foreground" />
@@ -470,7 +470,7 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
           emptyTitle="Sign in to sync your Calendar"
           emptyDescription="Persora Calendar events, appointments, and recurring schedules appear here when signed in."
           emptyAction={
-            <button type="button" className="quiet-button !h-8 !px-3 !text-xs" onClick={() => actions.onNavigate("calendar")}>
+            <button type="button" className="quiet-button !h-8 !px-3 !text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]" onClick={() => actions.onNavigate("calendar")}>
               Open Calendar
             </button>
           }
@@ -514,7 +514,7 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
         emptyAction={
           <button
             type="button"
-            className="quiet-button !h-8 !px-3 !text-xs"
+            className="quiet-button !h-8 !px-3 !text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]"
             onClick={() => actions.onNavigateCalendar(today)}
           >
             <Plus size={13} /> Add calendar event
@@ -548,10 +548,10 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
                   <CalendarDays size={13} />
                 </IconTile>
                 <span className="min-w-0 flex-1">
-                  <strong className="block truncate text-[12.5px] font-semibold text-foreground">
+                  <strong className="block truncate text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-semibold text-foreground">
                     {occ.event.title}
                   </strong>
-                  <small className="block truncate text-[11px] text-muted-foreground">
+                  <small className="block truncate text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">
                     {shortDate(occDate)} · {timeText}
                     {cfg.showLocation !== false && occ.event.location ? ` · ${occ.event.location}` : ""}
                   </small>
@@ -684,7 +684,7 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
         emptyAction={
           <button
             type="button"
-            className="quiet-button !h-8 !px-3 !text-xs"
+            className="quiet-button !h-8 !px-3 !text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]"
             onClick={() => actions.onAddTodo("todo")}
           >
             <Plus size={13} /> New task
@@ -710,13 +710,13 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
                   className="min-w-0 flex-1 text-left"
                 >
                   <strong
-                    className={`block truncate text-[12.5px] font-semibold ${
+                    className={`block truncate text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-semibold ${
                       task.completed ? "line-through text-muted-foreground" : "text-foreground"
                     }`}
                   >
                     {task.title}
                   </strong>
-                  <small className="block truncate text-[11px] text-muted-foreground">
+                  <small className="block truncate text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">
                     {task.sourceLabel}
                     {task.dueDate ? ` · Due ${shortDate(task.dueDate)}` : ""}
                   </small>
@@ -751,7 +751,7 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
           emptyTitle="Sign in to track daily habits"
           emptyDescription="Persora Habit Tracker streaks, targets, and daily check-ins sync with your account."
           emptyAction={
-            <button type="button" className="quiet-button !h-8 !px-3 !text-xs" onClick={() => actions.onNavigate("habits")}>
+            <button type="button" className="quiet-button !h-8 !px-3 !text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]" onClick={() => actions.onNavigate("habits")}>
               Open Habit Tracker
             </button>
           }
@@ -798,7 +798,7 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
         emptyAction={
           <button
             type="button"
-            className="quiet-button !h-8 !px-3 !text-xs"
+            className="quiet-button !h-8 !px-3 !text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]"
             onClick={() => actions.onNavigateHabits(habitToday)}
           >
             <Plus size={13} /> Add habit
@@ -832,13 +832,13 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
                   className="min-w-0 flex-1 text-left"
                 >
                   <strong
-                    className={`block truncate text-[12.5px] font-semibold ${
+                    className={`block truncate text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-semibold ${
                       isCompleted ? "text-muted-foreground" : "text-foreground"
                     }`}
                   >
                     {habit.name}
                   </strong>
-                  <small className="block truncate text-[11px] text-muted-foreground">
+                  <small className="block truncate text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">
                     {habit.tracking === "numeric" && habit.targetValue
                       ? `Target: ${todayCheckin?.value || 0} / ${habit.targetValue} ${habit.unit || ""}`
                       : isCompleted
@@ -977,7 +977,7 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
         emptyAction={
           <button
             type="button"
-            className="quiet-button !h-8 !px-3 !text-xs"
+            className="quiet-button !h-8 !px-3 !text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]"
             onClick={() => actions.onAddTodo("reminder")}
           >
             <BellRing size={13} /> Add reminder
@@ -993,10 +993,10 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
                 <BellRing size={13} />
               </IconTile>
               <span className="min-w-0 flex-1">
-                <strong className="block truncate text-[12.5px] font-semibold text-foreground">
+                <strong className="block truncate text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-semibold text-foreground">
                   {rem.title}
                 </strong>
-                <small className="block truncate text-[11px] text-muted-foreground">
+                <small className="block truncate text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">
                   {rem.source} · {rem.at.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}
                 </small>
               </span>
@@ -1132,10 +1132,10 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
                 </IconTile>
               )}
               <span className="min-w-0 flex-1">
-                <strong className="block truncate text-[12.5px] font-semibold text-foreground">
+                <strong className="block truncate text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-semibold text-foreground">
                   {entry.title}
                 </strong>
-                <small className="block truncate text-[11px] text-muted-foreground">{entry.subtitle}</small>
+                <small className="block truncate text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">{entry.subtitle}</small>
               </span>
               <ArrowUpRight size={14} className="shrink-0 text-muted-foreground" />
             </button>
@@ -1155,7 +1155,7 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
           emptyTitle="Sign in to view Projects"
           emptyDescription="Persora Projects boards, fields, and task progress sync with your Persora account."
           emptyAction={
-            <button type="button" className="quiet-button !h-8 !px-3 !text-xs" onClick={() => actions.onNavigate("projects")}>
+            <button type="button" className="quiet-button !h-8 !px-3 !text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]" onClick={() => actions.onNavigate("projects")}>
               Open Projects
             </button>
           }
@@ -1198,7 +1198,7 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
         emptyTitle="No projects found"
         emptyDescription="Create a project to track milestones, fields, and collaborative tasks."
         emptyAction={
-          <button type="button" className="quiet-button !h-8 !px-3 !text-xs" onClick={() => actions.onNavigate("projects")}>
+          <button type="button" className="quiet-button !h-8 !px-3 !text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]" onClick={() => actions.onNavigate("projects")}>
             Open Projects
           </button>
         }
@@ -1216,13 +1216,13 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
                 className="flex w-full flex-col gap-2 rounded-xl border border-border bg-secondary/40 p-3 text-left transition-colors hover:border-primary/40"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <strong className="truncate text-[12.5px] font-semibold text-foreground">{proj.name}</strong>
+                  <strong className="truncate text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-semibold text-foreground">{proj.name}</strong>
                   <Badge variant={pct >= 100 ? "success-light" : "primary-light"} size="xs" radius="full">
                     {pct}%
                   </Badge>
                 </div>
                 <Progress value={pct} aria-label={`${proj.name} completion`} />
-                <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                <div className="flex items-center justify-between text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">
                   <span>
                     {proj.stats.completed}/{proj.stats.fields} fields complete
                   </span>
@@ -1267,10 +1267,10 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
               }
             >
               <span className="min-w-0 flex-1">
-                <strong className="block truncate text-[12.5px] font-semibold text-foreground">
+                <strong className="block truncate text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-semibold text-foreground">
                   {ev.projectName || ev.actorName}
                 </strong>
-                <small className="block truncate text-[11px] text-muted-foreground">{ev.message}</small>
+                <small className="block truncate text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">{ev.message}</small>
               </span>
               <Badge variant={!ev.readAt ? "primary-light" : "secondary"} size="xs" radius="full">
                 {shortDate(ev.createdAt)}
@@ -1336,8 +1336,8 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
                   </IconTile>
                 )}
                 <span className="min-w-0 flex-1">
-                  <strong className="block truncate text-[12.5px] font-semibold text-foreground">{item.title}</strong>
-                  <small className="block truncate text-[11px] text-muted-foreground">
+                  <strong className="block truncate text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-semibold text-foreground">{item.title}</strong>
+                  <small className="block truncate text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">
                     {item.metadata.type || SECTION_BY_ID[item.section].label} · Expires {shortDate(item.metadata.expiryDate)}
                   </small>
                 </span>
@@ -1375,7 +1375,7 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
         emptyTitle="No documents saved yet"
         emptyDescription="Upload or Smart Scan passports, IDs, and certificates into Documents."
         emptyAction={
-          <button type="button" className="quiet-button !h-8 !px-3 !text-xs" onClick={actions.onAddDocument}>
+          <button type="button" className="quiet-button !h-8 !px-3 !text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]" onClick={actions.onAddDocument}>
             <Plus size={13} /> Add document
           </button>
         }
@@ -1395,8 +1395,8 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
                   </IconTile>
                 )}
                 <span className="min-w-0 flex-1">
-                  <strong className="block truncate text-[12.5px] font-semibold text-foreground">{doc.title}</strong>
-                  <small className="block truncate text-[11px] text-muted-foreground">
+                  <strong className="block truncate text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-semibold text-foreground">{doc.title}</strong>
+                  <small className="block truncate text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">
                     {doc.metadata.type || "Document"}
                     {doc.metadata.documentNumber ? ` · ${doc.metadata.documentNumber}` : ""}
                   </small>
@@ -1459,8 +1459,8 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
                   <Folder size={13} />
                 </IconTile>
                 <span className="min-w-0 flex-1">
-                  <strong className="block truncate text-[12.5px] font-semibold text-foreground">{folder.name}</strong>
-                  <small className="block truncate text-[11px] text-muted-foreground capitalize">
+                  <strong className="block truncate text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-semibold text-foreground">{folder.name}</strong>
+                  <small className="block truncate text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground capitalize">
                     {folder.scope.replace(/-/g, " ")}
                   </small>
                 </span>
@@ -1529,7 +1529,7 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
         emptyTitle="No family records yet"
         emptyDescription="Add family members and link their passports, IDs, or insurance papers."
         emptyAction={
-          <button type="button" className="quiet-button !h-8 !px-3 !text-xs" onClick={() => actions.onAdd("family")}>
+          <button type="button" className="quiet-button !h-8 !px-3 !text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]" onClick={() => actions.onAdd("family")}>
             <Plus size={13} /> Add family member
           </button>
         }
@@ -1543,8 +1543,8 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
                 <Heart size={13} />
               </IconTile>
               <span className="min-w-0 flex-1">
-                <strong className="block truncate text-[12.5px] font-semibold text-foreground">{g.name}</strong>
-                <small className="block truncate text-[11px] text-muted-foreground">
+                <strong className="block truncate text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-semibold text-foreground">{g.name}</strong>
+                <small className="block truncate text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">
                   {g.relation} · {g.count} document{g.count === 1 ? "" : "s"}
                 </small>
               </span>
@@ -1583,7 +1583,7 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
         emptyTitle="No academic records"
         emptyDescription="Keep certificates, transcripts, degrees, and mark sheets organized."
         emptyAction={
-          <button type="button" className="quiet-button !h-8 !px-3 !text-xs" onClick={() => actions.onAdd("academics")}>
+          <button type="button" className="quiet-button !h-8 !px-3 !text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]" onClick={() => actions.onAdd("academics")}>
             <Plus size={13} /> Add academic record
           </button>
         }
@@ -1601,8 +1601,8 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
                 </IconTile>
               )}
               <span className="min-w-0 flex-1">
-                <strong className="block truncate text-[12.5px] font-semibold text-foreground">{rec.title}</strong>
-                <small className="block truncate text-[11px] text-muted-foreground">
+                <strong className="block truncate text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-semibold text-foreground">{rec.title}</strong>
+                <small className="block truncate text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">
                   {[rec.metadata.institution, rec.metadata.year].filter(Boolean).join(" · ") || rec.metadata.type || "Academic"}
                 </small>
               </span>
@@ -1660,8 +1660,8 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
                   </IconTile>
                 )}
                 <span className="min-w-0 flex-1">
-                  <strong className="block truncate text-[12.5px] font-semibold text-foreground">{item.title}</strong>
-                  <small className="block truncate text-[11px] text-muted-foreground">
+                  <strong className="block truncate text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-semibold text-foreground">{item.title}</strong>
+                  <small className="block truncate text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">
                     {[item.metadata.brand, item.metadata.seller].filter(Boolean).join(" · ") || "Purchase"} ·{" "}
                     {shortDate(item.metadata.warrantyExpiry)}
                   </small>
@@ -1706,7 +1706,7 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
         emptyTitle="No uploaded attachments yet"
         emptyDescription="Files and scans attached to your vault records appear here."
         emptyAction={
-          <button type="button" className="quiet-button !h-8 !px-3 !text-xs" onClick={actions.onAddDocument}>
+          <button type="button" className="quiet-button !h-8 !px-3 !text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]" onClick={actions.onAddDocument}>
             <Plus size={13} /> Add document
           </button>
         }
@@ -1716,10 +1716,10 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
             <button key={item.id} type="button" className="ds-widget-row" onClick={() => actions.onOpenItem(item)}>
               <FileType type={getFileType(item.file?.name || "")} size="mini" variant="light" aria-hidden />
               <span className="min-w-0 flex-1">
-                <strong className="block truncate text-[12.5px] font-semibold text-foreground">
+                <strong className="block truncate text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-semibold text-foreground">
                   {item.file?.name || item.title}
                 </strong>
-                <small className="block truncate text-[11px] text-muted-foreground">
+                <small className="block truncate text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">
                   {item.title} · {SECTION_BY_ID[item.section].label}
                 </small>
               </span>
@@ -1743,7 +1743,7 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
           emptyTitle="Sign in to view Loan Tracker"
           emptyDescription="Persora Loan Tracker schedules, repayments, and overdue alerts sync with your account."
           emptyAction={
-            <button type="button" className="quiet-button !h-8 !px-3 !text-xs" onClick={() => actions.onNavigate("loans")}>
+            <button type="button" className="quiet-button !h-8 !px-3 !text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]" onClick={() => actions.onNavigate("loans")}>
               Open Loan Tracker
             </button>
           }
@@ -1798,8 +1798,8 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <strong className="block truncate text-[12.5px] font-semibold text-foreground">{loan.name}</strong>
-                    <small className="block truncate text-[11px] text-muted-foreground">
+                    <strong className="block truncate text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-semibold text-foreground">{loan.name}</strong>
+                    <small className="block truncate text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">
                       {loan.direction === "borrowed" ? "Borrowed from" : "Lent to"} {loan.partyName || "counterparty"} ·{" "}
                       {formatMoney(next.remaining, loan.currency)} due {shortDate(next.dueDate)}
                     </small>
@@ -1846,7 +1846,7 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
         emptyTitle="No renewals in this window"
         emptyDescription="Track streaming, cloud, and utility plans in Subscriptions."
         emptyAction={
-          <button type="button" className="quiet-button !h-8 !px-3 !text-xs" onClick={() => actions.onAdd("subscriptions")}>
+          <button type="button" className="quiet-button !h-8 !px-3 !text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]" onClick={() => actions.onAdd("subscriptions")}>
             <Plus size={13} /> Add subscription
           </button>
         }
@@ -1859,8 +1859,8 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
             return (
               <button key={item.id} type="button" className="ds-widget-row" onClick={() => actions.onOpenItem(item)}>
                 <span className="min-w-0 flex-1">
-                  <strong className="block truncate text-[12.5px] font-semibold text-foreground">{item.title}</strong>
-                  <small className="block truncate text-[11px] text-muted-foreground">
+                  <strong className="block truncate text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-semibold text-foreground">{item.title}</strong>
+                  <small className="block truncate text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">
                     {[item.metadata.price, item.metadata.cycle, `Renews ${shortDate(item.metadata.renewalDate)}`]
                       .filter(Boolean)
                       .join(" · ")}
@@ -1962,8 +1962,8 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
                   {entry.kind === "loan" ? <HandCoins size={13} /> : <CalendarClock size={13} />}
                 </IconTile>
                 <span className="min-w-0 flex-1">
-                  <strong className="block truncate text-[12.5px] font-semibold text-foreground">{entry.title}</strong>
-                  <small className="block truncate text-[11px] text-muted-foreground">
+                  <strong className="block truncate text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-semibold text-foreground">{entry.title}</strong>
+                  <small className="block truncate text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">
                     {entry.metaText} · {shortDate(entry.dueDate)}
                   </small>
                 </span>
@@ -2008,9 +2008,9 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
             onClick={() => actions.onNavigate("subscriptions")}
             className="rounded-xl border border-border bg-secondary/50 p-3 text-left hover:border-primary/40"
           >
-            <span className="text-[11px] font-medium text-muted-foreground">Subscriptions</span>
-            <strong className="mt-1 block text-lg font-bold text-foreground">{subs.length}</strong>
-            <small className="text-[11px] text-muted-foreground">{subsDueSoon} due in {windowDays}d</small>
+            <span className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] font-medium text-muted-foreground">Subscriptions</span>
+            <strong className="mt-1 block text-[length:var(--ds-type-title-3-size)] leading-[var(--ds-type-title-3-line-height)] font-bold text-foreground">{subs.length}</strong>
+            <small className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">{subsDueSoon} due in {windowDays}d</small>
           </button>
 
           <button
@@ -2018,11 +2018,11 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
             onClick={() => actions.onNavigate("loans")}
             className="rounded-xl border border-border bg-secondary/50 p-3 text-left hover:border-primary/40"
           >
-            <span className="text-[11px] font-medium text-muted-foreground">Active loans</span>
-            <strong className="mt-1 block text-lg font-bold text-foreground">
+            <span className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] font-medium text-muted-foreground">Active loans</span>
+            <strong className="mt-1 block text-[length:var(--ds-type-title-3-size)] leading-[var(--ds-type-title-3-line-height)] font-bold text-foreground">
               {data.loans.accountRequired ? "—" : activeLoans.length}
             </strong>
-            <small className="text-[11px] text-muted-foreground">
+            <small className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">
               {data.loans.accountRequired ? "Account sync" : `${overdueInstallments} overdue`}
             </small>
           </button>
@@ -2032,11 +2032,11 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
             onClick={() => actions.onNavigate("purchases")}
             className="rounded-xl border border-border bg-secondary/50 p-3 text-left hover:border-primary/40"
           >
-            <span className="text-[11px] font-medium text-muted-foreground">Purchases tracked</span>
-            <strong className="mt-1 block text-lg font-bold text-foreground">
+            <span className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] font-medium text-muted-foreground">Purchases tracked</span>
+            <strong className="mt-1 block text-[length:var(--ds-type-title-3-size)] leading-[var(--ds-type-title-3-line-height)] font-bold text-foreground">
               {items.filter((i) => i.section === "purchases").length}
             </strong>
-            <small className="text-[11px] text-muted-foreground">Invoices &amp; warranties</small>
+            <small className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">Invoices &amp; warranties</small>
           </button>
 
           <button
@@ -2044,9 +2044,9 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
             onClick={() => actions.onNavigate("personal-finance")}
             className="rounded-xl border border-border bg-secondary/50 p-3 text-left hover:border-primary/40"
           >
-            <span className="text-[11px] font-medium text-muted-foreground">Finance records</span>
-            <strong className="mt-1 block text-lg font-bold text-foreground">{financeItems.length}</strong>
-            <small className="text-[11px] text-muted-foreground">Income, expenses &amp; assets</small>
+            <span className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] font-medium text-muted-foreground">Finance records</span>
+            <strong className="mt-1 block text-[length:var(--ds-type-title-3-size)] leading-[var(--ds-type-title-3-line-height)] font-bold text-foreground">{financeItems.length}</strong>
+            <small className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">Income, expenses &amp; assets</small>
           </button>
         </div>
       </DashboardWidget>
@@ -2078,7 +2078,7 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
         emptyTitle="No saved links match"
         emptyDescription="Save personal portals, portfolios, and bookmarks in URL Manager."
         emptyAction={
-          <button type="button" className="quiet-button !h-8 !px-3 !text-xs" onClick={() => actions.onAdd("urls")}>
+          <button type="button" className="quiet-button !h-8 !px-3 !text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]" onClick={() => actions.onAdd("urls")}>
             <Plus size={13} /> Save URL
           </button>
         }
@@ -2095,10 +2095,10 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
                   onClick={() => actions.onOpenItem(linkItem)}
                   className="min-w-0 flex-1 text-left"
                 >
-                  <strong className="block truncate text-[12.5px] font-semibold text-foreground">
+                  <strong className="block truncate text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-semibold text-foreground">
                     {linkItem.title}
                   </strong>
-                  <small className="block truncate text-[11px] text-muted-foreground">
+                  <small className="block truncate text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">
                     {linkItem.metadata.urlCategory || linkItem.metadata.url || "Saved link"}
                   </small>
                 </button>
@@ -2141,7 +2141,7 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
         emptyTitle="No memberships saved"
         emptyDescription="Store library, gym, club, and loyalty cards in Membership Wallet."
         emptyAction={
-          <button type="button" className="quiet-button !h-8 !px-3 !text-xs" onClick={() => actions.onAdd("memberships")}>
+          <button type="button" className="quiet-button !h-8 !px-3 !text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]" onClick={() => actions.onAdd("memberships")}>
             <Plus size={13} /> Add membership
           </button>
         }
@@ -2154,8 +2154,8 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
             return (
               <button key={mem.id} type="button" className="ds-widget-row" onClick={() => actions.onOpenItem(mem)}>
                 <span className="min-w-0 flex-1">
-                  <strong className="block truncate text-[12.5px] font-semibold text-foreground">{mem.title}</strong>
-                  <small className="block truncate text-[11px] text-muted-foreground">
+                  <strong className="block truncate text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-semibold text-foreground">{mem.title}</strong>
+                  <small className="block truncate text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">
                     {[
                       mem.metadata.organization || mem.metadata.type,
                       showMemberId ? mem.metadata.memberId : "",
@@ -2215,12 +2215,12 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
               className="ds-widget-row"
               onClick={() => actions.onNavigate("contacts")}
             >
-              <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-[11px] font-bold text-accent-foreground">
+              <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] font-bold text-accent-foreground">
                 {contact.name.slice(0, 2).toUpperCase()}
               </span>
               <span className="min-w-0 flex-1">
-                <strong className="block truncate text-[12.5px] font-semibold text-foreground">{contact.name}</strong>
-                <small className="block truncate text-[11px] text-muted-foreground">
+                <strong className="block truncate text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-semibold text-foreground">{contact.name}</strong>
+                <small className="block truncate text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">
                   {[contact.jobTitle, contact.company, contact.phoneNumbers[0]?.number || contact.email]
                     .filter(Boolean)
                     .join(" · ") || contact.category}
@@ -2260,8 +2260,8 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
               <FileStack size={15} />
             </IconTile>
             <span className="min-w-0 flex-1">
-              <strong className="block text-[12.5px] font-semibold text-foreground">Create, merge or edit PDF</strong>
-              <small className="block truncate text-[11px] text-muted-foreground">
+              <strong className="block text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-semibold text-foreground">Create, merge or edit PDF</strong>
+              <small className="block truncate text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">
                 Page organizer, watermarks &amp; PDF security
               </small>
             </span>
@@ -2277,8 +2277,8 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
             >
               <FileType type="pdf" size="mini" variant="light" aria-hidden />
               <span className="min-w-0 flex-1">
-                <strong className="block truncate text-[12px] font-medium text-foreground">{doc.title}</strong>
-                <small className="block truncate text-[10.5px] text-muted-foreground">
+                <strong className="block truncate text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] font-medium text-foreground">{doc.title}</strong>
+                <small className="block truncate text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">
                   {pageCountLabel(doc.pageCount)} · {formatBytes(doc.fileSize)}
                 </small>
               </span>
@@ -2310,8 +2310,8 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
             className="ds-widget-row"
           >
             <span className="min-w-0 flex-1">
-              <strong className="block text-[12.5px] font-semibold text-foreground">Prepare official photo</strong>
-              <small className="block truncate text-[11px] text-muted-foreground">
+              <strong className="block text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-semibold text-foreground">Prepare official photo</strong>
+              <small className="block truncate text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">
                 Passport, visa, ID card &amp; 300 DPI sizing
               </small>
             </span>
@@ -2326,8 +2326,8 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
               className="ds-widget-row"
             >
               <span className="min-w-0 flex-1">
-                <strong className="block truncate text-[12px] font-medium text-foreground">{photo.title}</strong>
-                <small className="block truncate text-[10.5px] text-muted-foreground">
+                <strong className="block truncate text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] font-medium text-foreground">{photo.title}</strong>
+                <small className="block truncate text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">
                   {photoCategoryLabel(photo.category)} · {formatDimensions(photo.width, photo.height)}
                 </small>
               </span>
@@ -2353,21 +2353,21 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
             <IconTile variant="soft" size="xs" className="ds-tone-emerald" aria-hidden="true">
               <ShieldCheck size={13} />
             </IconTile>
-            <p className="text-[11.5px] leading-relaxed text-muted-foreground">
+            <p className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">
               Protected health archive. Diagnoses, prescriptions, and clinical notes are hidden on your dashboard for privacy.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              className="quiet-button !h-8 !px-3 !text-xs"
+              className="quiet-button !h-8 !px-3 !text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]"
               onClick={() => actions.onNavigate("medical-records")}
             >
               View archive
             </button>
             <button
               type="button"
-              className="main-add-button !h-8 !px-3 !text-xs"
+              className="main-add-button !h-8 !px-3 !text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]"
               onClick={actions.onAddMedicalRecord}
             >
               <Plus size={13} /> Add record
@@ -2399,10 +2399,10 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
                 <Lock size={14} />
               </IconTile>
               <div className="min-w-0">
-                <strong className="block truncate text-[12.5px] font-semibold text-foreground">
+                <strong className="block truncate text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-semibold text-foreground">
                   {status?.hasVault ? "Locked · Master password required" : "Master password not set up"}
                 </strong>
-                <small className="block truncate text-[11px] text-muted-foreground">
+                <small className="block truncate text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">
                   {status?.hasVault
                     ? showCount
                       ? `${status.records} saved login${status.records === 1 ? "" : "s"} · Passwords never shown here`
@@ -2445,10 +2445,10 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
         <div className="space-y-2.5">
           <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-secondary/50 p-3">
             <div className="min-w-0">
-              <strong className="block truncate text-[12.5px] font-semibold text-foreground">
+              <strong className="block truncate text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-semibold text-foreground">
                 {drive?.name || "Google Drive"}
               </strong>
-              <small className="block text-[11px] text-muted-foreground">
+              <small className="block text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">
                 {drive?.description || "Bring files from your Drive into Persora."}
               </small>
             </div>
@@ -2482,7 +2482,7 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
         <div className="space-y-3">
           {usage && (
             <div className="space-y-1.5 rounded-xl border border-border bg-secondary/40 p-3">
-              <div className="flex items-center justify-between text-xs">
+              <div className="flex items-center justify-between text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]">
                 <strong className="font-semibold text-foreground">{usage.planName} storage</strong>
                 <span className="text-muted-foreground">
                   {formatBytes(usage.bytesUsed)} of {usage.storageLimitGb} GB
@@ -2499,7 +2499,7 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
                   key={prov.id}
                   type="button"
                   onClick={() => actions.onNavigate("connections")}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-border bg-secondary px-2.5 py-1 text-[11px] font-medium text-foreground hover:border-primary/40"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-border bg-secondary px-2.5 py-1 text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] font-medium text-foreground hover:border-primary/40"
                 >
                   <Plug size={11} className="text-primary" />
                   <span>{prov.name}</span>
@@ -2557,8 +2557,8 @@ export function DashboardWidgetCard(props: RenderWidgetCardProps) {
                   <Plug size={13} />
                 </IconTile>
                 <span className="min-w-0 flex-1">
-                  <strong className="block truncate text-[12.5px] font-semibold text-foreground">{prov.name}</strong>
-                  <small className="block truncate text-[11px] text-muted-foreground">
+                  <strong className="block truncate text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-semibold text-foreground">{prov.name}</strong>
+                  <small className="block truncate text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">
                     {prov.connection?.account?.email
                       ? `${prov.connection.account.email}`
                       : prov.description}

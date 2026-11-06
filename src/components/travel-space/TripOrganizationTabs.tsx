@@ -188,7 +188,7 @@ export default function TripOrganizationTabs({
         </div>
 
         {visible.length === 0 ? (
-          <div className="ts-panel" style={{ color: "var(--ds-text-muted)", fontSize: 13 }}>
+          <div className="ts-panel" style={{ color: "var(--ds-text-muted)", fontSize: "var(--ds-type-body-2-size)", lineHeight: "var(--ds-type-body-2-line-height)" }}>
             No bookings saved yet. Record flights, hotels, trains, buses, car rentals, or activity reservations manually.
           </div>
         ) : (
@@ -197,10 +197,10 @@ export default function TripOrganizationTabs({
               <div key={b.id} className="ts-panel" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
                   <div>
-                    <small style={{ color: "var(--ds-text-muted)", fontWeight: 600 }}>
+                    <small style={{ color: "var(--ds-text-muted)", fontWeight: "var(--ds-font-weight-semibold)" }}>
                       {BOOKING_CAT_LABELS[b.category].toUpperCase()}
                     </small>
-                    <h4 style={{ margin: "2px 0 0", fontSize: 14.5 }}>{b.title}</h4>
+                    <h4 style={{ margin: "2px 0 0", fontSize: "var(--ds-type-headline-size)", lineHeight: "var(--ds-type-headline-line-height)" }}>{b.title}</h4>
                   </div>
                   <span
                     className={`ts-status-pill ts-status-${
@@ -231,7 +231,7 @@ export default function TripOrganizationTabs({
                   )}
                 </div>
 
-                {b.location && <div style={{ fontSize: 12.5, color: "var(--ds-text-secondary)" }}>{b.location}</div>}
+                {b.location && <div style={{ fontSize: "var(--ds-type-body-2-size)", lineHeight: "var(--ds-type-body-2-line-height)", color: "var(--ds-text-secondary)" }}>{b.location}</div>}
 
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
                   {b.hasAttachment && (
@@ -314,8 +314,8 @@ export default function TripOrganizationTabs({
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <div className="ts-header-row">
           <div>
-            <strong style={{ fontSize: 14.5 }}>Trip Travellers &amp; Access Roles ({workspace.travellers.length})</strong>
-            <div style={{ fontSize: 12, color: "var(--ds-text-muted)" }}>
+            <strong style={{ fontSize: "var(--ds-type-headline-size)", lineHeight: "var(--ds-type-headline-line-height)" }}>Trip Travellers &amp; Access Roles ({workspace.travellers.length})</strong>
+            <div style={{ fontSize: "var(--ds-type-caption-1-size)", lineHeight: "var(--ds-type-caption-1-line-height)", color: "var(--ds-text-muted)" }}>
               Roles are enforced server-side: Owner · Editor · Expense Contributor · Viewer
             </div>
           </div>
@@ -368,7 +368,7 @@ export default function TripOrganizationTabs({
                           <select
                             aria-label={`Role for ${tr.fullName}`}
                             className="ts-select"
-                            style={{ height: 28, fontSize: 12, width: "auto" }}
+                            style={{ height: 28, fontSize: "var(--ds-type-body-2-size)", lineHeight: "var(--ds-type-body-2-line-height)", width: "auto" }}
                             value={tr.role}
                             onChange={async (e) => {
                               try {
@@ -479,8 +479,8 @@ export default function TripOrganizationTabs({
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <div className="ts-header-row">
         <div>
-          <strong style={{ fontSize: 14.5 }}>Travel Documents ({workspace.documents.length})</strong>
-          <div style={{ fontSize: 12, color: "var(--ds-text-muted)" }}>
+          <strong style={{ fontSize: "var(--ds-type-headline-size)", lineHeight: "var(--ds-type-headline-line-height)" }}>Travel Documents ({workspace.documents.length})</strong>
+          <div style={{ fontSize: "var(--ds-type-caption-1-size)", lineHeight: "var(--ds-type-caption-1-line-height)", color: "var(--ds-text-muted)" }}>
             Upload trip documents or link existing Persora Documents without duplicating files.
           </div>
         </div>
@@ -499,7 +499,7 @@ export default function TripOrganizationTabs({
       </div>
 
       {workspace.documents.length === 0 ? (
-        <div className="ts-panel" style={{ fontSize: 13, color: "var(--ds-text-muted)" }}>
+        <div className="ts-panel" style={{ fontSize: "var(--ds-type-body-2-size)", lineHeight: "var(--ds-type-body-2-line-height)", color: "var(--ds-text-muted)" }}>
           No documents attached yet. Link Passports, Visas, National IDs, Insurance, or Tickets from Persora Documents or upload new files.
         </div>
       ) : (
@@ -514,10 +514,10 @@ export default function TripOrganizationTabs({
               <div key={doc.id} className="ts-panel" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                   <div>
-                    <small style={{ color: "var(--ds-text-muted)", fontWeight: 600 }}>
+                    <small style={{ color: "var(--ds-text-muted)", fontWeight: "var(--ds-font-weight-semibold)" }}>
                       {DOC_CAT_LABELS[doc.docCategory].toUpperCase()}
                     </small>
-                    <h4 style={{ margin: "2px 0 0", fontSize: 14.5 }}>{doc.title}</h4>
+                    <h4 style={{ margin: "2px 0 0", fontSize: "var(--ds-type-headline-size)", lineHeight: "var(--ds-type-headline-line-height)" }}>{doc.title}</h4>
                   </div>
                   <span className="ts-status-pill">
                     {doc.sourceType === "vault_item" ? (
@@ -545,7 +545,7 @@ export default function TripOrganizationTabs({
                   {doc.isPrivate && <span>Private</span>}
                 </div>
 
-                {doc.notes && <div style={{ fontSize: 12, color: "var(--ds-text-secondary)" }}>{doc.notes}</div>}
+                {doc.notes && <div style={{ fontSize: "var(--ds-type-caption-1-size)", lineHeight: "var(--ds-type-caption-1-line-height)", color: "var(--ds-text-secondary)" }}>{doc.notes}</div>}
 
                 <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
                   {linkedVault && onOpenVaultItem ? (

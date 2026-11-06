@@ -218,10 +218,10 @@ export default function AuthDialog({ initialMode, connected, variant = "user", b
                   {recoveryBusy ? <><Spinner className="size-3.5" /> Updating…</> : <>Set new password <KeyRound size={16} /></>}
                 </ShimmerButton>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
-                  <button type="button" className="auth-switch-link" onClick={() => setRecoveryStep("request")} style={{ background: "none", border: "none", color: "#1a73e8", fontSize: "11px", cursor: "pointer", padding: 0 }}>
+                  <button type="button" className="auth-switch-link" onClick={() => setRecoveryStep("request")} style={{ background: "none", border: "none", color: "#1a73e8", fontSize: "var(--ds-type-body-2-size)", lineHeight: "var(--ds-type-body-2-line-height)", cursor: "pointer", padding: 0 }}>
                     Resend code
                   </button>
-                  <button type="button" className="auth-switch-link" onClick={() => changeMode("signin")} style={{ background: "none", border: "none", color: "#5f6368", fontSize: "11px", cursor: "pointer", padding: 0 }}>
+                  <button type="button" className="auth-switch-link" onClick={() => changeMode("signin")} style={{ background: "none", border: "none", color: "#5f6368", fontSize: "var(--ds-type-body-2-size)", lineHeight: "var(--ds-type-body-2-line-height)", cursor: "pointer", padding: 0 }}>
                     Cancel
                   </button>
                 </div>
@@ -252,7 +252,7 @@ export default function AuthDialog({ initialMode, connected, variant = "user", b
               </label>
               {mode === "signin" && (
                 <div style={{ textAlign: "right", marginTop: "-4px", marginBottom: "4px" }}>
-                  <button type="button" onClick={() => changeMode("recover")} style={{ background: "none", border: "none", color: "#1a73e8", fontSize: "11px", cursor: "pointer", padding: 0 }}>
+                  <button type="button" onClick={() => changeMode("recover")} style={{ background: "none", border: "none", color: "#1a73e8", fontSize: "var(--ds-type-body-2-size)", lineHeight: "var(--ds-type-body-2-line-height)", cursor: "pointer", padding: 0 }}>
                     Forgot password?
                   </button>
                 </div>

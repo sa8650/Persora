@@ -85,7 +85,7 @@ export function PresetConfirmModal({
 
             <div className="modal-body space-y-3">
               <div className="rounded-xl border border-border bg-secondary/50 p-3">
-                <span className="text-xs font-semibold text-foreground">
+                <span className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] font-semibold text-foreground">
                   Default widgets that will be restored ({defaultPreset.widgets.length}):
                 </span>
                 <div className="mt-2 flex flex-wrap gap-1.5">
@@ -170,12 +170,12 @@ export function PresetConfirmModal({
                     }`}
                   >
                     <div className="flex w-full items-center justify-between gap-2">
-                      <span className="text-[13px] font-semibold text-foreground">{preset.name}</span>
+                      <span className="text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-semibold text-foreground">{preset.name}</span>
                       <Badge variant={isSelected ? "primary-light" : "secondary"} size="xs" radius="full">
                         {preset.badge}
                       </Badge>
                     </div>
-                    <p className="text-[11.5px] leading-relaxed text-muted-foreground">{preset.description}</p>
+                    <p className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">{preset.description}</p>
                   </button>
                 );
               })}
@@ -185,12 +185,12 @@ export function PresetConfirmModal({
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5">
                   <Sparkles size={14} className="text-primary" />
-                  <h3 className="text-[12.5px] font-semibold text-foreground">
+                  <h3 className="text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-semibold text-foreground">
                     {selectedPreset.name} layout preview ({selectedPreset.widgets.length} widgets)
                   </h3>
                 </div>
                 {customized && (
-                  <span className="text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                  <span className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] font-medium text-amber-600 dark:text-amber-400">
                     Replaces your current customized layout
                   </span>
                 )}
@@ -211,8 +211,8 @@ export function PresetConfirmModal({
                           <Icon size={13} />
                         </IconTile>
                         <div className="min-w-0">
-                          <p className="truncate text-xs font-semibold text-foreground">{entry.title}</p>
-                          <p className="truncate text-[10.5px] text-muted-foreground">{meta.name}</p>
+                          <p className="truncate text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] font-semibold text-foreground">{entry.title}</p>
+                          <p className="truncate text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">{meta.name}</p>
                         </div>
                       </div>
                       <Badge variant="outline" size="xs" radius="full">

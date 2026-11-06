@@ -40,7 +40,7 @@ function AttachmentGroup({
 
 const attachmentVariants = cva(
   [
-    "group/attachment relative flex items-center text-sm transition-colors",
+    "group/attachment relative flex items-center text-[length:var(--ds-type-body-size)] leading-[var(--ds-type-body-line-height)] transition-colors",
     "has-[>[data-slot=attachment-trigger]]:cursor-pointer",
   ],
   {
@@ -64,7 +64,7 @@ const attachmentVariants = cva(
           "**:data-[slot=attachment-content]:flex-row **:data-[slot=attachment-content]:items-baseline **:data-[slot=attachment-content]:gap-2",
         ],
         xs: [
-          "h-7 shrink-0 gap-1.5 rounded-md px-2 text-xs",
+          "h-7 shrink-0 gap-1.5 rounded-md px-2 text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]",
           "[--attachment-media-size:--spacing(4)] [--attachment-icon-size:--spacing(3.5)]",
           "**:data-[slot=attachment-media]:border-0 **:data-[slot=attachment-media]:bg-transparent **:data-[slot=attachment-media]:rounded-xs",
           "**:data-[slot=attachment-description]:hidden",
@@ -179,7 +179,7 @@ function AttachmentDescription({
     <div
       data-slot="attachment-description"
       className={cn(
-        "shrink-0 truncate text-xs text-muted-foreground",
+        "shrink-0 truncate text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground",
         className
       )}
       {...props}

@@ -7,6 +7,7 @@ import QRPreview from "./QRPreview";
 import SocialBrandIcon from "./SocialBrandIcon";
 import { BusinessCardImagePublic } from "./BusinessCardsView";
 import { initials } from "../lib/utils";
+import { Skeleton } from "skullet/react";
 
 const escapeVcard = (value: string) => value.replace(/\\/g, "\\\\").replace(/\r?\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\\;");
 const cleanPhone = (value: string) => value.trim().replace(/[^\d+*#]/g, "");
@@ -61,7 +62,32 @@ export default function PublicBusinessCardPage({ cardId }: { cardId: string }) {
     catch (error) { setReportError(error instanceof Error ? error.message : "The report couldn't be sent. Please try again."); }
     finally { setReportBusy(false); }
   };
-  if (loading) return <main className="public-card-page public-card-state"><span className="public-card-loader"/><p>Preparing your introduction…</p></main>;
+  if (loading) {
+    return (
+      <main className="public-card-page public-card-state">
+        <Skeleton loading id={`public-card-${cardId}`} label="Preparing your introduction">
+          <div className="public-card-frame">
+            <article className="public-card-surface style-garden">
+              <section className="public-card-profile">
+                <span className="public-card-avatar public-card-avatar-fallback">AR</span>
+                <div className="public-card-profile-copy">
+                  <span className="public-card-eyebrow">A personal introduction</span>
+                  <h1>Alex Rahman</h1>
+                  <p className="public-card-title">Product designer in Dhaka</p>
+                </div>
+                <p className="public-card-bio">Happy to swap ideas over coffee or a quick call.</p>
+                <div className="public-card-actions">
+                  <span className="public-card-primary-action">Call</span>
+                  <span className="public-card-primary-action">Email</span>
+                  <span className="public-card-save-button">Save Contact</span>
+                </div>
+              </section>
+            </article>
+          </div>
+        </Skeleton>
+      </main>
+    );
+  }
   if (unavailable || !card) return <main className="public-card-page public-card-state"><span className="public-card-unavailable-icon"><ShieldCheck size={24}/></span><span className="public-card-eyebrow">Persora digital card</span><h1>This card is unavailable.</h1><p>The card may be private, disabled, or the link may be incorrect.</p><a href="/" className="public-card-back-link">Go to Persora <ArrowUpRight size={14}/></a></main>;
   return <main className="public-card-page">
     <div className="public-card-frame"><header className="public-card-brand"><a href="/" className="public-card-wordmark"><span className="public-card-brand-mark"><PersoraMark/></span>persora<span>.</span></a><span className="public-card-label">DIGITAL BUSINESS CARD</span></header>

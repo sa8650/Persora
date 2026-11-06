@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { Badge } from "../reui/badge";
 import { IconTile } from "../reui/icon-tile";
-import { Spinner } from "../ui/spinner";
+import { Skeleton } from "skullet/react";
 import { iconToneClass } from "../../design-system";
 import {
   DASHBOARD_WIDGET_BY_TYPE,
@@ -169,7 +169,7 @@ export function DashboardWidget({
           </IconTile>
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
-              <h3 id={headingId} className="truncate text-[13.5px] font-semibold leading-tight text-foreground">
+              <h3 id={headingId} className="truncate text-[length:var(--ds-type-body-size)] leading-[var(--ds-type-body-line-height)] font-semibold text-foreground">
                 {widget.title}
               </h3>
               {countBadge !== undefined && countBadge !== null && (
@@ -179,7 +179,7 @@ export function DashboardWidget({
               )}
             </div>
             {(subtitle || (isEditing && meta.name !== widget.title)) && (
-              <p className="mt-0.5 truncate text-[11.5px] text-muted-foreground">
+              <p className="mt-0.5 truncate text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">
                 {subtitle || meta.name}
               </p>
             )}
@@ -201,7 +201,7 @@ export function DashboardWidget({
                       onClick={() => onResize({ width: widthOpt })}
                       aria-pressed={active}
                       title={disabled ? `Minimum readable width is ${WIDTH_LABELS[meta.minWidth]}` : WIDTH_LABELS[widthOpt]}
-                      className={`h-6 rounded-md border px-1.5 text-[11px] font-medium transition-colors ${
+                      className={`h-6 rounded-md border px-1.5 text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] font-medium transition-colors ${
                         active
                           ? "border-primary bg-accent text-accent-foreground"
                           : disabled
@@ -282,7 +282,7 @@ export function DashboardWidget({
                     <button
                       type="button"
                       role="menuitem"
-                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12.5px] hover:bg-secondary"
+                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] hover:bg-secondary"
                       onClick={() => {
                         setMenuOpen(false);
                         onConfigure();
@@ -293,7 +293,7 @@ export function DashboardWidget({
                     </button>
 
                     <div className="my-1 border-t border-border px-2.5 pt-1.5 pb-1">
-                      <span className="block text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      <span className="block text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] font-semibold uppercase text-muted-foreground">
                         Width
                       </span>
                       <div className="mt-1 grid grid-cols-4 gap-1">
@@ -309,7 +309,7 @@ export function DashboardWidget({
                                 onResize({ width: widthOpt });
                                 setMenuOpen(false);
                               }}
-                              className={`h-6 rounded border text-[11px] font-medium ${
+                              className={`h-6 rounded border text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] font-medium ${
                                 active
                                   ? "border-primary bg-accent text-accent-foreground"
                                   : disabled
@@ -322,7 +322,7 @@ export function DashboardWidget({
                           );
                         })}
                       </div>
-                      <span className="mt-2 block text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      <span className="mt-2 block text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] font-semibold uppercase text-muted-foreground">
                         Height
                       </span>
                       <div className="mt-1 grid grid-cols-3 gap-1">
@@ -336,7 +336,7 @@ export function DashboardWidget({
                                 onResize({ height: heightOpt });
                                 setMenuOpen(false);
                               }}
-                              className={`h-6 rounded border text-[11px] font-medium ${
+                              className={`h-6 rounded border text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] font-medium ${
                                 active
                                   ? "border-primary bg-accent text-accent-foreground"
                                   : "border-border bg-secondary text-muted-foreground hover:text-foreground"
@@ -352,7 +352,7 @@ export function DashboardWidget({
                     <button
                       type="button"
                       role="menuitem"
-                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12.5px] hover:bg-secondary"
+                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] hover:bg-secondary"
                       onClick={() => {
                         setMenuOpen(false);
                         onToggleCollapse();
@@ -370,7 +370,7 @@ export function DashboardWidget({
                       <button
                         type="button"
                         role="menuitem"
-                        className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12.5px] hover:bg-secondary"
+                        className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] hover:bg-secondary"
                         onClick={() => {
                           setMenuOpen(false);
                           onDuplicate();
@@ -385,7 +385,7 @@ export function DashboardWidget({
                       type="button"
                       role="menuitem"
                       disabled={index === 0}
-                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12.5px] hover:bg-secondary disabled:opacity-40"
+                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] hover:bg-secondary disabled:opacity-40"
                       onClick={() => {
                         setMenuOpen(false);
                         onMoveUp();
@@ -399,7 +399,7 @@ export function DashboardWidget({
                       type="button"
                       role="menuitem"
                       disabled={index >= totalCount - 1}
-                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12.5px] hover:bg-secondary disabled:opacity-40"
+                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] hover:bg-secondary disabled:opacity-40"
                       onClick={() => {
                         setMenuOpen(false);
                         onMoveDown();
@@ -414,7 +414,7 @@ export function DashboardWidget({
                     <button
                       type="button"
                       role="menuitem"
-                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12.5px] text-destructive hover:bg-secondary"
+                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] text-destructive hover:bg-secondary"
                       onClick={() => {
                         setMenuOpen(false);
                         onRemove();
@@ -435,10 +435,15 @@ export function DashboardWidget({
         <>
           <div id={bodyId} className="ds-widget-body">
             {loading ? (
-              <div className="flex flex-col items-center justify-center gap-2 py-8 text-center text-[12.5px] text-muted-foreground">
-                <Spinner className="size-4 text-primary" />
-                <span>Loading {widget.title.toLowerCase()}…</span>
-              </div>
+              <Skeleton loading id={`dash-widget-${widget.id}`} label={`Loading ${widget.title.toLowerCase()}`}>
+                {children ?? (
+                  <div className="space-y-2">
+                    <p>Team standup at 10:00</p>
+                    <p>Dentist at 16:30</p>
+                    <p>Evening walk</p>
+                  </div>
+                )}
+              </Skeleton>
             ) : error ? (
               <div
                 className="flex flex-col items-center justify-center gap-2.5 rounded-xl border border-border bg-secondary/60 px-4 py-6 text-center"
@@ -448,11 +453,11 @@ export function DashboardWidget({
                   <AlertCircle size={15} />
                 </IconTile>
                 <div className="space-y-0.5">
-                  <p className="text-[12.5px] font-semibold text-foreground">Couldn’t load this widget</p>
-                  <p className="text-[11.5px] text-muted-foreground">{error}</p>
+                  <p className="text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-semibold text-foreground">Couldn’t load this widget</p>
+                  <p className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">{error}</p>
                 </div>
                 {onRetry && (
-                  <button type="button" className="quiet-button !h-8 !px-3 !text-xs" onClick={onRetry}>
+                  <button type="button" className="quiet-button !h-8 !px-3 !text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)]" onClick={onRetry}>
                     <RefreshCw size={13} /> Retry
                   </button>
                 )}
@@ -463,9 +468,9 @@ export function DashboardWidget({
                   <Icon size={16} />
                 </IconTile>
                 <div className="max-w-[280px] space-y-0.5">
-                  <p className="text-[12.5px] font-semibold text-foreground">{emptyTitle}</p>
+                  <p className="text-[length:var(--ds-type-body-2-size)] leading-[var(--ds-type-body-2-line-height)] font-semibold text-foreground">{emptyTitle}</p>
                   {emptyDescription && (
-                    <p className="text-[11.5px] leading-relaxed text-muted-foreground">{emptyDescription}</p>
+                    <p className="text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">{emptyDescription}</p>
                   )}
                 </div>
                 {emptyAction && <div className="mt-1">{emptyAction}</div>}
@@ -477,13 +482,13 @@ export function DashboardWidget({
 
           {(footerLabel || footerMeta) && (
             <footer className="ds-widget-footer">
-              <div className="min-w-0 truncate text-[11.5px] text-muted-foreground">
+              <div className="min-w-0 truncate text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] text-muted-foreground">
                 {footerMeta}
               </div>
               {footerLabel && onFooterAction && (
                 <button
                   type="button"
-                  className="inline-flex shrink-0 items-center gap-1 text-[12px] font-semibold text-primary hover:underline"
+                  className="inline-flex shrink-0 items-center gap-1 text-[length:var(--ds-type-caption-1-size)] leading-[var(--ds-type-caption-1-line-height)] tracking-[var(--ds-type-caption-1-letter-spacing)] font-semibold text-primary hover:underline"
                   onClick={onFooterAction}
                 >
                   <span>{footerLabel}</span>
